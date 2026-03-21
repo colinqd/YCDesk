@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#667eea">
+  <title>YCDesk - 远程桌面控制</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+    }
+
+    body {
+      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .container {
+      background: white;
+      border-radius: 20px;
+      box-shadow: 0 25px 80px rgba(0, 0, 0, 0.35);
+      width: 100%;
+      max-width: 500px;
+      overflow: hidden;
+      animation: slideUp 0.4s ease-out;
+    }
+
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px 20px;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 32px;
+      margin-bottom: 8px;
+      font-weight: 700;
+      letter-spacing: 2px;
+    }
+
+    .header p {
+      opacity: 0.92;
+      font-size: 14px;
+    }
+
+    .content {
+      padding: 25px 20px;
+    }
+
+    .section {
+      background: #f8f9fb;
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 20px;
+      border: 1px solid #e9ecef;
+    }
+
+    .section-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #2d3748;
+      margin-bottom: 15px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .section-title::before {
+      content: '';
+      width: 4px;
+      height: 18px;
+      background: #667eea;
+      border-radius: 2px;
+    }
+
+    .device-id-box {
+      margin-bottom: 15px;
+    }
+
+    .device-id-box label {
+      display: block;
+      font-size: 12px;
+      color: #718096;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+    }
+
+    .device-id-value {
+      background: white;
+      border: 2px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 16px;
+      font-size: 24px;
+      font-weight: 800;
+      color: #2d3748;
+      letter-spacing: 4px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.25s;
+      font-family: 'Consolas', 'Courier New', monospace;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .device-id-value:active {
+      transform: scale(0.98);
+      border-color: #667eea;
+      background: #f0f4ff;
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      background: #e6f4ea;
+      color: #135429;
+      padding: 12px 18px;
+      border-radius: 25px;
+      font-size: 13px;
+      font-weight: 600;
+      width: 100%;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      background: #2ecc71;
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(1.2); }
+    }
+
+    .mode-selector {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .mode-option {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 14px;
+      background: white;
+      border: 2px solid #e2e8f0;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.25s;
+    }
+
+    .mode-option:active {
+      transform: scale(0.98);
+    }
+
+    .mode-option input[type="radio"] {
+      margin-top: 3px;
+      width: 20px;
+      height: 20px;
+      cursor: pointer;
+      accent-color: #667eea;
+    }
+
+    .mode-option.selected {
+      border-color: #667eea;
+      background: #f0f4ff;
+    }
+
+    .mode-label {
+      font-size: 14px;
+      font-weight: 700;
+      color: #2d3748;
+      display: block;
+      margin-bottom: 3px;
+    }
+
+    .mode-desc {
+      font-size: 12px;
+      color: #718096;
+      display: block;
+      line-height: 1.4;
+    }
+
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .input-group label {
+      display: block;
+      font-size: 12px;
+      color: #718096;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+    }
+
+    .input-group input {
+      width: 100%;
+      padding: 14px 16px;
+      font-size: 16px;
+      border: 2px solid #e2e8f0;
+      border-radius: 12px;
+      outline: none;
+      transition: all 0.25s;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      font-family: 'Consolas', 'Courier New', monospace;
+    }
+
+    .input-group input:focus {
+      border-color: #667eea;
+      box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.15);
+    }
+
+    .btn {
+      padding: 16px 24px;
+      font-size: 16px;
+      font-weight: 700;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.25s;
+      width: 100%;
+      text-align: center;
+    }
+
+    .btn:active {
+      transform: scale(0.97);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      box-shadow: 0 4px 15px rgba(102, 126, 234, 0.35);
+    }
+
+    .btn-secondary {
+      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+      color: white;
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none !important;
+    }
+
+    .remote-screen {
+      width: 100%;
+      height: 100%;
+      background: #000;
+      display: none;
+    }
+
+    .remote-screen.active {
+      display: block;
+    }
+
+    .remote-video {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #000;
+    }
+
+    .control-overlay {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 12px;
+      z-index: 1000;
+    }
+
+    .control-btn {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      border: none;
+      background: rgba(255, 255, 255, 0.95);
+      color: #2d3748;
+      font-size: 24px;
+      cursor: pointer;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+      transition: all 0.25s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .control-btn:active {
+      transform: scale(0.92);
+    }
+
+    .control-btn.danger {
+      background: #e74c3c;
+      color: white;
+    }
+
+    .toast {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-100px);
+      background: rgba(0, 0, 0, 0.85);
+      color: white;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 14px;
+      z-index: 9999;
+      transition: transform 0.3s ease;
+      max-width: 80%;
+      text-align: center;
+    }
+
+    .toast.show {
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .loading-spinner {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 0.8s linear infinite;
+      margin-right: 10px;
+      vertical-align: middle;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .mode-settings {
+      margin-top: 15px;
+    }
+
+    .footer {
+      background: #f1f5f9;
+      padding: 15px;
+      text-align: center;
+      font-size: 12px;
+      color: #64748b;
+      border-top: 1px solid #e2e8f0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container" id="mainContainer">
+    <div class="header">
+      <h1>YCDesk</h1>
+      <p>远程桌面控制 - Android 版本</p>
+    </div>
+
+    <div class="content">
+      <div class="section">
+        <div class="section-title">我的设备</div>
+        <div class="device-id-box">
+          <label>设备 ID</label>
+          <div class="device-id-value" id="deviceId" onclick="copyDeviceId()">
+            加载中...
+          </div>
+        </div>
+        <div class="status-badge" id="serverStatus">
+          <span class="status-dot"></span>
+          <span id="serverStatusText">就绪</span>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">连接设置</div>
+        <div class="mode-selector" id="modeSelector">
+          <label class="mode-option selected" onclick="selectMode('signaling', this)">
+            <input type="radio" name="connectionMode" value="signaling" checked>
+            <span>
+              <span class="mode-label">信令服务器模式</span>
+              <span class="mode-desc">适合大多数网络环境，自动NAT穿透</span>
+            </span>
+          </label>
+          <label class="mode-option" onclick="selectMode('direct', this)">
+            <input type="radio" name="connectionMode" value="direct">
+            <span>
+              <span class="mode-label">直连模式</span>
+              <span class="mode-desc">两台设备都有固定公网IP时使用</span>
+            </span>
+          </label>
+        </div>
+        
+        <div id="signalingSettings" class="mode-settings">
+          <div class="input-group">
+            <label>信令服务器地址</label>
+            <input type="text" id="serverUrl" placeholder="http://your-server.com:3000" value="">
+          </div>
+        </div>
+        
+        <div id="directSettings" class="mode-settings" style="display: none;">
+          <div class="input-group">
+            <label>对方 IP 地址</label>
+            <input type="text" id="remoteIp" placeholder="例如: 203.0.113.10">
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">远程控制</div>
+        <div class="input-group">
+          <input type="text" id="targetDeviceId" placeholder="输入对方设备 ID" maxlength="9">
+          <button class="btn btn-primary" onclick="connectDevice()" id="connectBtn">连接</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      YCDesk v1.0.0 Android | 仅作为控制端使用
+    </div>
+  </div>
+
+  <div class="remote-screen" id="remoteScreen">
+    <video class="remote-video" id="remoteVideo" autoplay playsinline></video>
+    <div class="control-overlay">
+      <button class="control-btn" onclick="showKeyboard()">⌨️</button>
+      <button class="control-btn" onclick="toggleMouse()">🖱️</button>
+      <button class="control-btn danger" onclick="disconnect()">✕</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
