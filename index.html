@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YCDesk - 远程桌面控制</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .container {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 25px 80px rgba(0, 0, 0, 0.35);
+      width: 100%;
+      max-width: 1000px;
+      overflow: hidden;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 28px 35px;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 36px;
+      margin-bottom: 8px;
+      font-weight: 700;
+      letter-spacing: 1px;
+    }
+
+    .header p {
+      opacity: 0.92;
+      font-size: 15px;
+    }
+
+    .content {
+      padding: 35px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 25px;
+    }
+
+    .section {
+      background: #f8f9fb;
+      border-radius: 12px;
+      padding: 24px;
+      border: 1px solid #e9ecef;
+    }
+
+    .section-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: #2d3748;
+      margin-bottom: 18px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .section-title::before {
+      content: '';
+      width: 5px;
+      height: 22px;
+      background: #667eea;
+      border-radius: 3px;
+    }
+
+    .device-id-box {
+      margin-bottom: 20px;
+    }
+
+    .device-id-box label {
+      display: block;
+      font-size: 12px;
+      color: #718096;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      font-weight: 600;
+    }
+
+    .device-id-value {
+      background: white;
+      border: 2px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 18px;
+      font-size: 28px;
+      font-weight: 800;
+      color: #2d3748;
+      letter-spacing: 5px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.25s;
+      font-family: 'Consolas', 'Courier New', monospace;
+    }
+
+    .device-id-value:hover {
+      border-color: #667eea;
+      background: #f0f4ff;
+      transform: translateY(-1px);
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      background: #e6f4ea;
+      color: #135429;
+      padding: 12px 22px;
+      border-radius: 25px;
+      font-size: 14px;
+      font-weight: 600;
+      width: 100%;
+    }
+
+    .status-dot {
+      width: 12px;
+      height: 12px;
+      background: #2ecc71;
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(1.15); }
+    }
+
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .input-group input {
+      width: 100%;
+      padding: 16px 20px;
+      font-size: 18px;
+      border: 2px solid #e2e8f0;
+      border-radius: 10px;
+      outline: none;
+      transition: all 0.25s;
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      font-family: 'Consolas', 'Courier New', monospace;
+    }
+
+    .input-group input:focus {
+      border-color: #667eea;
+      box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.15);
+    }
+
+    .btn {
+      padding: 16px 32px;
+      font-size: 16px;
+      font-weight: 700;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.25s;
+      width: 100%;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      box-shadow: 0 4px 15px rgba(102, 126, 234, 0.35);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 7px 20px rgba(102, 126, 234, 0.5);
+    }
+
+    .btn-primary:active {
+      transform: translateY(0);
+    }
+
+    .btn-secondary {
+      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+      color: white;
+      margin-top: 12px;
+    }
+
+    .preview-section {
+      grid-column: 1 / -1;
+      background: #f8f9fb;
+      border-radius: 12px;
+      padding: 24px;
+      border: 1px solid #e9ecef;
+    }
+
+    .preview-container {
+      background: #1a1a2e;
+      border-radius: 10px;
+      overflow: hidden;
+      margin-top: 15px;
+      border: 2px solid #e2e8f0;
+    }
+
+    .preview-video {
+      width: 100%;
+      height: 300px;
+      display: block;
+      background: #0d1117;
+      object-fit: contain;
+    }
+
+    .preview-placeholder {
+      height: 300px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #94a3b8;
+    }
+
+    .preview-icon {
+      font-size: 56px;
+      margin-bottom: 15px;
+    }
+
+    .preview-text {
+      font-size: 15px;
+      margin-bottom: 8px;
+    }
+
+    .preview-subtext {
+      font-size: 13px;
+      color: #64748b;
+    }
+
+    .footer {
+      background: #f1f5f9;
+      padding: 18px;
+      text-align: center;
+      font-size: 12px;
+      color: #64748b;
+      border-top: 1px solid #e2e8f0;
+    }
+
+    @media (max-width: 768px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>YCDesk</h1>
+      <p>远程桌面控制 - 安全、快速、便捷</p>
+    </div>
+
+    <div class="content">
+      <div class="grid">
+        <div class="section">
+          <div class="section-title">我的设备</div>
+          <div class="device-id-box">
+            <label>设备 ID</label>
+            <div class="device-id-value" id="deviceId" onclick="copyDeviceId()">
+              加载中...
+            </div>
+          </div>
+          <div class="status-badge" id="serverStatus">
+            <span class="status-dot"></span>
+            <span id="serverStatusText">就绪</span>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">远程控制</div>
+          <div class="input-group">
+            <input type="text" id="targetDeviceId" placeholder="输入对方设备 ID" maxlength="9">
+            <button class="btn btn-primary" onclick="connectDevice()">连接</button>
+            <button class="btn btn-secondary" onclick="openRemoteWindow()">打开远程窗口</button>
+          </div>
+        </div>
+
+        <div class="preview-section">
+          <div class="section-title">本地屏幕预览</div>
+          <div class="preview-container">
+            <div class="preview-placeholder" id="previewPlaceholder">
+              <div class="preview-icon">🖥️</div>
+              <div class="preview-text">点击下方按钮预览本地屏幕</div>
+              <div class="preview-subtext">测试屏幕捕获功能</div>
+            </div>
+            <video class="preview-video" id="previewVideo" autoplay playsinline muted style="display: none;"></video>
+          </div>
+          <button class="btn btn-secondary" style="margin-top: 15px;" onclick="toggleScreenPreview()">
+            <span id="previewBtnText">开始屏幕预览</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      YCDesk v1.0.0 | 远程桌面控制软件 | Windows 版本
+    </div>
+  </div>
+
+  <script>
+    let myDeviceId = '';
+    let localStream = null;
+    let isPreviewing = false;
+
+    async function init() {
+      myDeviceId = await window.electronAPI.getDeviceId();
+      document.getElementById('deviceId').textContent = myDeviceId;
+    }
+
+    function copyDeviceId() {
+      navigator.clipboard.writeText(myDeviceId).then(() => {
+        const el = document.getElementById('deviceId');
+        const originalText = el.textContent;
+        el.textContent = '已复制!';
+        setTimeout(() => {
+          el.textContent = originalText;
+        }, 1500);
+      }).catch(err => {
+        console.error('复制失败:', err);
+      });
+    }
+
+    function connectDevice() {
+      const targetId = document.getElementById('targetDeviceId').value.trim().toUpperCase();
+      if (!targetId) {
+        alert('请输入设备 ID');
+        return;
+      }
+      if (targetId.length !== 9) {
+        alert('设备 ID 格式不正确（需要 9 位字符）');
+        return;
+      }
+      if (targetId === myDeviceId) {
+        alert('不能连接自己');
+        return;
+      }
+
+      alert('WebRTC 远程连接功能正在开发中...');
+    }
+
+    function openRemoteWindow() {
+      window.electronAPI.openRemoteWindow();
+    }
+
+    async function toggleScreenPreview() {
+      const video = document.getElementById('previewVideo');
+      const placeholder = document.getElementById('previewPlaceholder');
+      const btnText = document.getElementById('previewBtnText');
+
+      if (!isPreviewing) {
+        try {
+          const sources = await window.electronAPI.getSources();
+          
+          if (sources.length === 0) {
+            alert('未找到可用的屏幕源');
+            return;
+          }
+
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: {
+              mandatory: {
+                chromeMediaSource: 'desktop',
+                chromeMediaSourceId: sources[0].id,
+                maxWidth: 1920,
+                maxHeight: 1080,
+                maxFrameRate: 30
+              }
+            }
+          });
+
+          localStream = stream;
+          video.srcObject = stream;
+          video.style.display = 'block';
+          placeholder.style.display = 'none';
+          btnText.textContent = '停止屏幕预览';
+          isPreviewing = true;
+        } catch (error) {
+          console.error('屏幕预览失败:', error);
+          alert('屏幕预览失败: ' + error.message);
+        }
+      } else {
+        if (localStream) {
+          localStream.getTracks().forEach(track => track.stop());
+          localStream = null;
+        }
+        video.srcObject = null;
+        video.style.display = 'none';
+        placeholder.style.display = 'flex';
+        btnText.textContent = '开始屏幕预览';
+        isPreviewing = false;
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>
