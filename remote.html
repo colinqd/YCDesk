@@ -221,6 +221,7 @@
     let videoElement = null;
     let frameCount = 0;
     let lastTime = performance.now();
+    let sendInputEvent = null;
 
     function toggleFullscreen() {
       if (!document.fullscreenElement) {
@@ -233,6 +234,90 @@
     function disconnect() {
       if (confirm('确定要断开连接吗？')) {
         window.close();
+      }
+    }
+
+    function setupInputEvents() {
+      const videoContainer = document.querySelector('.screen-container');
+      
+      if (window.opener && window.opener.dataChannel) {
+        sendInputEvent = (eventData) => {
+          const channel = window.opener.dataChannel;
+          if (channel && channel.readyState === 'open') {
+            channel.send(JSON.stringify(eventData));
+          }
+        };
+
+        videoContainer.addEventListener('mousemove', (e) => {
+          const rect = videoElement.getBoundingClientRect();
+          const x = (e.clientX - rect.left) / rect.width;
+          const y = (e.clientY - rect.top) / rect.height;
+          
+          sendInputEvent({
+            type: 'input',
+            inputType: 'mousemove',
+            x: Math.max(0, Math.min(1, x)),
+            y: Math.max(0, Math.min(1, y))
+          });
+        });
+
+        videoContainer.addEventListener('mousedown', (e) => {
+          const rect = videoElement.getBoundingClientRect();
+          const x = (e.clientX - rect.left) / rect.width;
+          const y = (e.clientY - rect.top) / rect.height;
+          
+          sendInputEvent({
+            type: 'input',
+            inputType: 'mousedown',
+            button: e.button,
+            x: Math.max(0, Math.min(1, x)),
+            y: Math.max(0, Math.min(1, y))
+          });
+        });
+
+        videoContainer.addEventListener('mouseup', (e) => {
+          const rect = videoElement.getBoundingClientRect();
+          const x = (e.clientX - rect.left) / rect.width;
+          const y = (e.clientY - rect.top) / rect.height;
+          
+          sendInputEvent({
+            type: 'input',
+            inputType: 'mouseup',
+            button: e.button,
+            x: Math.max(0, Math.min(1, x)),
+            y: Math.max(0, Math.min(1, y))
+          });
+        });
+
+        videoContainer.addEventListener('wheel', (e) => {
+          sendInputEvent({
+            type: 'input',
+            inputType: 'wheel',
+            deltaY: e.deltaY
+          });
+        });
+
+        document.addEventListener('keydown', (e) => {
+          sendInputEvent({
+            type: 'input',
+            inputType: 'keydown',
+            key: e.key,
+            code: e.code,
+            keyCode: e.keyCode
+          });
+        });
+
+        document.addEventListener('keyup', (e) => {
+          sendInputEvent({
+            type: 'input',
+            inputType: 'keyup',
+            key: e.key,
+            code: e.code,
+            keyCode: e.keyCode
+          });
+        });
+
+        console.log('输入事件监听已设置');
       }
     }
 
@@ -279,6 +364,15 @@
         console.error('获取屏幕尺寸失败:', error);
       }
 
+      window.electronAPI.on('remote-stream', async (data) => {
+        console.log('收到远程流通知');
+        await tryLoadStream();
+      });
+
+      await tryLoadStream();
+    }
+
+    async function tryLoadStream() {
       if (window.opener && window.opener.remoteStream) {
         try {
           updateStatus('正在连接...');
@@ -293,6 +387,7 @@
             document.getElementById('resolution').textContent = 
               `${videoElement.videoWidth}x${videoElement.videoHeight}`;
             requestAnimationFrame(onVideoFrame);
+            setupInputEvents();
           };
 
           videoElement.onerror = (error) => {

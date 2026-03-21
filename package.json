@@ -26,7 +26,8 @@
     "cross-env": "^7.0.3"
   },
   "dependencies": {
-    "socket.io-client": "^4.6.0"
+    "socket.io-client": "^4.6.0",
+    "@nut-tree/nut-js": "^3.1.2"
   },
   "build": {
     "appId": "com.ycdesk.desktop",
@@ -55,8 +56,7 @@
             "x64"
           ]
         }
-      ],
-      "icon": "assets/icon.ico"
+      ]
     },
     "nsis": {
       "oneClick": false,

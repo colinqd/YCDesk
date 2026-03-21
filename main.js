@@ -1,9 +1,20 @@
-const { app, BrowserWindow, ipcMain, desktopCapturer, screen, systemPreferences } = require('electron')
+const { app, BrowserWindow, ipcMain, desktopCapturer, screen, systemPreferences, Input } = require('electron')
 const path = require('path')
+const os = require('os')
+
+const instanceId = Math.random().toString(36).substr(2, 8)
+const userDataPath = path.join(os.tmpdir(), `ycdesk-${instanceId}`)
+
+app.setPath('userData', userDataPath)
+app.setAppUserModelId(`com.ycdesk.desktop.${instanceId}`)
+
+app.commandLine.appendSwitch('disable-features', 'SingleProcess')
+app.commandLine.appendSwitch('disable-gpu-sandbox')
 
 let mainWindow
 let remoteWindow
 let deviceId = generateDeviceId()
+let remoteStreamInfo = null
 
 function generateDeviceId() {
   return Math.random().toString(36).substr(2, 9).toUpperCase()
@@ -166,6 +177,104 @@ ipcMain.handle('get-platform', () => {
     arch: process.arch,
     electron: process.versions.electron,
     node: process.versions.node
+  }
+})
+
+ipcMain.handle('set-remote-stream-info', (event, info) => {
+  remoteStreamInfo = info
+  console.log('设置远程流信息:', info)
+  return true
+})
+
+ipcMain.handle('get-remote-stream-info', () => {
+  console.log('获取远程流信息:', remoteStreamInfo)
+  return remoteStreamInfo
+})
+
+ipcMain.handle('send-to-remote-window', (event, channel, data) => {
+  if (remoteWindow) {
+    remoteWindow.webContents.send(channel, data)
+    return true
+  }
+  return false
+})
+
+ipcMain.handle('send-to-main-window', (event, channel, data) => {
+  if (mainWindow) {
+    mainWindow.webContents.send(channel, data)
+    return true
+  }
+  return false
+})
+
+let lastMouseX = 0
+let lastMouseY = 0
+
+ipcMain.on('remote-input', async (event, inputData) => {
+  try {
+    const { inputType, x, y, button, deltaY, key, code, keyCode } = inputData
+    const primaryDisplay = screen.getPrimaryDisplay()
+    const screenWidth = primaryDisplay.size.width
+    const screenHeight = primaryDisplay.size.height
+
+    switch (inputType) {
+      case 'mousemove':
+        if (x !== undefined && y !== undefined) {
+          lastMouseX = Math.round(x * screenWidth)
+          lastMouseY = Math.round(y * screenHeight)
+          Input.setMousePosition(lastMouseX, lastMouseY)
+        }
+        break
+
+      case 'mousedown':
+        if (x !== undefined && y !== undefined) {
+          lastMouseX = Math.round(x * screenWidth)
+          lastMouseY = Math.round(y * screenHeight)
+          Input.setMousePosition(lastMouseX, lastMouseY)
+        }
+        const mouseDownButton = button === 2 ? 'right' : button === 1 ? 'middle' : 'left'
+        Input.pressMouse(mouseDownButton)
+        break
+
+      case 'mouseup':
+        if (x !== undefined && y !== undefined) {
+          lastMouseX = Math.round(x * screenWidth)
+          lastMouseY = Math.round(y * screenHeight)
+          Input.setMousePosition(lastMouseX, lastMouseY)
+        }
+        const mouseUpButton = button === 2 ? 'right' : button === 1 ? 'middle' : 'left'
+        Input.releaseMouse(mouseUpButton)
+        break
+
+      case 'wheel':
+        if (deltaY) {
+          const scrollDelta = Math.sign(deltaY) * 50
+          Input.scrollMouse(0, scrollDelta)
+        }
+        break
+
+      case 'keydown':
+        if (code) {
+          try {
+            Input.pressKey(code)
+          } catch (e) {
+            console.log('Key press error:', e)
+          }
+        }
+        break
+
+      case 'keyup':
+        if (code) {
+          try {
+            Input.releaseKey(code)
+          } catch (e) {
+            console.log('Key release error:', e)
+          }
+        }
+        break
+    }
+  } catch (error) {
+    console.error('处理远程输入失败:', error)
   }
 })
 
