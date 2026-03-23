@@ -2,7 +2,7 @@
   "name": "ycdesk",
   "version": "1.0.0",
   "description": "远程桌面控制软件 - Windows 版本",
-  "main": "main.js",
+  "main": "src/main/main.js",
   "author": "",
   "license": "MIT",
   "private": true,

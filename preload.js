@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getRemoteStreamInfo: () => ipcRenderer.invoke('get-remote-stream-info'),
   sendToRemoteWindow: (channel, data) => ipcRenderer.invoke('send-to-remote-window', channel, data),
   sendToMainWindow: (channel, data) => ipcRenderer.invoke('send-to-main-window', channel, data),
+  executeInRemoteWindow: (code) => ipcRenderer.invoke('execute-in-remote-window', code),
   
   send: (channel, data) => {
     const validChannels = ['toMain', 'fromMain', 'remote-input']
@@ -19,7 +20,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   
   on: (channel, callback) => {
-    const validChannels = ['toMain', 'fromMain', 'remote-stream']
+    const validChannels = ['toMain', 'fromMain', 'remote-stream', 'direct-incoming-connection', 'direct-message', 'direct-connection-closed', 'webrtc-answer', 'webrtc-ice-candidate', 'webrtc-offer']
     if (validChannels.includes(channel)) {
       ipcRenderer.on(channel, (event, ...args) => callback(...args))
     }
@@ -27,7 +28,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   removeAllListeners: (channel) => {
     ipcRenderer.removeAllListeners(channel)
-  }
+  },
+  
+  getLocalIps: () => ipcRenderer.invoke('get-local-ips'),
+  startDirectServer: (port) => ipcRenderer.invoke('start-direct-server', port),
+  stopDirectServer: () => ipcRenderer.invoke('stop-direct-server'),
+  connectDirectClient: (host, port) => ipcRenderer.invoke('connect-direct-client', host, port),
+  sendDirectMessage: (clientId, message) => ipcRenderer.invoke('send-direct-message', clientId, message),
+  closeDirectConnection: (clientId) => ipcRenderer.invoke('close-direct-connection', clientId),
+  
+  setConnectionPassword: (password) => ipcRenderer.invoke('set-connection-password', password),
+  getConnectionPassword: () => ipcRenderer.invoke('get-connection-password'),
+  hasConnectionPassword: () => ipcRenderer.invoke('has-connection-password'),
+  clearConnectionPassword: () => ipcRenderer.invoke('clear-connection-password'),
+  verifyConnectionPassword: (password) => ipcRenderer.invoke('verify-connection-password', password),
+  encryptData: (data, password) => ipcRenderer.invoke('encrypt-data', data, password),
+  decryptData: (encryptedData, password) => ipcRenderer.invoke('decrypt-data', encryptedData, password)
 })
 
 console.log('YCDesk Preload 脚本已加载')

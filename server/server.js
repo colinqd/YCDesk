@@ -110,9 +110,10 @@ function generateSessionId() {
   return 'sess_' + Math.random().toString(36).substr(2, 16);
 }
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || process.argv[2] || 3000;
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`YCDesk 信令服务器运行在端口 ${PORT}`);
   console.log(`WebSocket 服务器已启动`);
+  console.log(`可通过以下方式指定端口: node server.js [端口号] 或 PORT=端口号 node server.js`);
 });

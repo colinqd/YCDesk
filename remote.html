@@ -217,11 +217,32 @@
     </div>
   </div>
 
+  <div id="debugLog" style="position: fixed; top: 60px; right: 10px; width: 350px; max-height: 300px; background: rgba(0,0,0,0.8); color: #0f0; font-family: monospace; font-size: 11px; padding: 10px; overflow-y: auto; border-radius: 5px; z-index: 9999;"></div>
+
   <script>
     let videoElement = null;
     let frameCount = 0;
     let lastTime = performance.now();
     let sendInputEvent = null;
+    let latencyCheckInterval = null;
+    let lastLatency = 0;
+    let peerConnection = null;
+    let dataChannel = null;
+    let pendingIceCandidates = [];
+
+    function log(message) {
+      const timestamp = new Date().toLocaleTimeString();
+      const logMessage = `[${timestamp}] ${message}`;
+      console.log(logMessage);
+      
+      const debugLog = document.getElementById('debugLog');
+      if (debugLog) {
+        const div = document.createElement('div');
+        div.textContent = logMessage;
+        debugLog.appendChild(div);
+        debugLog.scrollTop = debugLog.scrollHeight;
+      }
+    }
 
     function toggleFullscreen() {
       if (!document.fullscreenElement) {
@@ -232,19 +253,74 @@
     }
 
     function disconnect() {
+      stopLatencyCheck();
       if (confirm('确定要断开连接吗？')) {
+        if (peerConnection) {
+          peerConnection.close();
+        }
         window.close();
       }
+    }
+
+    function startLatencyCheck() {
+      if (latencyCheckInterval) return;
+      
+      latencyCheckInterval = setInterval(() => {
+        checkLatency();
+      }, 2000);
+      
+      checkLatency();
+    }
+
+    function stopLatencyCheck() {
+      if (latencyCheckInterval) {
+        clearInterval(latencyCheckInterval);
+        latencyCheckInterval = null;
+      }
+    }
+
+    function checkLatency() {
+      const sendTime = performance.now();
+      
+      if (dataChannel && dataChannel.readyState === 'open') {
+        const pingData = {
+          type: 'ping',
+          timestamp: sendTime
+        };
+        dataChannel.send(JSON.stringify(pingData));
+      }
+      
+      setTimeout(() => {
+        const latency = Math.round(performance.now() - sendTime);
+        if (latency > 0 && latency < 5000) {
+          lastLatency = latency;
+          document.getElementById('latency').textContent = `${latency} ms`;
+        }
+      }, 500);
     }
 
     function setupInputEvents() {
       const videoContainer = document.querySelector('.screen-container');
       
-      if (window.opener && window.opener.dataChannel) {
+      if (dataChannel && dataChannel.readyState === 'open') {
+        dataChannel.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'pong') {
+              const latency = Math.round(performance.now() - data.timestamp);
+              if (latency > 0 && latency < 5000) {
+                lastLatency = latency;
+                document.getElementById('latency').textContent = `${latency} ms`;
+              }
+            }
+          } catch (e) {
+            console.error('解析消息失败:', e);
+          }
+        };
+        
         sendInputEvent = (eventData) => {
-          const channel = window.opener.dataChannel;
-          if (channel && channel.readyState === 'open') {
-            channel.send(JSON.stringify(eventData));
+          if (dataChannel && dataChannel.readyState === 'open') {
+            dataChannel.send(JSON.stringify(eventData));
           }
         };
 
@@ -354,57 +430,237 @@
       requestAnimationFrame(onVideoFrame);
     }
 
-    async function init() {
-      videoElement = document.getElementById('screenVideo');
+    async function createPeerConnection() {
+      peerConnection = new RTCPeerConnection({ iceServers: [] });
       
-      try {
-        const screenSize = await window.electronAPI.getScreenSize();
-        document.getElementById('resolution').textContent = `${screenSize.width}x${screenSize.height}`;
-      } catch (error) {
-        console.error('获取屏幕尺寸失败:', error);
-      }
-
-      window.electronAPI.on('remote-stream', async (data) => {
-        console.log('收到远程流通知');
-        await tryLoadStream();
-      });
-
-      await tryLoadStream();
-    }
-
-    async function tryLoadStream() {
-      if (window.opener && window.opener.remoteStream) {
-        try {
-          updateStatus('正在连接...');
-          showPlaceholder('正在接收远程屏幕...');
-          
-          videoElement.srcObject = window.opener.remoteStream;
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          log('发送ICE候选');
+          window.electronAPI.sendToMainWindow('webrtc-ice-candidate', {
+            candidate: {
+              candidate: event.candidate.candidate,
+              sdpMid: event.candidate.sdpMid,
+              sdpMLineIndex: event.candidate.sdpMLineIndex
+            }
+          });
+        }
+      };
+      
+      peerConnection.oniceconnectionstatechange = () => {
+        log('ICE连接状态: ' + peerConnection.iceConnectionState);
+      };
+      
+      peerConnection.ontrack = (event) => {
+        log('收到远程媒体流，track数量: ' + event.tracks.length);
+        const stream = event.streams[0];
+        if (stream) {
+          log('流ID: ' + stream.id);
+          videoElement.srcObject = stream;
           
           videoElement.onloadedmetadata = () => {
-            console.log('视频流已加载');
+            log('视频流加载成功');
             showVideo();
             updateStatus('已连接');
             document.getElementById('resolution').textContent = 
               `${videoElement.videoWidth}x${videoElement.videoHeight}`;
             requestAnimationFrame(onVideoFrame);
             setupInputEvents();
+            startLatencyCheck();
           };
-
+          
           videoElement.onerror = (error) => {
             console.error('视频错误:', error);
-            showPlaceholder('连接失败', '请重新尝试连接');
+            showPlaceholder('连接失败', '视频流加载失败');
             updateStatus('连接失败');
           };
-
-        } catch (error) {
-          console.error('显示远程屏幕失败:', error);
-          showPlaceholder('连接失败', error.message);
-          updateStatus('连接失败');
         }
-      } else {
-        showPlaceholder('等待远程屏幕...', '请先在主窗口发起连接');
-        updateStatus('等待连接');
+      };
+      
+      peerConnection.onconnectionstatechange = () => {
+        log('连接状态: ' + peerConnection.connectionState);
+      };
+      
+      peerConnection.ondatachannel = (event) => {
+        log('收到数据通道');
+        dataChannel = event.channel;
+        setupDataChannel();
+      };
+      
+      log('添加视频接收transceiver');
+      peerConnection.addTransceiver('video', { direction: 'recvonly' });
+      
+      log('创建数据通道');
+      dataChannel = peerConnection.createDataChannel('control');
+      setupDataChannel();
+      
+      try {
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        
+        log('发送offer到主窗口');
+        window.electronAPI.sendToMainWindow('webrtc-offer', {
+          offer: {
+            type: offer.type,
+            sdp: offer.sdp
+          }
+        });
+      } catch (error) {
+        log('创建offer失败: ' + error.message);
       }
+    }
+
+    function setupDataChannel() {
+      dataChannel.onopen = () => {
+        log('数据通道已打开');
+      };
+
+      dataChannel.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'pong') {
+            const latency = Math.round(performance.now() - data.timestamp);
+            if (latency > 0 && latency < 5000) {
+              lastLatency = latency;
+              document.getElementById('latency').textContent = `${latency} ms`;
+            }
+          }
+        } catch (e) {
+          console.error('解析数据失败:', e);
+        }
+      };
+
+      dataChannel.onclose = () => {
+        log('数据通道已关闭');
+      };
+
+      dataChannel.onerror = (error) => {
+        console.error('数据通道错误:', error);
+      };
+    }
+
+    async function handleAnswer(answer) {
+      if (!answer) {
+        log('错误: answer为空');
+        return;
+      }
+      
+      try {
+        log('设置answer...');
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+        log('answer设置成功');
+        
+        log('检查transceivers...');
+        const transceivers = peerConnection.getTransceivers();
+        log('transceivers数量: ' + transceivers.length);
+        transceivers.forEach((t, i) => {
+          log('Transceiver ' + i + ': mid=' + t.mid + ', direction=' + t.direction + ', currentDirection=' + t.currentDirection + ', receiver.track=' + (t.receiver.track ? t.receiver.track.kind : 'null'));
+        });
+        
+        await addPendingIceCandidates();
+        
+        log('手动检查并显示视频...');
+        checkAndDisplayVideo();
+      } catch (error) {
+        log('设置answer失败: ' + error.message);
+      }
+    }
+
+    function checkAndDisplayVideo() {
+      const transceivers = peerConnection.getTransceivers();
+      for (const t of transceivers) {
+        if (t.receiver && t.receiver.track && t.receiver.track.kind === 'video') {
+          log('找到视频track: ' + t.receiver.track.id);
+          const stream = new MediaStream([t.receiver.track]);
+          videoElement.srcObject = stream;
+          
+          videoElement.onloadedmetadata = () => {
+            log('视频流加载成功');
+            showVideo();
+            updateStatus('已连接');
+            document.getElementById('resolution').textContent = 
+              `${videoElement.videoWidth}x${videoElement.videoHeight}`;
+            requestAnimationFrame(onVideoFrame);
+            setupInputEvents();
+            startLatencyCheck();
+          };
+          
+          videoElement.onerror = (error) => {
+            log('视频错误: ' + error);
+            showPlaceholder('连接失败', '视频流加载失败');
+            updateStatus('连接失败');
+          };
+          
+          log('视频track已设置到video元素');
+          return;
+        }
+      }
+      log('未找到视频track');
+    }
+
+    async function handleIceCandidate(candidate) {
+      if (!candidate) {
+        return;
+      }
+      
+      try {
+        if (candidate.sdpMid === null && candidate.sdpMLineIndex === null) {
+          return;
+        }
+        
+        if (!peerConnection || !peerConnection.remoteDescription) {
+          log('缓存ICE候选（远程描述未设置）');
+          pendingIceCandidates.push(candidate);
+          return;
+        }
+        
+        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        log('ICE候选添加成功');
+      } catch (error) {
+        log('添加ICE候选失败: ' + error.message);
+      }
+    }
+
+    async function addPendingIceCandidates() {
+      log('添加缓存的ICE候选: ' + pendingIceCandidates.length + ' 个');
+      for (const candidate of pendingIceCandidates) {
+        try {
+          await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (error) {
+          log('添加缓存ICE候选失败: ' + error.message);
+        }
+      }
+      pendingIceCandidates = [];
+    }
+
+    async function init() {
+      videoElement = document.getElementById('screenVideo');
+      log('远程窗口初始化开始');
+      
+      try {
+        const screenSize = await window.electronAPI.getScreenSize();
+        document.getElementById('resolution').textContent = `${screenSize.width}x${screenSize.height}`;
+        log('获取屏幕尺寸成功');
+      } catch (error) {
+        log('获取屏幕尺寸失败: ' + error.message);
+      }
+
+      updateStatus('正在连接...');
+      showPlaceholder('正在建立WebRTC连接...', '请稍候');
+
+      log('设置IPC监听器...');
+      window.electronAPI.on('webrtc-answer', async (data) => {
+        log('收到answer事件: ' + JSON.stringify(data).substring(0, 100));
+        await handleAnswer(data.answer);
+      });
+
+      window.electronAPI.on('webrtc-ice-candidate', async (data) => {
+        log('收到ICE候选事件');
+        await handleIceCandidate(data.candidate);
+      });
+      log('IPC监听器设置完成');
+
+      log('开始创建WebRTC连接...');
+      await createPeerConnection();
     }
 
     document.addEventListener('keydown', (e) => {

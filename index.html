@@ -4,324 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>YCDesk - 远程桌面控制</title>
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    body {
-      font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
-      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-    }
-
-    .container {
-      background: white;
-      border-radius: 16px;
-      box-shadow: 0 25px 80px rgba(0, 0, 0, 0.35);
-      width: 100%;
-      max-width: 1000px;
-      overflow: hidden;
-    }
-
-    .header {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      padding: 28px 35px;
-      text-align: center;
-    }
-
-    .header h1 {
-      font-size: 36px;
-      margin-bottom: 8px;
-      font-weight: 700;
-      letter-spacing: 1px;
-    }
-
-    .header p {
-      opacity: 0.92;
-      font-size: 15px;
-    }
-
-    .content {
-      padding: 35px;
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 25px;
-    }
-
-    .section {
-      background: #f8f9fb;
-      border-radius: 12px;
-      padding: 24px;
-      border: 1px solid #e9ecef;
-    }
-
-    .section-title {
-      font-size: 17px;
-      font-weight: 700;
-      color: #2d3748;
-      margin-bottom: 18px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .section-title::before {
-      content: '';
-      width: 5px;
-      height: 22px;
-      background: #667eea;
-      border-radius: 3px;
-    }
-
-    .mode-selector {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .mode-option {
-      display: flex;
-      align-items: flex-start;
-      gap: 12px;
-      padding: 16px;
-      background: white;
-      border: 2px solid #e2e8f0;
-      border-radius: 10px;
-      cursor: pointer;
-      transition: all 0.25s;
-    }
-
-    .mode-option:hover {
-      border-color: #667eea;
-      background: #f0f4ff;
-    }
-
-    .mode-option input[type="radio"] {
-      margin-top: 4px;
-      width: 18px;
-      height: 18px;
-      cursor: pointer;
-    }
-
-    .mode-option input[type="radio"]:checked {
-      accent-color: #667eea;
-    }
-
-    .mode-option:has(input[type="radio"]:checked) {
-      border-color: #667eea;
-      background: #f0f4ff;
-    }
-
-    .mode-label {
-      font-size: 15px;
-      font-weight: 700;
-      color: #2d3748;
-      display: block;
-      margin-bottom: 4px;
-    }
-
-    .mode-desc {
-      font-size: 13px;
-      color: #718096;
-      display: block;
-    }
-
-    .mode-settings {
-      margin-top: 10px;
-    }
-
-    .device-id-box {
-      margin-bottom: 20px;
-    }
-
-    .device-id-box label {
-      display: block;
-      font-size: 12px;
-      color: #718096;
-      margin-bottom: 8px;
-      text-transform: uppercase;
-      letter-spacing: 0.6px;
-      font-weight: 600;
-    }
-
-    .device-id-value {
-      background: white;
-      border: 2px solid #e2e8f0;
-      border-radius: 10px;
-      padding: 18px;
-      font-size: 28px;
-      font-weight: 800;
-      color: #2d3748;
-      letter-spacing: 5px;
-      text-align: center;
-      cursor: pointer;
-      transition: all 0.25s;
-      font-family: 'Consolas', 'Courier New', monospace;
-    }
-
-    .device-id-value:hover {
-      border-color: #667eea;
-      background: #f0f4ff;
-      transform: translateY(-1px);
-    }
-
-    .status-badge {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      background: #e6f4ea;
-      color: #135429;
-      padding: 12px 22px;
-      border-radius: 25px;
-      font-size: 14px;
-      font-weight: 600;
-      width: 100%;
-    }
-
-    .status-dot {
-      width: 12px;
-      height: 12px;
-      background: #2ecc71;
-      border-radius: 50%;
-      animation: pulse 2s infinite;
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.6; transform: scale(1.15); }
-    }
-
-    .input-group {
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-    }
-
-    .input-group input {
-      width: 100%;
-      padding: 16px 20px;
-      font-size: 18px;
-      border: 2px solid #e2e8f0;
-      border-radius: 10px;
-      outline: none;
-      transition: all 0.25s;
-      text-transform: uppercase;
-      letter-spacing: 3px;
-      font-family: 'Consolas', 'Courier New', monospace;
-    }
-
-    .input-group input:focus {
-      border-color: #667eea;
-      box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.15);
-    }
-
-    .btn {
-      padding: 16px 32px;
-      font-size: 16px;
-      font-weight: 700;
-      border: none;
-      border-radius: 10px;
-      cursor: pointer;
-      transition: all 0.25s;
-      width: 100%;
-    }
-
-    .btn-primary {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      box-shadow: 0 4px 15px rgba(102, 126, 234, 0.35);
-    }
-
-    .btn-primary:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 7px 20px rgba(102, 126, 234, 0.5);
-    }
-
-    .btn-primary:active {
-      transform: translateY(0);
-    }
-
-    .btn-secondary {
-      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-      color: white;
-      margin-top: 12px;
-    }
-
-    .preview-section {
-      grid-column: 1 / -1;
-      background: #f8f9fb;
-      border-radius: 12px;
-      padding: 24px;
-      border: 1px solid #e9ecef;
-    }
-
-    .preview-container {
-      background: #1a1a2e;
-      border-radius: 10px;
-      overflow: hidden;
-      margin-top: 15px;
-      border: 2px solid #e2e8f0;
-    }
-
-    .preview-video {
-      width: 100%;
-      height: 300px;
-      display: block;
-      background: #0d1117;
-      object-fit: contain;
-    }
-
-    .preview-placeholder {
-      height: 300px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      color: #94a3b8;
-    }
-
-    .preview-icon {
-      font-size: 56px;
-      margin-bottom: 15px;
-    }
-
-    .preview-text {
-      font-size: 15px;
-      margin-bottom: 8px;
-    }
-
-    .preview-subtext {
-      font-size: 13px;
-      color: #64748b;
-    }
-
-    .footer {
-      background: #f1f5f9;
-      padding: 18px;
-      text-align: center;
-      font-size: 12px;
-      color: #64748b;
-      border-top: 1px solid #e2e8f0;
-    }
-
-    @media (max-width: 768px) {
-      .grid {
-        grid-template-columns: 1fr;
-      }
-    }
-  </style>
+  <link rel="stylesheet" href="src/renderer/css/styles.css">
+  <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
 </head>
 <body>
   <div class="container">
@@ -331,9 +15,26 @@
     </div>
 
     <div class="content">
-      <div class="grid">
+      <div id="rolePage" class="page active">
+        <div class="role-selector">
+          <div class="role-card" onclick="selectRole('controller')">
+            <div class="role-icon">🖱️</div>
+            <div class="role-title">主控端</div>
+            <div class="role-desc">控制其他电脑<br>输入对方IP和端口即可连接</div>
+          </div>
+          <div class="role-card" onclick="selectRole('controlled')">
+            <div class="role-icon">💻</div>
+            <div class="role-title">被控端</div>
+            <div class="role-desc">让其他电脑控制本机<br>启动监听等待连接</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="controlledPage" class="page">
+        <button class="back-btn" onclick="goBack()">← 返回选择</button>
+        
         <div class="section">
-          <div class="section-title">我的设备</div>
+          <div class="section-title">设备信息</div>
           <div class="device-id-box">
             <label>设备 ID</label>
             <div class="device-id-value" id="deviceId" onclick="copyDeviceId()">
@@ -347,57 +48,98 @@
         </div>
 
         <div class="section">
-          <div class="section-title">连接设置</div>
+          <div class="section-title">连接模式</div>
           <div class="mode-selector">
-            <label class="mode-option">
-              <input type="radio" name="connectionMode" value="signaling" checked onchange="updateConnectionMode()">
-              <span class="mode-label">信令服务器模式</span>
-              <span class="mode-desc">适合大多数网络环境，自动NAT穿透</span>
-            </label>
-            <label class="mode-option">
-              <input type="radio" name="connectionMode" value="direct" onchange="updateConnectionMode()">
-              <span class="mode-label">直连模式</span>
-              <span class="mode-desc">两台电脑都有固定公网IP时使用，延迟最低</span>
-            </label>
+            <div class="mode-tab active" onclick="switchControlledMode('direct')">直连模式</div>
+            <div class="mode-tab" onclick="switchControlledMode('signaling')">信令服务器模式</div>
           </div>
           
-          <div id="signalingSettings" class="mode-settings">
-            <div class="input-group" style="margin-top: 15px;">
-              <label style="display: block; font-size: 12px; color: #718096; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600;">信令服务器地址</label>
-              <input type="text" id="serverUrl" placeholder="http://localhost:3000" value="http://localhost:3000">
+          <div id="controlledDirectMode" class="mode-content active">
+            <div class="input-group">
+              <label>监听端口</label>
+              <input type="number" id="listenPort" placeholder="8080" value="8080" min="1024" max="65535">
+              <button class="btn btn-primary" onclick="startListening()">开始监听</button>
+              <button class="btn btn-danger" onclick="stopListening()">停止监听</button>
             </div>
           </div>
           
-          <div id="directSettings" class="mode-settings" style="display: none;">
-            <div class="input-group" style="margin-top: 15px;">
-              <label style="display: block; font-size: 12px; color: #718096; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600;">对方 IP 地址</label>
-              <input type="text" id="remoteIp" placeholder="例如: 203.0.113.10 或 [2001:db8::1]">
+          <div id="controlledSignalingMode" class="mode-content">
+            <div class="input-group">
+              <label>信令服务器地址</label>
+              <input type="text" id="controlledServerUrl" placeholder="http://localhost:3000" value="http://localhost:3000">
+              <button class="btn btn-primary" onclick="controlledConnectToServer()">连接服务器</button>
+              <button class="btn btn-danger" onclick="controlledDisconnectFromServer()">断开连接</button>
             </div>
           </div>
         </div>
 
+        <div class="section" id="controlledDirectSection">
+          <div class="section-title">本机网络地址</div>
+          <div class="ip-list" id="localIpList">
+            加载中...
+          </div>
+        </div>
+
+        <div class="log-box">
+          <div class="log-title">连接日志</div>
+          <div class="log-content" id="connectionLog"></div>
+        </div>
+      </div>
+
+      <div id="controllerPage" class="page">
+        <button class="back-btn" onclick="goBack()">← 返回选择</button>
+        
         <div class="section">
-          <div class="section-title">远程控制</div>
-          <div class="input-group">
-            <input type="text" id="targetDeviceId" placeholder="输入对方设备 ID" maxlength="9">
-            <button class="btn btn-primary" onclick="connectDevice()">连接</button>
-            <button class="btn btn-secondary" onclick="openRemoteWindow()">打开远程窗口</button>
+          <div class="section-title">连接模式</div>
+          <div class="mode-selector">
+            <div class="mode-tab active" onclick="switchControllerMode('direct')">直连模式</div>
+            <div class="mode-tab" onclick="switchControllerMode('signaling')">信令服务器模式</div>
+          </div>
+          
+          <div id="controllerDirectMode" class="mode-content active">
+            <div class="section">
+              <div class="section-title">历史连接记录</div>
+              <div class="history-list" id="directHistoryList">
+                <div class="history-empty">暂无历史连接记录</div>
+              </div>
+            </div>
+            <div class="two-col">
+              <div class="input-group">
+                <label>对方 IP 地址</label>
+                <input type="text" id="remoteIp" placeholder="例如: 192.168.1.100, 203.0.113.10">
+              </div>
+              <div class="input-group">
+                <label>对方端口</label>
+                <input type="number" id="remotePort" placeholder="8080" value="8080" min="1024" max="65535">
+              </div>
+            </div>
+            <button class="btn btn-primary" onclick="connectDirect()" style="margin-top: 20px;">连接</button>
+          </div>
+          
+          <div id="controllerSignalingMode" class="mode-content">
+            <div class="section">
+              <div class="section-title">历史连接记录</div>
+              <div class="history-list" id="signalingHistoryList">
+                <div class="history-empty">暂无历史连接记录</div>
+              </div>
+            </div>
+            <div class="input-group">
+              <label>信令服务器地址</label>
+              <input type="text" id="controllerServerUrl" placeholder="http://localhost:3000" value="http://localhost:3000">
+              <button class="btn btn-secondary" style="margin-top: 10px;" onclick="controllerConnectToServer()">连接服务器</button>
+              <button class="btn btn-danger" style="margin-top: 10px;" onclick="controllerDisconnectFromServer()">断开连接</button>
+            </div>
+            <div class="input-group" style="margin-top: 20px;">
+              <label>对方设备 ID</label>
+              <input type="text" id="targetDeviceId" placeholder="输入对方设备 ID" maxlength="9">
+              <button class="btn btn-primary" style="margin-top: 10px;" onclick="connectDevice()">连接</button>
+            </div>
           </div>
         </div>
 
-        <div class="preview-section">
-          <div class="section-title">本地屏幕预览</div>
-          <div class="preview-container">
-            <div class="preview-placeholder" id="previewPlaceholder">
-              <div class="preview-icon">🖥️</div>
-              <div class="preview-text">点击下方按钮预览本地屏幕</div>
-              <div class="preview-subtext">测试屏幕捕获功能</div>
-            </div>
-            <video class="preview-video" id="previewVideo" autoplay playsinline muted style="display: none;"></video>
-          </div>
-          <button class="btn btn-secondary" style="margin-top: 15px;" onclick="toggleScreenPreview()">
-            <span id="previewBtnText">开始屏幕预览</span>
-          </button>
+        <div class="log-box">
+          <div class="log-title">连接日志</div>
+          <div class="log-content" id="connectionLogController"></div>
         </div>
       </div>
     </div>
@@ -407,411 +149,6 @@
     </div>
   </div>
 
-  <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
-  <script>
-    let myDeviceId = '';
-    let localStream = null;
-    let isPreviewing = false;
-    let socket = null;
-    let peerConnection = null;
-    let currentSessionId = null;
-    let incomingFromDeviceId = null;
-    let isController = false;
-    let dataChannel = null;
-    let connectionMode = 'signaling';
-
-    function getServerUrl() {
-      return document.getElementById('serverUrl').value || 'http://localhost:3000';
-    }
-
-    function getIceConfig() {
-      if (connectionMode === 'direct') {
-        return { iceServers: [] };
-      }
-      return {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-        ]
-      };
-    }
-
-    function updateConnectionMode() {
-      const mode = document.querySelector('input[name="connectionMode"]:checked').value;
-      connectionMode = mode;
-      
-      document.getElementById('signalingSettings').style.display = mode === 'signaling' ? 'block' : 'none';
-      document.getElementById('directSettings').style.display = mode === 'direct' ? 'block' : 'none';
-      
-      if (mode === 'signaling') {
-        connectToServer();
-      } else {
-        if (socket) {
-          socket.disconnect();
-          socket = null;
-        }
-        updateServerStatus('直连模式', 'connected');
-      }
-      
-      console.log('切换连接模式:', mode);
-    }
-
-    async function init() {
-      myDeviceId = await window.electronAPI.getDeviceId();
-      document.getElementById('deviceId').textContent = myDeviceId;
-      
-      updateConnectionMode();
-    }
-
-    function connectToServer() {
-      console.log('正在连接信令服务器...');
-      updateServerStatus('连接中...', 'connecting');
-      
-      socket = io(getServerUrl(), {
-        transports: ['websocket', 'polling']
-      });
-
-      socket.on('connect', () => {
-        console.log('已连接到信令服务器');
-        socket.emit('register', myDeviceId);
-        updateServerStatus('已连接', 'connected');
-      });
-
-      socket.on('disconnect', () => {
-        console.log('与信令服务器断开连接');
-        updateServerStatus('已断开', 'disconnected');
-      });
-
-      socket.on('connect_error', (error) => {
-        console.log('连接错误:', error);
-        updateServerStatus('连接失败', 'error');
-      });
-
-      socket.on('incoming-connection', (data) => {
-        console.log('收到连接请求:', data);
-        incomingFromDeviceId = data.fromDeviceId;
-        currentSessionId = data.sessionId;
-        isController = false;
-        showIncomingConnectionDialog(data.fromDeviceId);
-      });
-
-      socket.on('connection-result', async (data) => {
-        console.log('连接结果:', data);
-        if (data.accepted) {
-          isController = true;
-          await startControllerConnection();
-        } else {
-          alert('对方拒绝了连接请求');
-        }
-      });
-
-      socket.on('offer', async (data) => {
-        console.log('收到 offer:', data);
-        await handleOffer(data);
-      });
-
-      socket.on('answer', async (data) => {
-        console.log('收到 answer:', data);
-        await handleAnswer(data);
-      });
-
-      socket.on('ice-candidate', async (data) => {
-        console.log('收到 ICE candidate:', data);
-        await handleIceCandidate(data);
-      });
-    }
-
-    function updateServerStatus(text, status) {
-      const statusText = document.getElementById('serverStatusText');
-      const statusBadge = document.getElementById('serverStatus');
-      const statusDot = document.querySelector('.status-dot');
-      
-      statusText.textContent = text;
-      
-      const statusStyles = {
-        'connected': { bg: '#e6f4ea', color: '#135429', dotColor: '#2ecc71' },
-        'connecting': { bg: '#fff3cd', color: '#856404', dotColor: '#ffc107' },
-        'disconnected': { bg: '#f8d7da', color: '#721c24', dotColor: '#e74c3c' },
-        'error': { bg: '#f8d7da', color: '#721c24', dotColor: '#e74c3c' }
-      };
-      
-      const style = statusStyles[status] || statusStyles['disconnected'];
-      statusBadge.style.background = style.bg;
-      statusBadge.style.color = style.color;
-      statusDot.style.background = style.dotColor;
-    }
-
-    function copyDeviceId() {
-      navigator.clipboard.writeText(myDeviceId).then(() => {
-        const el = document.getElementById('deviceId');
-        const originalText = el.textContent;
-        el.textContent = '已复制!';
-        setTimeout(() => {
-          el.textContent = originalText;
-        }, 1500);
-      }).catch(err => {
-        console.error('复制失败:', err);
-      });
-    }
-
-    function showIncomingConnectionDialog(fromDeviceId) {
-      if (confirm(`设备 ${fromDeviceId} 想要连接到你的电脑，是否接受？`)) {
-        acceptConnection();
-      } else {
-        rejectConnection();
-      }
-    }
-
-    async function acceptConnection() {
-      socket.emit('connection-response', {
-        sessionId: currentSessionId,
-        accepted: true,
-        fromDeviceId: incomingFromDeviceId,
-        toDeviceId: myDeviceId
-      });
-
-      await startControlledConnection();
-    }
-
-    function rejectConnection() {
-      socket.emit('connection-response', {
-        sessionId: currentSessionId,
-        accepted: false,
-        fromDeviceId: incomingFromDeviceId,
-        toDeviceId: myDeviceId
-      });
-    }
-
-    async function connectDevice() {
-      const targetId = document.getElementById('targetDeviceId').value.trim().toUpperCase();
-      if (!targetId) {
-        alert('请输入设备 ID');
-        return;
-      }
-      if (targetId.length !== 9) {
-        alert('设备 ID 格式不正确（需要 9 位字符）');
-        return;
-      }
-      if (targetId === myDeviceId) {
-        alert('不能连接自己');
-        return;
-      }
-      if (!socket || !socket.connected) {
-        alert('未连接到信令服务器，请检查服务器是否启动');
-        return;
-      }
-
-      incomingFromDeviceId = targetId;
-      socket.emit('connect-request', {
-        fromDeviceId: myDeviceId,
-        toDeviceId: targetId
-      });
-
-      alert('连接请求已发送，请等待对方确认...');
-    }
-
-    async function startControllerConnection() {
-      console.log('作为主控端建立连接');
-      await createPeerConnection();
-      
-      try {
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
-        
-        socket.emit('offer', {
-          sessionId: currentSessionId,
-          offer: offer,
-          toDeviceId: incomingFromDeviceId
-        });
-      } catch (error) {
-        console.error('创建 offer 失败:', error);
-      }
-    }
-
-    async function startControlledConnection() {
-      console.log('作为被控端建立连接');
-      await createPeerConnection();
-      await startScreenCapture();
-    }
-
-    async function createPeerConnection() {
-      peerConnection = new RTCPeerConnection(getIceConfig());
-
-      peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-          socket.emit('ice-candidate', {
-            sessionId: currentSessionId,
-            candidate: event.candidate,
-            toDeviceId: incomingFromDeviceId
-          });
-        }
-      };
-
-      peerConnection.ontrack = (event) => {
-        console.log('收到远程媒体流');
-        const stream = event.streams[0];
-        window.remoteStream = stream;
-        window.electronAPI.openRemoteWindow();
-        
-        setTimeout(() => {
-          window.electronAPI.sendToRemoteWindow('remote-stream', { hasStream: true });
-        }, 500);
-      };
-
-      peerConnection.onconnectionstatechange = () => {
-        console.log('连接状态:', peerConnection.connectionState);
-      };
-
-      peerConnection.ondatachannel = (event) => {
-        console.log('收到数据通道');
-        dataChannel = event.channel;
-        setupDataChannel();
-      };
-
-      if (isController) {
-        console.log('创建数据通道（主控端）');
-        dataChannel = peerConnection.createDataChannel('control');
-        setupDataChannel();
-      }
-    }
-
-    function setupDataChannel() {
-      dataChannel.onopen = () => {
-        console.log('数据通道已打开');
-      };
-
-      dataChannel.onmessage = (event) => {
-        console.log('收到数据通道消息:', event.data);
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === 'input') {
-            window.electronAPI.send('remote-input', data);
-          }
-        } catch (e) {
-          console.error('解析数据失败:', e);
-        }
-      };
-
-      dataChannel.onclose = () => {
-        console.log('数据通道已关闭');
-      };
-
-      dataChannel.onerror = (error) => {
-        console.error('数据通道错误:', error);
-      };
-    }
-
-    async function handleOffer(data) {
-      incomingFromDeviceId = data.fromDeviceId || incomingFromDeviceId;
-      currentSessionId = data.sessionId;
-      
-      await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
-      
-      const answer = await peerConnection.createAnswer();
-      await peerConnection.setLocalDescription(answer);
-      
-      socket.emit('answer', {
-        sessionId: currentSessionId,
-        answer: answer,
-        toDeviceId: incomingFromDeviceId
-      });
-    }
-
-    async function handleAnswer(data) {
-      await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
-    }
-
-    async function handleIceCandidate(data) {
-      if (data.candidate) {
-        await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-      }
-    }
-
-    async function startScreenCapture() {
-      try {
-        const sources = await window.electronAPI.getSources();
-        console.log('可用屏幕源:', sources);
-        
-        if (sources.length > 0) {
-          const stream = await navigator.mediaDevices.getUserMedia({
-            audio: false,
-            video: {
-              mandatory: {
-                chromeMediaSource: 'desktop',
-                chromeMediaSourceId: sources[0].id,
-                maxWidth: 1920,
-                maxHeight: 1080,
-                maxFrameRate: 30
-              }
-            }
-          });
-
-          stream.getTracks().forEach(track => {
-            peerConnection.addTrack(track, stream);
-          });
-
-          console.log('屏幕捕获成功');
-        }
-      } catch (error) {
-        console.error('屏幕捕获失败:', error);
-      }
-    }
-
-    function openRemoteWindow() {
-      window.electronAPI.openRemoteWindow();
-    }
-
-    async function toggleScreenPreview() {
-      const video = document.getElementById('previewVideo');
-      const placeholder = document.getElementById('previewPlaceholder');
-      const btnText = document.getElementById('previewBtnText');
-
-      if (!isPreviewing) {
-        try {
-          const sources = await window.electronAPI.getSources();
-          
-          if (sources.length === 0) {
-            alert('未找到可用的屏幕源');
-            return;
-          }
-
-          const stream = await navigator.mediaDevices.getUserMedia({
-            audio: false,
-            video: {
-              mandatory: {
-                chromeMediaSource: 'desktop',
-                chromeMediaSourceId: sources[0].id,
-                maxWidth: 1920,
-                maxHeight: 1080,
-                maxFrameRate: 30
-              }
-            }
-          });
-
-          localStream = stream;
-          video.srcObject = stream;
-          video.style.display = 'block';
-          placeholder.style.display = 'none';
-          btnText.textContent = '停止屏幕预览';
-          isPreviewing = true;
-        } catch (error) {
-          console.error('屏幕预览失败:', error);
-          alert('屏幕预览失败: ' + error.message);
-        }
-      } else {
-        if (localStream) {
-          localStream.getTracks().forEach(track => track.stop());
-          localStream = null;
-        }
-        video.srcObject = null;
-        video.style.display = 'none';
-        placeholder.style.display = 'flex';
-        btnText.textContent = '开始屏幕预览';
-        isPreviewing = false;
-      }
-    }
-
-    init();
-  </script>
+  <script src="src/renderer/js/app.js"></script>
 </body>
 </html>

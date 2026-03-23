@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, desktopCapturer, screen, systemPreferences, Input } = require('electron')
 const path = require('path')
 const os = require('os')
+const net = require('net')
 
 const instanceId = Math.random().toString(36).substr(2, 8)
 const userDataPath = path.join(os.tmpdir(), `ycdesk-${instanceId}`)
@@ -276,6 +277,173 @@ ipcMain.on('remote-input', async (event, inputData) => {
   } catch (error) {
     console.error('处理远程输入失败:', error)
   }
+})
+
+let directServer = null
+let directClientConnections = new Map()
+
+ipcMain.handle('get-local-ips', () => {
+  const interfaces = os.networkInterfaces()
+  const ipList = []
+  
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        ipList.push({ address: iface.address, family: 'IPv4', name: name })
+      } else if (iface.family === 'IPv6' && !iface.internal && iface.scopeid === 0) {
+        ipList.push({ address: iface.address, family: 'IPv6', name: name })
+      }
+    }
+  }
+  
+  return ipList
+})
+
+ipcMain.handle('start-direct-server', async (event, port) => {
+  try {
+    if (directServer) {
+      directServer.close()
+    }
+    
+    directServer = net.createServer((clientSocket) => {
+      const clientId = Math.random().toString(36).substr(2, 8)
+      directClientConnections.set(clientId, clientSocket)
+      
+      mainWindow.webContents.send('direct-incoming-connection', {
+        clientId: clientId,
+        remoteAddress: clientSocket.remoteAddress,
+        remotePort: clientSocket.remotePort
+      })
+      
+      let buffer = ''
+      clientSocket.on('data', (data) => {
+        buffer += data.toString()
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+        
+        for (const line of lines) {
+          if (line.trim()) {
+            try {
+              const message = JSON.parse(line)
+              mainWindow.webContents.send('direct-message', {
+                clientId: clientId,
+                message: message
+              })
+            } catch (e) {
+            }
+          }
+        }
+      })
+      
+      clientSocket.on('close', () => {
+        directClientConnections.delete(clientId)
+        mainWindow.webContents.send('direct-connection-closed', { clientId: clientId })
+      })
+      
+      clientSocket.on('error', (err) => {
+        console.error('客户端连接错误:', err)
+      })
+    })
+    
+    await new Promise((resolve, reject) => {
+      directServer.listen(port, '0.0.0.0', () => {
+        console.log('直连服务器已启动，监听端口:', port)
+        resolve()
+      })
+      
+      directServer.on('error', (err) => {
+        reject(err)
+      })
+    })
+    
+    return { success: true, port: port }
+  } catch (error) {
+    console.error('启动直连服务器失败:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('stop-direct-server', async () => {
+  if (directServer) {
+    directServer.close()
+    directServer = null
+  }
+  directClientConnections.clear()
+  return { success: true }
+})
+
+ipcMain.handle('connect-direct-client', async (event, host, port) => {
+  try {
+    const clientSocket = new net.Socket()
+    const clientId = Math.random().toString(36).substr(2, 8)
+    
+    await new Promise((resolve, reject) => {
+      clientSocket.connect(port, host, () => {
+        directClientConnections.set(clientId, clientSocket)
+        resolve()
+      })
+      
+      clientSocket.on('error', (err) => {
+        reject(err)
+      })
+    })
+    
+    let buffer = ''
+    clientSocket.on('data', (data) => {
+      buffer += data.toString()
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+      
+      for (const line of lines) {
+        if (line.trim()) {
+          try {
+            const message = JSON.parse(line)
+            mainWindow.webContents.send('direct-message', {
+              clientId: clientId,
+              message: message
+            })
+          } catch (e) {
+          }
+        }
+      }
+    })
+    
+    clientSocket.on('close', () => {
+      directClientConnections.delete(clientId)
+      mainWindow.webContents.send('direct-connection-closed', { clientId: clientId })
+    })
+    
+    clientSocket.on('error', (err) => {
+      console.error('直连客户端错误:', err)
+    })
+    
+    return { success: true, clientId: clientId }
+  } catch (error) {
+    console.error('连接直连客户端失败:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('send-direct-message', async (event, clientId, message) => {
+  const clientSocket = directClientConnections.get(clientId)
+  if (clientSocket) {
+    try {
+      clientSocket.write(JSON.stringify(message) + '\n')
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  }
+  return { success: false, error: '客户端未找到' }
+})
+
+ipcMain.handle('close-direct-connection', async (event, clientId) => {
+  const clientSocket = directClientConnections.get(clientId)
+  if (clientSocket) {
+    clientSocket.destroy()
+    directClientConnections.delete(clientId)
+  }
+  return { success: true }
 })
 
 console.log('YCDesk 主进程已加载')

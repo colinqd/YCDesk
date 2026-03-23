@@ -25,15 +25,15 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 20px;
+      padding: 10px;
     }
 
     .container {
       background: white;
-      border-radius: 20px;
+      border-radius: 14px;
       box-shadow: 0 25px 80px rgba(0, 0, 0, 0.35);
       width: 100%;
-      max-width: 500px;
+      max-width: 420px;
       overflow: hidden;
       animation: slideUp 0.4s ease-out;
     }
@@ -41,7 +41,7 @@
     @keyframes slideUp {
       from {
         opacity: 0;
-        transform: translateY(30px);
+        transform: translateY(20px);
       }
       to {
         opacity: 1;
@@ -52,61 +52,127 @@
     .header {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
-      padding: 30px 20px;
+      padding: 18px 15px;
       text-align: center;
     }
 
     .header h1 {
-      font-size: 32px;
-      margin-bottom: 8px;
+      font-size: 24px;
+      margin-bottom: 4px;
       font-weight: 700;
-      letter-spacing: 2px;
+      letter-spacing: 1px;
     }
 
     .header p {
       opacity: 0.92;
-      font-size: 14px;
+      font-size: 12px;
     }
 
     .content {
+      padding: 15px 12px;
+    }
+
+    .page {
+      display: none;
+    }
+
+    .page.active {
+      display: block;
+    }
+
+    .back-btn {
+      background: #6c757d;
+      color: white;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-bottom: 15px;
+      font-size: 13px;
+      transition: all 0.25s;
+      width: 100%;
+    }
+
+    .back-btn:active {
+      background: #5a6268;
+      transform: scale(0.98);
+    }
+
+    .role-selector {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+
+    .role-card {
+      background: #f8f9fb;
+      border: 2px solid #e2e8f0;
+      border-radius: 12px;
       padding: 25px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    .role-card:active {
+      border-color: #667eea;
+      background: #f0f4ff;
+      transform: scale(0.98);
+    }
+
+    .role-icon {
+      font-size: 48px;
+      margin-bottom: 15px;
+    }
+
+    .role-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #2d3748;
+      margin-bottom: 10px;
+    }
+
+    .role-desc {
+      font-size: 13px;
+      color: #718096;
+      line-height: 1.6;
     }
 
     .section {
       background: #f8f9fb;
-      border-radius: 16px;
-      padding: 20px;
-      margin-bottom: 20px;
+      border-radius: 12px;
+      padding: 14px;
       border: 1px solid #e9ecef;
+      margin-bottom: 14px;
     }
 
     .section-title {
-      font-size: 15px;
+      font-size: 13px;
       font-weight: 700;
       color: #2d3748;
-      margin-bottom: 15px;
+      margin-bottom: 12px;
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
     }
 
     .section-title::before {
       content: '';
-      width: 4px;
-      height: 18px;
+      width: 3px;
+      height: 14px;
       background: #667eea;
       border-radius: 2px;
     }
 
     .device-id-box {
-      margin-bottom: 15px;
+      margin-bottom: 12px;
     }
 
     .device-id-box label {
       display: block;
-      font-size: 12px;
+      font-size: 10px;
       color: #718096;
-      margin-bottom: 8px;
+      margin-bottom: 5px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
       font-weight: 600;
@@ -115,12 +181,12 @@
     .device-id-value {
       background: white;
       border: 2px solid #e2e8f0;
-      border-radius: 12px;
-      padding: 16px;
-      font-size: 24px;
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 20px;
       font-weight: 800;
       color: #2d3748;
-      letter-spacing: 4px;
+      letter-spacing: 3px;
       text-align: center;
       cursor: pointer;
       transition: all 0.25s;
@@ -136,22 +202,22 @@
     }
 
     .status-badge {
-      display: flex;
+      display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 10px;
+      gap: 8px;
       background: #e6f4ea;
       color: #135429;
-      padding: 12px 18px;
-      border-radius: 25px;
-      font-size: 13px;
+      padding: 10px 18px;
+      border-radius: 20px;
+      font-size: 12px;
       font-weight: 600;
       width: 100%;
     }
 
     .status-dot {
-      width: 10px;
-      height: 10px;
+      width: 8px;
+      height: 8px;
       background: #2ecc71;
       border-radius: 50%;
       animation: pulse 2s infinite;
@@ -159,99 +225,99 @@
 
     @keyframes pulse {
       0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.6; transform: scale(1.2); }
+      50% { opacity: 0.6; transform: scale(1.15); }
     }
 
     .mode-selector {
       display: flex;
-      flex-direction: column;
-      gap: 10px;
+      gap: 8px;
+      margin-bottom: 15px;
     }
 
-    .mode-option {
-      display: flex;
-      align-items: flex-start;
-      gap: 12px;
-      padding: 14px;
-      background: white;
+    .mode-tab {
+      flex: 1;
+      padding: 10px 14px;
       border: 2px solid #e2e8f0;
-      border-radius: 12px;
+      background: white;
+      border-radius: 10px;
       cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      color: #4a5568;
       transition: all 0.25s;
+      text-align: center;
     }
 
-    .mode-option:active {
-      transform: scale(0.98);
-    }
-
-    .mode-option input[type="radio"] {
-      margin-top: 3px;
-      width: 20px;
-      height: 20px;
-      cursor: pointer;
-      accent-color: #667eea;
-    }
-
-    .mode-option.selected {
+    .mode-tab:active {
       border-color: #667eea;
       background: #f0f4ff;
     }
 
-    .mode-label {
-      font-size: 14px;
-      font-weight: 700;
-      color: #2d3748;
-      display: block;
-      margin-bottom: 3px;
+    .mode-tab.active {
+      border-color: #667eea;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
     }
 
-    .mode-desc {
-      font-size: 12px;
-      color: #718096;
+    .mode-content {
+      display: none;
+    }
+
+    .mode-content.active {
       display: block;
-      line-height: 1.4;
     }
 
     .input-group {
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 8px;
     }
 
     .input-group label {
       display: block;
-      font-size: 12px;
+      font-size: 10px;
       color: #718096;
-      margin-bottom: 4px;
+      margin-bottom: 3px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
       font-weight: 600;
     }
 
-    .input-group input {
+    .input-group input,
+    .input-group textarea {
       width: 100%;
-      padding: 14px 16px;
-      font-size: 16px;
+      padding: 10px 12px;
+      font-size: 14px;
       border: 2px solid #e2e8f0;
-      border-radius: 12px;
+      border-radius: 10px;
       outline: none;
       transition: all 0.25s;
-      text-transform: uppercase;
-      letter-spacing: 2px;
       font-family: 'Consolas', 'Courier New', monospace;
     }
 
-    .input-group input:focus {
+    .input-group input {
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .input-group textarea {
+      min-height: 55px;
+      font-size: 10px;
+      resize: vertical;
+    }
+
+    .input-group input:focus,
+    .input-group textarea:focus {
       border-color: #667eea;
-      box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.15);
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
     }
 
     .btn {
-      padding: 16px 24px;
-      font-size: 16px;
+      padding: 12px 18px;
+      font-size: 14px;
       font-weight: 700;
       border: none;
-      border-radius: 12px;
+      border-radius: 10px;
       cursor: pointer;
       transition: all 0.25s;
       width: 100%;
@@ -273,10 +339,77 @@
       color: white;
     }
 
+    .btn-danger {
+      background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+      color: white;
+    }
+
     .btn:disabled {
       opacity: 0.5;
       cursor: not-allowed;
       transform: none !important;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-group .btn {
+      flex: 1;
+    }
+
+    .log-box {
+      margin-top: 12px;
+      background: #1a1a2e;
+      border-radius: 8px;
+      padding: 10px;
+      max-height: 90px;
+      overflow-y: auto;
+    }
+
+    .log-title {
+      color: #94a3b8;
+      font-size: 10px;
+      margin-bottom: 5px;
+      font-weight: 600;
+    }
+
+    .log-content {
+      color: #22c55e;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 9px;
+      line-height: 1.4;
+    }
+
+    .ip-list {
+      background: white;
+      border: 2px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 12px;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 11px;
+      max-height: 100px;
+      overflow-y: auto;
+    }
+
+    .ip-item {
+      padding: 4px 0;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .footer {
+      background: #f1f5f9;
+      padding: 10px;
+      text-align: center;
+      font-size: 11px;
+      color: #64748b;
+      border-top: 1px solid #e2e8f0;
     }
 
     .remote-screen {
@@ -299,22 +432,22 @@
 
     .control-overlay {
       position: fixed;
-      bottom: 20px;
+      bottom: 15px;
       left: 50%;
       transform: translateX(-50%);
       display: flex;
-      gap: 12px;
+      gap: 10px;
       z-index: 1000;
     }
 
     .control-btn {
-      width: 56px;
-      height: 56px;
+      width: 48px;
+      height: 48px;
       border-radius: 50%;
       border: none;
       background: rgba(255, 255, 255, 0.95);
       color: #2d3748;
-      font-size: 24px;
+      font-size: 20px;
       cursor: pointer;
       box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
       transition: all 0.25s;
@@ -334,14 +467,14 @@
 
     .toast {
       position: fixed;
-      top: 20px;
+      top: 15px;
       left: 50%;
       transform: translateX(-50%) translateY(-100px);
       background: rgba(0, 0, 0, 0.85);
       color: white;
-      padding: 12px 24px;
+      padding: 10px 18px;
       border-radius: 8px;
-      font-size: 14px;
+      font-size: 13px;
       z-index: 9999;
       transition: transform 0.3s ease;
       max-width: 80%;
@@ -354,31 +487,18 @@
 
     .loading-spinner {
       display: inline-block;
-      width: 20px;
-      height: 20px;
-      border: 3px solid rgba(255, 255, 255, 0.3);
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
       border-radius: 50%;
       border-top-color: white;
       animation: spin 0.8s linear infinite;
-      margin-right: 10px;
+      margin-right: 8px;
       vertical-align: middle;
     }
 
     @keyframes spin {
       to { transform: rotate(360deg); }
-    }
-
-    .mode-settings {
-      margin-top: 15px;
-    }
-
-    .footer {
-      background: #f1f5f9;
-      padding: 15px;
-      text-align: center;
-      font-size: 12px;
-      color: #64748b;
-      border-top: 1px solid #e2e8f0;
     }
   </style>
 </head>
@@ -390,59 +510,123 @@
     </div>
 
     <div class="content">
-      <div class="section">
-        <div class="section-title">我的设备</div>
-        <div class="device-id-box">
-          <label>设备 ID</label>
-          <div class="device-id-value" id="deviceId" onclick="copyDeviceId()">
-            加载中...
+      <div id="rolePage" class="page active">
+        <div class="role-selector">
+          <div class="role-card" onclick="selectRole('controller')">
+            <div class="role-icon">🖱️</div>
+            <div class="role-title">主控端</div>
+            <div class="role-desc">控制其他电脑<br>输入对方设备ID或直连</div>
           </div>
-        </div>
-        <div class="status-badge" id="serverStatus">
-          <span class="status-dot"></span>
-          <span id="serverStatusText">就绪</span>
-        </div>
-      </div>
-
-      <div class="section">
-        <div class="section-title">连接设置</div>
-        <div class="mode-selector" id="modeSelector">
-          <label class="mode-option selected" onclick="selectMode('signaling', this)">
-            <input type="radio" name="connectionMode" value="signaling" checked>
-            <span>
-              <span class="mode-label">信令服务器模式</span>
-              <span class="mode-desc">适合大多数网络环境，自动NAT穿透</span>
-            </span>
-          </label>
-          <label class="mode-option" onclick="selectMode('direct', this)">
-            <input type="radio" name="connectionMode" value="direct">
-            <span>
-              <span class="mode-label">直连模式</span>
-              <span class="mode-desc">两台设备都有固定公网IP时使用</span>
-            </span>
-          </label>
-        </div>
-        
-        <div id="signalingSettings" class="mode-settings">
-          <div class="input-group">
-            <label>信令服务器地址</label>
-            <input type="text" id="serverUrl" placeholder="http://your-server.com:3000" value="">
-          </div>
-        </div>
-        
-        <div id="directSettings" class="mode-settings" style="display: none;">
-          <div class="input-group">
-            <label>对方 IP 地址</label>
-            <input type="text" id="remoteIp" placeholder="例如: 203.0.113.10">
+          <div class="role-card" onclick="selectRole('controlled')">
+            <div class="role-icon">💻</div>
+            <div class="role-title">被控端</div>
+            <div class="role-desc">让其他设备控制<br>等待连接（仅演示）</div>
           </div>
         </div>
       </div>
 
-      <div class="section">
-        <div class="section-title">远程控制</div>
-        <div class="input-group">
-          <input type="text" id="targetDeviceId" placeholder="输入对方设备 ID" maxlength="9">
-          <button class="btn btn-primary" onclick="connectDevice()" id="connectBtn">连接</button>
+      <div id="controllerPage" class="page">
+        <button class="back-btn" onclick="goBack()">← 返回选择</button>
+        
+        <div class="section">
+          <div class="section-title">连接模式</div>
+          <div class="mode-selector">
+            <div class="mode-tab active" onclick="switchControllerMode('direct')">直连模式</div>
+            <div class="mode-tab" onclick="switchControllerMode('signaling')">信令服务器</div>
+          </div>
+          
+          <div id="controllerDirectMode" class="mode-content active">
+            <div class="two-col">
+              <div class="input-group">
+                <label>对方 IP 地址</label>
+                <input type="text" id="remoteIp" placeholder="例如: 192.168.1.100">
+              </div>
+              <div class="input-group">
+                <label>对方端口</label>
+                <input type="number" id="remotePort" placeholder="8080" value="8080" min="1024" max="65535">
+              </div>
+            </div>
+            <button class="btn btn-primary" style="margin-top: 15px;" onclick="connectDirect()">连接</button>
+          </div>
+          
+          <div id="controllerSignalingMode" class="mode-content">
+            <div class="input-group">
+              <label>信令服务器地址</label>
+              <input type="text" id="serverUrl" placeholder="http://your-server.com:3000" value="http://10.0.2.2:3000">
+            </div>
+            <div class="btn-group" style="margin-top: 10px;">
+              <button class="btn btn-secondary" onclick="manualConnectToServer()">连接服务器</button>
+              <button class="btn btn-danger" onclick="disconnectFromServer()">断开连接</button>
+            </div>
+            <div class="input-group" style="margin-top: 15px;">
+              <label>对方设备 ID</label>
+              <input type="text" id="targetDeviceId" placeholder="输入对方设备 ID" maxlength="9">
+            </div>
+            <button class="btn btn-primary" style="margin-top: 10px;" onclick="connectDevice()">连接</button>
+          </div>
+          
+          <div class="log-box">
+            <div class="log-title">连接日志</div>
+            <div id="connectionLog" class="log-content"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="controlledPage" class="page">
+        <button class="back-btn" onclick="goBack()">← 返回选择</button>
+        
+        <div class="section">
+          <div class="section-title">设备信息</div>
+          <div class="device-id-box">
+            <label>设备 ID</label>
+            <div class="device-id-value" id="deviceId" onclick="copyDeviceId()">
+              加载中...
+            </div>
+          </div>
+          <div class="status-badge" id="serverStatus">
+            <span class="status-dot"></span>
+            <span id="serverStatusText">就绪</span>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">连接模式</div>
+          <div class="mode-selector">
+            <div class="mode-tab active" onclick="switchControlledMode('direct')">直连模式</div>
+            <div class="mode-tab" onclick="switchControlledMode('signaling')">信令服务器</div>
+          </div>
+          
+          <div id="controlledDirectMode" class="mode-content active">
+            <div class="input-group">
+              <label>监听端口</label>
+              <input type="number" id="listenPort" placeholder="8080" value="8080" min="1024" max="65535">
+              <button class="btn btn-primary" onclick="startListening()">开始监听</button>
+              <button class="btn btn-danger" onclick="stopListening()">停止监听</button>
+            </div>
+          </div>
+          
+          <div id="controlledSignalingMode" class="mode-content">
+            <div class="input-group">
+              <label>信令服务器地址</label>
+              <input type="text" id="controlledServerUrl" placeholder="http://your-server.com:3000" value="http://10.0.2.2:3000">
+            </div>
+            <div class="btn-group" style="margin-top: 10px;">
+              <button class="btn btn-secondary" onclick="controlledConnectToServer()">连接服务器</button>
+              <button class="btn btn-danger" onclick="controlledDisconnectFromServer()">断开连接</button>
+            </div>
+          </div>
+          
+          <div class="section" id="controlledDirectSection">
+            <div class="section-title">本机网络地址</div>
+            <div class="ip-list" id="localIpList">
+              加载中...
+            </div>
+          </div>
+          
+          <div class="log-box">
+            <div class="log-title">连接日志</div>
+            <div id="connectionLogControlled" class="log-content"></div>
+          </div>
         </div>
       </div>
     </div>
