@@ -403,6 +403,77 @@
       gap: 10px;
     }
 
+    .history-list {
+      background: white;
+      border: 2px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 8px;
+      max-height: 100px;
+      overflow-y: auto;
+      margin-bottom: 12px;
+    }
+
+    .history-empty {
+      color: #94a3b8;
+      text-align: center;
+      padding: 15px;
+      font-size: 11px;
+    }
+
+    .history-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px;
+      border-radius: 6px;
+      background: #f8fafc;
+      margin-bottom: 6px;
+    }
+
+    .history-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .history-info {
+      flex: 1;
+    }
+
+    .history-target {
+      font-size: 11px;
+      font-weight: 600;
+      color: #2d3748;
+    }
+
+    .history-time {
+      font-size: 9px;
+      color: #94a3b8;
+      margin-top: 2px;
+    }
+
+    .history-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    .history-btn {
+      padding: 5px 10px;
+      font-size: 10px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .history-btn-connect {
+      background: #667eea;
+      color: white;
+    }
+
+    .history-btn-delete {
+      background: #e74c3c;
+      color: white;
+    }
+
     .footer {
       background: #f1f5f9;
       padding: 10px;
@@ -417,10 +488,21 @@
       height: 100%;
       background: #000;
       display: none;
+      position: relative;
     }
 
     .remote-screen.active {
-      display: block;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .remote-video-container {
+      flex: 1;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
     }
 
     .remote-video {
@@ -428,6 +510,61 @@
       height: 100%;
       object-fit: contain;
       background: #000;
+      transform-origin: center center;
+      transition: transform 0.1s ease-out;
+    }
+
+    .remote-video.fullscreen {
+      object-fit: cover;
+    }
+
+    .stats-overlay {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.7);
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-family: 'Consolas', monospace;
+      z-index: 100;
+      min-width: 120px;
+    }
+
+    .stats-item {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+
+    .stats-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .stats-label {
+      color: #94a3b8;
+    }
+
+    .stats-value {
+      color: #22c55e;
+      font-weight: 600;
+    }
+
+    .mouse-cursor {
+      position: absolute;
+      width: 24px;
+      height: 24px;
+      pointer-events: none;
+      z-index: 200;
+      transform: translate(-50%, -50%);
+      transition: none;
+    }
+
+    .mouse-cursor svg {
+      width: 100%;
+      height: 100%;
+      filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.5));
     }
 
     .control-overlay {
@@ -463,6 +600,82 @@
     .control-btn.danger {
       background: #e74c3c;
       color: white;
+    }
+
+    .keyboard-overlay {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: rgba(30, 30, 30, 0.98);
+      padding: 8px;
+      z-index: 2000;
+      display: none;
+      flex-direction: column;
+      gap: 6px;
+      border-top: 1px solid #444;
+    }
+
+    .keyboard-overlay.active {
+      display: flex;
+    }
+
+    .keyboard-row {
+      display: flex;
+      justify-content: center;
+      gap: 4px;
+    }
+
+    .keyboard-key {
+      min-width: 32px;
+      height: 40px;
+      background: #505050;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      font-size: 14px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background 0.1s;
+      padding: 0 8px;
+    }
+
+    .keyboard-key:active {
+      background: #707070;
+    }
+
+    .keyboard-key.special {
+      background: #404040;
+      min-width: 48px;
+    }
+
+    .keyboard-key.space {
+      flex: 1;
+      max-width: 200px;
+    }
+
+    .keyboard-key.active {
+      background: #667eea;
+    }
+
+    .remote-screen.fullscreen-mode {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 9999;
+    }
+
+    .remote-screen.fullscreen-mode .stats-overlay {
+      display: none;
+    }
+
+    .remote-screen.fullscreen-mode .control-overlay {
+      bottom: 70px;
     }
 
     .toast {
@@ -536,6 +749,12 @@
           </div>
           
           <div id="controllerDirectMode" class="mode-content active">
+            <div class="section" style="padding: 0; margin-bottom: 12px;">
+              <div class="section-title">历史连接记录</div>
+              <div class="history-list" id="directHistoryList">
+                <div class="history-empty">暂无历史连接记录</div>
+              </div>
+            </div>
             <div class="two-col">
               <div class="input-group">
                 <label>对方 IP 地址</label>
@@ -550,6 +769,12 @@
           </div>
           
           <div id="controllerSignalingMode" class="mode-content">
+            <div class="section" style="padding: 0; margin-bottom: 12px;">
+              <div class="section-title">历史连接记录</div>
+              <div class="history-list" id="signalingHistoryList">
+                <div class="history-empty">暂无历史连接记录</div>
+              </div>
+            </div>
             <div class="input-group">
               <label>信令服务器地址</label>
               <input type="text" id="serverUrl" placeholder="http://your-server.com:3000" value="http://10.0.2.2:3000">
@@ -637,11 +862,129 @@
   </div>
 
   <div class="remote-screen" id="remoteScreen">
-    <video class="remote-video" id="remoteVideo" autoplay playsinline></video>
+    <div class="stats-overlay" id="statsOverlay">
+      <div class="stats-item">
+        <span class="stats-label">分辨率:</span>
+        <span class="stats-value" id="statsResolution">-</span>
+      </div>
+      <div class="stats-item">
+        <span class="stats-label">帧率:</span>
+        <span class="stats-value" id="statsFps">-</span>
+      </div>
+      <div class="stats-item">
+        <span class="stats-label">延迟:</span>
+        <span class="stats-value" id="statsLatency">-</span>
+      </div>
+      <div class="stats-item">
+        <span class="stats-label">码率:</span>
+        <span class="stats-value" id="statsBitrate">-</span>
+      </div>
+    </div>
+    <div class="remote-video-container" id="videoContainer">
+      <video class="remote-video" id="remoteVideo" autoplay playsinline></video>
+      <div class="mouse-cursor" id="mouseCursor" style="display: none;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+          <path d="M4 4l7 17 2.5-6.5L20 12 4 4z" fill="white" stroke="black"/>
+        </svg>
+      </div>
+    </div>
     <div class="control-overlay">
-      <button class="control-btn" onclick="showKeyboard()">⌨️</button>
-      <button class="control-btn" onclick="toggleMouse()">🖱️</button>
+      <button class="control-btn" onclick="toggleKeyboard()">⌨️</button>
+      <button class="control-btn" onclick="toggleMouseMode()">🖱️</button>
+      <button class="control-btn" onclick="toggleFullscreen()">⛶</button>
       <button class="control-btn danger" onclick="disconnect()">✕</button>
+    </div>
+  </div>
+
+  <div class="keyboard-overlay" id="keyboardOverlay">
+    <div class="keyboard-row">
+      <button class="keyboard-key special" onclick="sendKey('Escape')">ESC</button>
+      <button class="keyboard-key" onclick="sendKey('F1')">F1</button>
+      <button class="keyboard-key" onclick="sendKey('F2')">F2</button>
+      <button class="keyboard-key" onclick="sendKey('F3')">F3</button>
+      <button class="keyboard-key" onclick="sendKey('F4')">F4</button>
+      <button class="keyboard-key" onclick="sendKey('F5')">F5</button>
+      <button class="keyboard-key" onclick="sendKey('F6')">F6</button>
+      <button class="keyboard-key" onclick="sendKey('F7')">F7</button>
+      <button class="keyboard-key" onclick="sendKey('F8')">F8</button>
+      <button class="keyboard-key" onclick="sendKey('F9')">F9</button>
+      <button class="keyboard-key" onclick="sendKey('F10')">F10</button>
+      <button class="keyboard-key" onclick="sendKey('F11')">F11</button>
+      <button class="keyboard-key" onclick="sendKey('F12')">F12</button>
+      <button class="keyboard-key special" onclick="sendKey('Delete')">DEL</button>
+    </div>
+    <div class="keyboard-row">
+      <button class="keyboard-key">`</button>
+      <button class="keyboard-key" onclick="sendKey('Digit1')">1</button>
+      <button class="keyboard-key" onclick="sendKey('Digit2')">2</button>
+      <button class="keyboard-key" onclick="sendKey('Digit3')">3</button>
+      <button class="keyboard-key" onclick="sendKey('Digit4')">4</button>
+      <button class="keyboard-key" onclick="sendKey('Digit5')">5</button>
+      <button class="keyboard-key" onclick="sendKey('Digit6')">6</button>
+      <button class="keyboard-key" onclick="sendKey('Digit7')">7</button>
+      <button class="keyboard-key" onclick="sendKey('Digit8')">8</button>
+      <button class="keyboard-key" onclick="sendKey('Digit9')">9</button>
+      <button class="keyboard-key" onclick="sendKey('Digit0')">0</button>
+      <button class="keyboard-key">-</button>
+      <button class="keyboard-key">=</button>
+      <button class="keyboard-key special" onclick="sendKey('Backspace')">⌫</button>
+    </div>
+    <div class="keyboard-row">
+      <button class="keyboard-key special" id="keyTab" onclick="toggleModifier('Tab')">TAB</button>
+      <button class="keyboard-key" onclick="sendKey('KeyQ')">Q</button>
+      <button class="keyboard-key" onclick="sendKey('KeyW')">W</button>
+      <button class="keyboard-key" onclick="sendKey('KeyE')">E</button>
+      <button class="keyboard-key" onclick="sendKey('KeyR')">R</button>
+      <button class="keyboard-key" onclick="sendKey('KeyT')">T</button>
+      <button class="keyboard-key" onclick="sendKey('KeyY')">Y</button>
+      <button class="keyboard-key" onclick="sendKey('KeyU')">U</button>
+      <button class="keyboard-key" onclick="sendKey('KeyI')">I</button>
+      <button class="keyboard-key" onclick="sendKey('KeyO')">O</button>
+      <button class="keyboard-key" onclick="sendKey('KeyP')">P</button>
+      <button class="keyboard-key">[</button>
+      <button class="keyboard-key">]</button>
+      <button class="keyboard-key">\</button>
+    </div>
+    <div class="keyboard-row">
+      <button class="keyboard-key special" id="keyCapsLock" onclick="toggleModifier('CapsLock')">CAPS</button>
+      <button class="keyboard-key" onclick="sendKey('KeyA')">A</button>
+      <button class="keyboard-key" onclick="sendKey('KeyS')">S</button>
+      <button class="keyboard-key" onclick="sendKey('KeyD')">D</button>
+      <button class="keyboard-key" onclick="sendKey('KeyF')">F</button>
+      <button class="keyboard-key" onclick="sendKey('KeyG')">G</button>
+      <button class="keyboard-key" onclick="sendKey('KeyH')">H</button>
+      <button class="keyboard-key" onclick="sendKey('KeyJ')">J</button>
+      <button class="keyboard-key" onclick="sendKey('KeyK')">K</button>
+      <button class="keyboard-key" onclick="sendKey('KeyL')">L</button>
+      <button class="keyboard-key">;</button>
+      <button class="keyboard-key">'</button>
+      <button class="keyboard-key special" onclick="sendKey('Enter')">↵</button>
+    </div>
+    <div class="keyboard-row">
+      <button class="keyboard-key special" id="keyShift" onclick="toggleModifier('Shift')">SHIFT</button>
+      <button class="keyboard-key" onclick="sendKey('KeyZ')">Z</button>
+      <button class="keyboard-key" onclick="sendKey('KeyX')">X</button>
+      <button class="keyboard-key" onclick="sendKey('KeyC')">C</button>
+      <button class="keyboard-key" onclick="sendKey('KeyV')">V</button>
+      <button class="keyboard-key" onclick="sendKey('KeyB')">B</button>
+      <button class="keyboard-key" onclick="sendKey('KeyN')">N</button>
+      <button class="keyboard-key" onclick="sendKey('KeyM')">M</button>
+      <button class="keyboard-key">,</button>
+      <button class="keyboard-key">.</button>
+      <button class="keyboard-key">/</button>
+      <button class="keyboard-key special" id="keyShift2" onclick="toggleModifier('Shift')">SHIFT</button>
+    </div>
+    <div class="keyboard-row">
+      <button class="keyboard-key special" id="keyControl" onclick="toggleModifier('Control')">CTRL</button>
+      <button class="keyboard-key special" id="keyMeta" onclick="toggleModifier('Meta')">WIN</button>
+      <button class="keyboard-key special" id="keyAlt" onclick="toggleModifier('Alt')">ALT</button>
+      <button class="keyboard-key space" onclick="sendKey('Space')">空格</button>
+      <button class="keyboard-key special" id="keyAlt2" onclick="toggleModifier('Alt')">ALT</button>
+      <button class="keyboard-key special" onclick="sendKey('ArrowLeft')">←</button>
+      <button class="keyboard-key" onclick="sendKey('ArrowUp')">↑</button>
+      <button class="keyboard-key" onclick="sendKey('ArrowDown')">↓</button>
+      <button class="keyboard-key special" onclick="sendKey('ArrowRight')">→</button>
+      <button class="keyboard-key special" id="keyControl2" onclick="toggleModifier('Control')">CTRL</button>
     </div>
   </div>
 
