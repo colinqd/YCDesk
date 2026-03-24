@@ -7,6 +7,8 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(TCPSocketPlugin.class);
+        registerPlugin(InputExecutorPlugin.class);
+        registerPlugin(FloatingMousePlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

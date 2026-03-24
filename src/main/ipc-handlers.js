@@ -1,6 +1,6 @@
 const { ipcMain, desktopCapturer, screen } = require('electron')
 const { createRemoteWindow, getMainWindow, getRemoteWindow } = require('./window-manager')
-const { handleRemoteInput } = require('./input-handler')
+const { handleRemoteInput, resetModifiers } = require('./input-handler')
 const {
   getLocalIps,
   startDirectServer,

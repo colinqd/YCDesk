@@ -5,6 +5,8 @@ import { io } from 'socket.io-client';
 import { registerPlugin } from '@capacitor/core';
 
 const TCPSocket = registerPlugin('TCPSocket');
+const InputExecutor = registerPlugin('InputExecutor');
+const FloatingMouse = registerPlugin('FloatingMouse');
 
 let myDeviceId = ''
 let socket = null
@@ -298,12 +300,15 @@ function cancelReconnect() {
 }
 
 function selectRole(role) {
+  console.log('selectRole called with role: ' + role)
+  log('选择角色: ' + role)
   currentRole = role
   document.getElementById('rolePage').classList.remove('active')
   
   if (role === 'controller') {
     document.getElementById('controllerPage').classList.add('active')
     connectionLogDiv = document.getElementById('connectionLog')
+    console.log('Calling initController...')
     initController()
   } else {
     document.getElementById('controlledPage').classList.add('active')
@@ -870,6 +875,18 @@ async function initController() {
   renderHistory('direct')
   renderHistory('signaling')
   
+  try {
+    await FloatingMouse.startService()
+    log('悬浮鼠标服务已启动')
+    
+    FloatingMouse.addListener('mouseEvent', (event) => {
+      handleFloatingMouseEvent(event)
+    })
+    log('悬浮鼠标事件监听已注册')
+  } catch (e) {
+    log('启动悬浮鼠标服务失败: ' + e.message)
+  }
+  
   TCPSocket.addListener('message', (data) => {
     try {
       const message = JSON.parse(data.message)
@@ -885,6 +902,7 @@ async function initController() {
       currentDirectClientId = null
       isConnected = false
       stopHeartbeat()
+      hideFloatingMouse()
       showToast('连接已断开')
     }
   })
@@ -892,18 +910,32 @@ async function initController() {
 
 async function initControlled() {
   document.getElementById('deviceId').textContent = myDeviceId
+  isAndroidControlled = true
   log('YCDesk Android 被控端初始化完成，设备ID: ' + myDeviceId)
-  log('注意：Android端仅作为控制端使用，被控端功能仅作演示，请使用Windows端作为被控端')
+  log('Android端被控模式已启用，可以接收来自Windows端的控制指令')
+  
+  try {
+    await InputExecutor.setControlledMode({ enabled: true })
+    log('InputExecutor被控模式已启用')
+  } catch (e) {
+    log('设置InputExecutor模式失败: ' + e.message)
+  }
   
   const localIpList = document.getElementById('localIpList')
   if (localIpList) {
-    localIpList.innerHTML = '<div class="ip-item">Android端暂不支持获取本机IP</div>'
+    localIpList.innerHTML = '<div class="ip-item">Android端暂不支持获取本机IP，请使用Windows端显示的IP地址</div>'
   }
   
   TCPSocket.addListener('incomingConnection', async (data) => {
     log('收到来自 ' + data.remoteAddress + ':' + data.remotePort + ' 的连接')
     currentDirectClientId = data.clientId
-    showToast('收到连接请求')
+    isAndroidControlled = true
+    try {
+      await InputExecutor.setControlledMode({ enabled: true })
+    } catch (e) {
+      log('设置InputExecutor模式失败: ' + e.message)
+    }
+    showToast('收到连接请求，正在建立连接...')
   })
   
   TCPSocket.addListener('message', (data) => {
@@ -920,6 +952,8 @@ async function initControlled() {
     if (data.clientId === currentDirectClientId) {
       currentDirectClientId = null
       isConnected = false
+      isAndroidControlled = false
+      InputExecutor.setControlledMode({ enabled: false }).catch(() => {})
     }
   })
 }
@@ -1010,18 +1044,27 @@ function setupDataChannel() {
     setTimeout(() => {
       showRemoteScreen()
       setupTouchEvents()
+      if (isMouseMode) {
+        showFloatingMouse()
+      }
     }, 500)
   }
 
   dataChannel.onmessage = (event) => {
-    log('收到数据通道消息: ' + event.data)
     try {
       const data = JSON.parse(event.data)
+      log('收到数据通道消息: ' + JSON.stringify(data).substring(0, 100))
+      
       if (data.type === 'screen-size') {
         log('收到屏幕尺寸: ' + data.width + 'x' + data.height)
         updateScreenSize(data.width, data.height)
+      } else if (data.type === 'input') {
+        handleReceivedInput(data)
+      } else if (data.type === 'ping') {
+        dataChannel.send(JSON.stringify({ type: 'pong', timestamp: data.timestamp }))
       }
     } catch (e) {
+      log('解析数据通道消息失败: ' + e.message)
     }
   }
 
@@ -1036,12 +1079,193 @@ function setupDataChannel() {
   }
 }
 
+let isAndroidControlled = false
+
+async function handleReceivedInput(inputData) {
+  if (!isAndroidControlled) {
+    log('Android端不是被控模式，忽略输入')
+    return
+  }
+  
+  log('处理接收到的输入: ' + inputData.inputType)
+  
+  try {
+    await InputExecutor.executeInput(inputData)
+  } catch (e) {
+    log('执行输入失败: ' + e.message)
+  }
+}
+
+function simulateMouseMove(x, y) {
+  log('模拟鼠标移动: ' + x + ', ' + y)
+  InputExecutor.executeInput({
+    inputType: 'mousemove',
+    x: x,
+    y: y
+  }).catch(e => log('执行鼠标移动失败: ' + e.message))
+}
+
+function simulateMouseDown(x, y, button) {
+  log('模拟鼠标按下: ' + x + ', ' + y + ', button: ' + button)
+  InputExecutor.executeInput({
+    inputType: 'mousedown',
+    x: x,
+    y: y,
+    button: button
+  }).catch(e => log('执行鼠标按下失败: ' + e.message))
+}
+
+function simulateMouseUp(x, y, button) {
+  log('模拟鼠标释放: ' + x + ', ' + y + ', button: ' + button)
+  InputExecutor.executeInput({
+    inputType: 'mouseup',
+    x: x,
+    y: y,
+    button: button
+  }).catch(e => log('执行鼠标释放失败: ' + e.message))
+}
+
+function simulateWheel(deltaY, deltaX) {
+  log('模拟滚轮: deltaY=' + deltaY + ', deltaX=' + deltaX)
+  InputExecutor.executeInput({
+    inputType: 'wheel',
+    deltaY: deltaY,
+    deltaX: deltaX
+  }).catch(e => log('执行滚轮失败: ' + e.message))
+}
+
+function simulateKeyDown(code, key, modifiers) {
+  log('模拟键盘按下: ' + code + ', key: ' + key + 
+      ', ctrl: ' + (modifiers.ctrlKey || false) +
+      ', shift: ' + (modifiers.shiftKey || false) +
+      ', alt: ' + (modifiers.altKey || false))
+  InputExecutor.executeInput({
+    inputType: 'keydown',
+    code: code,
+    key: key,
+    ctrlKey: modifiers.ctrlKey || false,
+    shiftKey: modifiers.shiftKey || false,
+    altKey: modifiers.altKey || false,
+    metaKey: modifiers.metaKey || false
+  }).catch(e => log('执行键盘按下失败: ' + e.message))
+}
+
+function simulateKeyUp(code, key, modifiers) {
+  log('模拟键盘释放: ' + code + ', key: ' + key)
+  InputExecutor.executeInput({
+    inputType: 'keyup',
+    code: code,
+    key: key,
+    ctrlKey: modifiers.ctrlKey || false,
+    shiftKey: modifiers.shiftKey || false,
+    altKey: modifiers.altKey || false,
+    metaKey: modifiers.metaKey || false
+  }).catch(e => log('执行键盘释放失败: ' + e.message))
+}
+
 function sendControlCommand(command) {
   if (dataChannel && dataChannel.readyState === 'open') {
-    dataChannel.send(JSON.stringify(command))
+    const inputCommand = convertToInputCommand(command)
+    log('发送控制命令: ' + JSON.stringify(inputCommand))
+    dataChannel.send(JSON.stringify(inputCommand))
   } else {
     log('数据通道未打开，无法发送命令')
   }
+}
+
+function convertToInputCommand(command) {
+  const inputCommand = {
+    type: 'input',
+    timestamp: Date.now()
+  }
+  
+  switch (command.type) {
+    case 'mouse-move':
+      inputCommand.inputType = 'mousemove'
+      inputCommand.x = normalizeCoordinate(command.x)
+      inputCommand.y = normalizeCoordinate(command.y)
+      break
+      
+    case 'mouse-click':
+      inputCommand.inputType = 'mousedown'
+      inputCommand.x = normalizeCoordinate(command.x)
+      inputCommand.y = normalizeCoordinate(command.y)
+      inputCommand.button = normalizeButton(command.button)
+      break
+      
+    case 'mouse-down':
+      inputCommand.inputType = 'mousedown'
+      inputCommand.x = normalizeCoordinate(command.x)
+      inputCommand.y = normalizeCoordinate(command.y)
+      inputCommand.button = normalizeButton(command.button)
+      break
+      
+    case 'mouse-up':
+      inputCommand.inputType = 'mouseup'
+      inputCommand.x = normalizeCoordinate(command.x)
+      inputCommand.y = normalizeCoordinate(command.y)
+      inputCommand.button = normalizeButton(command.button)
+      break
+      
+    case 'mouse-wheel':
+      inputCommand.inputType = 'wheel'
+      inputCommand.deltaY = command.deltaY || 0
+      inputCommand.deltaX = command.deltaX || 0
+      break
+      
+    case 'keyboard':
+      inputCommand.inputType = command.eventType
+      inputCommand.code = command.code
+      inputCommand.key = command.key || getKeyFromCode(command.code)
+      if (command.ctrlKey) inputCommand.ctrlKey = true
+      if (command.shiftKey) inputCommand.shiftKey = true
+      if (command.altKey) inputCommand.altKey = true
+      if (command.metaKey) inputCommand.metaKey = true
+      break
+      
+    default:
+      return command
+  }
+  
+  return inputCommand
+}
+
+function normalizeCoordinate(value, maxValue = 65535) {
+  if (value === undefined || value === null) return 0
+  if (value >= 0 && value <= 1) return value
+  return value / maxValue
+}
+
+function normalizeButton(button) {
+  if (typeof button === 'number') return button
+  if (typeof button === 'string') {
+    const lower = button.toLowerCase()
+    if (lower === 'right') return 2
+    if (lower === 'middle') return 1
+  }
+  return 0
+}
+
+function getKeyFromCode(code) {
+  const keyMap = {
+    'Digit0': '0', 'Digit1': '1', 'Digit2': '2', 'Digit3': '3', 'Digit4': '4',
+    'Digit5': '5', 'Digit6': '6', 'Digit7': '7', 'Digit8': '8', 'Digit9': '9',
+    'KeyA': 'a', 'KeyB': 'b', 'KeyC': 'c', 'KeyD': 'd', 'KeyE': 'e',
+    'KeyF': 'f', 'KeyG': 'g', 'KeyH': 'h', 'KeyI': 'i', 'KeyJ': 'j',
+    'KeyK': 'k', 'KeyL': 'l', 'KeyM': 'm', 'KeyN': 'n', 'KeyO': 'o',
+    'KeyP': 'p', 'KeyQ': 'q', 'KeyR': 'r', 'KeyS': 's', 'KeyT': 't',
+    'KeyU': 'u', 'KeyV': 'v', 'KeyW': 'w', 'KeyX': 'x', 'KeyY': 'y', 'KeyZ': 'z',
+    'Space': ' ', 'Enter': 'Enter', 'Backspace': 'Backspace', 'Tab': 'Tab',
+    'Escape': 'Escape', 'Delete': 'Delete', 'Insert': 'Insert',
+    'ArrowUp': 'ArrowUp', 'ArrowDown': 'ArrowDown', 'ArrowLeft': 'ArrowLeft', 'ArrowRight': 'ArrowRight',
+    'Home': 'Home', 'End': 'End', 'PageUp': 'PageUp', 'PageDown': 'PageDown',
+    'F1': 'F1', 'F2': 'F2', 'F3': 'F3', 'F4': 'F4', 'F5': 'F5', 'F6': 'F6',
+    'F7': 'F7', 'F8': 'F8', 'F9': 'F9', 'F10': 'F10', 'F11': 'F11', 'F12': 'F12',
+    'Minus': '-', 'Equal': '=', 'BracketLeft': '[', 'BracketRight': ']',
+    'Backslash': '\\', 'Semicolon': ';', 'Quote': "'", 'Comma': ',', 'Period': '.', 'Slash': '/',
+    'Backquote': '`'
+  }
+  return keyMap[code] || code
 }
 
 let currentScale = 1
@@ -1061,6 +1285,7 @@ function setupTouchEvents() {
   let touchStartY = 0
   let lastTapTime = 0
   let touchCount = 0
+  let isMouseDown = false
   
   remoteVideo.addEventListener('touchstart', (e) => {
     e.preventDefault()
@@ -1100,6 +1325,13 @@ function setupTouchEvents() {
         x: x,
         y: y
       })
+      sendControlCommand({
+        type: 'mouse-down',
+        x: x,
+        y: y,
+        button: 'left'
+      })
+      isMouseDown = true
     }
   }, { passive: false })
   
@@ -1164,52 +1396,74 @@ function setupTouchEvents() {
     const x = Math.round((touchStartX - rect.left) / rect.width * 65535)
     const y = Math.round((touchStartY - rect.top) / rect.height * 65535)
     
-    if (touchDuration < 200) {
-      const now = Date.now()
-      if (now - lastTapTime < 300) {
-        if (isMouseMode) {
+    if (isMouseMode) {
+      if (touchDuration < 200) {
+        const now = Date.now()
+        if (now - lastTapTime < 300) {
           sendControlCommand({
-            type: 'mouse-click',
-            x: x,
-            y: y,
-            button: 'left',
-            doubleClick: true
-          })
-        } else {
-          sendControlCommand({
-            type: 'mouse-click',
-            x: x,
-            y: y,
-            button: 'left',
-            doubleClick: true
-          })
-        }
-      } else {
-        if (isMouseMode) {
-          sendControlCommand({
-            type: 'mouse-click',
+            type: 'mouse-down',
             x: x,
             y: y,
             button: 'left'
           })
+          sendControlCommand({
+            type: 'mouse-up',
+            x: x,
+            y: y,
+            button: 'left'
+          })
+          setTimeout(() => {
+            sendControlCommand({
+              type: 'mouse-down',
+              x: x,
+              y: y,
+              button: 'left'
+            })
+            sendControlCommand({
+              type: 'mouse-up',
+              x: x,
+              y: y,
+              button: 'left'
+            })
+          }, 100)
         } else {
           sendControlCommand({
-            type: 'mouse-click',
+            type: 'mouse-down',
+            x: x,
+            y: y,
+            button: 'left'
+          })
+          sendControlCommand({
+            type: 'mouse-up',
             x: x,
             y: y,
             button: 'left'
           })
         }
-      }
-      lastTapTime = now
-    } else if (touchDuration >= 500) {
-      if (isMouseMode) {
+        lastTapTime = now
+      } else if (touchDuration >= 500) {
         sendControlCommand({
-          type: 'mouse-click',
+          type: 'mouse-down',
           x: x,
           y: y,
           button: 'right'
         })
+        sendControlCommand({
+          type: 'mouse-up',
+          x: x,
+          y: y,
+          button: 'right'
+        })
+      }
+    } else {
+      if (isMouseDown) {
+        sendControlCommand({
+          type: 'mouse-up',
+          x: x,
+          y: y,
+          button: 'left'
+        })
+        isMouseDown = false
       }
     }
     
@@ -1218,6 +1472,18 @@ function setupTouchEvents() {
   
   remoteVideo.addEventListener('touchcancel', (e) => {
     e.preventDefault()
+    if (isMouseDown) {
+      const rect = remoteVideo.getBoundingClientRect()
+      const x = Math.round((touchStartX - rect.left) / rect.width * 65535)
+      const y = Math.round((touchStartY - rect.top) / rect.height * 65535)
+      sendControlCommand({
+        type: 'mouse-up',
+        x: x,
+        y: y,
+        button: 'left'
+      })
+      isMouseDown = false
+    }
     lastTouchDistance = 0
     touchCount = 0
   }, { passive: false })
@@ -1245,10 +1511,120 @@ function toggleMouseMode() {
   if (isMouseMode) {
     showToast('鼠标模式已开启 - 长按右键，双击双击')
     if (mouseCursor) mouseCursor.style.display = 'block'
+    showFloatingMouse()
   } else {
     showToast('触摸模式已开启')
     if (mouseCursor) mouseCursor.style.display = 'none'
+    hideFloatingMouse()
   }
+}
+
+async function showFloatingMouse() {
+  try {
+    // 先检查权限
+    const permResult = await FloatingMouse.hasPermission()
+    log('悬浮窗权限状态: ' + (permResult.granted ? '已授权' : '未授权'))
+    
+    if (!permResult.granted) {
+      log('正在请求悬浮窗权限...')
+      const requestResult = await FloatingMouse.requestPermission()
+      if (!requestResult.granted) {
+        showToast('请在设置中开启悬浮窗权限')
+        return
+      }
+    }
+    
+    const result = await FloatingMouse.show()
+    if (result.success) {
+      log('悬浮鼠标已显示')
+    } else {
+      log('显示悬浮鼠标失败: ' + result.error)
+      if (result.needPermission) {
+        showToast('需要悬浮窗权限')
+      } else if (result.needStartService) {
+        log('服务未启动，正在启动...')
+        await FloatingMouse.startService()
+        await FloatingMouse.show()
+      }
+    }
+  } catch (e) {
+    log('显示悬浮鼠标失败: ' + e.message)
+  }
+}
+
+async function hideFloatingMouse() {
+  try {
+    await FloatingMouse.hide()
+    log('悬浮鼠标已隐藏')
+  } catch (e) {
+    log('隐藏悬浮鼠标失败: ' + e.message)
+  }
+}
+
+function handleFloatingMouseEvent(event) {
+  if (!dataChannel || dataChannel.readyState !== 'open') {
+    log('数据通道未打开，无法发送鼠标事件')
+    return
+  }
+  
+  const inputCommand = {
+    type: 'input',
+    timestamp: Date.now()
+  }
+  
+  switch (event.type) {
+    case 'mousemove':
+      inputCommand.inputType = 'mousemove'
+      inputCommand.x = event.x
+      inputCommand.y = event.y
+      break
+      
+    case 'mousedown':
+      inputCommand.inputType = 'mousedown'
+      inputCommand.x = event.x
+      inputCommand.y = event.y
+      inputCommand.button = event.button
+      break
+      
+    case 'mouseup':
+      inputCommand.inputType = 'mouseup'
+      inputCommand.x = event.x
+      inputCommand.y = event.y
+      inputCommand.button = event.button
+      break
+      
+    case 'wheel':
+      inputCommand.inputType = 'wheel'
+      inputCommand.deltaY = event.delta
+      break
+      
+    case 'dblclick':
+      inputCommand.inputType = 'dblclick'
+      inputCommand.x = event.x
+      inputCommand.y = event.y
+      inputCommand.button = event.button
+      break
+      
+    case 'dragstart':
+      inputCommand.inputType = 'mousedown'
+      inputCommand.x = event.x
+      inputCommand.y = event.y
+      inputCommand.button = event.button
+      break
+      
+    case 'dragend':
+      inputCommand.inputType = 'mouseup'
+      inputCommand.x = event.x
+      inputCommand.y = event.y
+      inputCommand.button = event.button
+      break
+      
+    default:
+      return
+  }
+  
+  log('发送悬浮鼠标事件: ' + event.type)
+  dataChannel.send(JSON.stringify(inputCommand))
 }
 
 function toggleFullscreen() {
@@ -1468,24 +1844,6 @@ function sendKey(keyCode) {
   }
 }
 
-function getKeyFromCode(code) {
-  const keyMap = {
-    'Digit0': '0', 'Digit1': '1', 'Digit2': '2', 'Digit3': '3', 'Digit4': '4',
-    'Digit5': '5', 'Digit6': '6', 'Digit7': '7', 'Digit8': '8', 'Digit9': '9',
-    'KeyA': 'a', 'KeyB': 'b', 'KeyC': 'c', 'KeyD': 'd', 'KeyE': 'e',
-    'KeyF': 'f', 'KeyG': 'g', 'KeyH': 'h', 'KeyI': 'i', 'KeyJ': 'j',
-    'KeyK': 'k', 'KeyL': 'l', 'KeyM': 'm', 'KeyN': 'n', 'KeyO': 'o',
-    'KeyP': 'p', 'KeyQ': 'q', 'KeyR': 'r', 'KeyS': 's', 'KeyT': 't',
-    'KeyU': 'u', 'KeyV': 'v', 'KeyW': 'w', 'KeyX': 'x', 'KeyY': 'y', 'KeyZ': 'z',
-    'Space': ' ', 'Enter': 'Enter', 'Backspace': 'Backspace', 'Tab': 'Tab',
-    'Escape': 'Escape', 'Delete': 'Delete',
-    'ArrowUp': 'ArrowUp', 'ArrowDown': 'ArrowDown', 'ArrowLeft': 'ArrowLeft', 'ArrowRight': 'ArrowRight',
-    'F1': 'F1', 'F2': 'F2', 'F3': 'F3', 'F4': 'F4', 'F5': 'F5', 'F6': 'F6',
-    'F7': 'F7', 'F8': 'F8', 'F9': 'F9', 'F10': 'F10', 'F11': 'F11', 'F12': 'F12'
-  }
-  return keyMap[code] || code
-}
-
 function toggleModifier(modifier) {
   activeModifiers[modifier] = !activeModifiers[modifier]
   
@@ -1515,6 +1873,7 @@ function toggleModifier(modifier) {
 function disconnect() {
   if (confirm('确定要断开连接吗？')) {
     stopHeartbeat()
+    hideFloatingMouse()
     if (dataChannel) {
       dataChannel.close()
       dataChannel = null
