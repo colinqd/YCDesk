@@ -1,15 +1,11 @@
 package com.ycdesk.mobile;
 
-import android.app.Activity;
-import android.content.Context;
-import android.graphics.Point;
-import android.os.Build;
+import android.app.Instrumentation;
 import android.os.SystemClock;
 import android.util.Log;
-import android.view.InputDevice;
+import android.view.InputEvent;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
-import android.view.View;
-import android.view.WindowManager;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -17,101 +13,51 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
-import org.json.JSONException;
-import org.json.JSONObject;
-
 @CapacitorPlugin(name = "InputExecutor")
 public class InputExecutorPlugin extends Plugin {
     private static final String TAG = "InputExecutorPlugin";
-    private WindowManager windowManager;
-    private int screenWidth;
-    private int screenHeight;
-    
-    private boolean isControlled = false;
-    private float lastX = 0;
-    private float lastY = 0;
-    private long lastDownTime = 0;
-    private int lastButtonState = 0;
+    private Instrumentation instrumentation;
 
     @Override
     public void load() {
         super.load();
-        Context context = getContext();
-        windowManager = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
-        
-        Point size = new Point();
-        windowManager.getDefaultDisplay().getRealSize(size);
-        screenWidth = size.x;
-        screenHeight = size.y;
-        
-        Log.d(TAG, "InputExecutorPlugin loaded, screen size: " + screenWidth + "x" + screenHeight);
+        instrumentation = new Instrumentation();
+        Log.d(TAG, "InputExecutorPlugin loaded");
     }
 
     @PluginMethod
-    public void setControlledMode(PluginCall call) {
-        Boolean enabled = call.getBoolean("enabled", false);
-        isControlled = enabled;
-        
-        JSObject result = new JSObject();
-        result.put("success", true);
-        result.put("isControlled", isControlled);
-        call.resolve(result);
-        
-        Log.d(TAG, "Controlled mode set to: " + isControlled);
-    }
-
-    @PluginMethod
-    public void getScreenSize(PluginCall call) {
-        JSObject result = new JSObject();
-        result.put("width", screenWidth);
-        result.put("height", screenHeight);
-        call.resolve(result);
-    }
-
-    @PluginMethod
-    public void executeInput(PluginCall call) {
-        if (!isControlled) {
-            JSObject result = new JSObject();
-            result.put("success", false);
-            result.put("error", "Not in controlled mode");
-            call.resolve(result);
-            return;
-        }
-
+    public void executeMouseMove(PluginCall call) {
         try {
-            String inputType = call.getString("inputType");
+            float x = (float) (double) call.getDouble("x", 0.0);
+            float y = (float) (double) call.getDouble("y", 0.0);
+            int screenWidth = call.getInt("screenWidth", 1920);
+            int screenHeight = call.getInt("screenHeight", 1080);
+
+            // Convert normalized coordinates to screen coordinates
+            int absoluteX = (int) (x * screenWidth);
+            int absoluteY = (int) (y * screenHeight);
+
+            long downTime = SystemClock.uptimeMillis();
+            long eventTime = SystemClock.uptimeMillis();
+
+            MotionEvent motionEvent = MotionEvent.obtain(
+                    downTime,
+                    eventTime,
+                    MotionEvent.ACTION_MOVE,
+                    absoluteX,
+                    absoluteY,
+                    0
+            );
+
+            instrumentation.sendPointerSync(motionEvent);
+            motionEvent.recycle();
+
             JSObject result = new JSObject();
-
-            switch (inputType) {
-                case "mousemove":
-                    executeMouseMove(call);
-                    break;
-                case "mousedown":
-                    executeMouseDown(call);
-                    break;
-                case "mouseup":
-                    executeMouseUp(call);
-                    break;
-                case "wheel":
-                    executeWheel(call);
-                    break;
-                case "keydown":
-                    executeKeyDown(call);
-                    break;
-                case "keyup":
-                    executeKeyUp(call);
-                    break;
-                default:
-                    result.put("success", false);
-                    result.put("error", "Unknown input type: " + inputType);
-                    call.resolve(result);
-                    return;
-            }
-
             result.put("success", true);
             call.resolve(result);
+            Log.d(TAG, "Mouse move executed: x=" + absoluteX + ", y=" + absoluteY);
         } catch (Exception e) {
-            Log.e(TAG, "Execute input error: " + e.getMessage());
+            Log.e(TAG, "Error executing mouse move: " + e.getMessage());
             JSObject result = new JSObject();
             result.put("success", false);
             result.put("error", e.getMessage());
@@ -119,296 +65,266 @@ public class InputExecutorPlugin extends Plugin {
         }
     }
 
-    private void executeMouseMove(PluginCall call) {
-        Double x = call.getDouble("x");
-        Double y = call.getDouble("y");
-        
-        if (x == null || y == null) return;
-        
-        float targetX = (float) (x * screenWidth);
-        float targetY = (float) (y * screenHeight);
-        
-        lastX = targetX;
-        lastY = targetY;
-        
-        injectMotionEvent(MotionEvent.ACTION_HOVER_MOVE, targetX, targetY, lastButtonState);
-        Log.d(TAG, "MouseMove: " + targetX + ", " + targetY);
+    @PluginMethod
+    public void executeMouseDown(PluginCall call) {
+        try {
+            float x = (float) (double) call.getDouble("x", 0.0);
+            float y = (float) (double) call.getDouble("y", 0.0);
+            int button = call.getInt("button", 0);
+            int screenWidth = call.getInt("screenWidth", 1920);
+            int screenHeight = call.getInt("screenHeight", 1080);
+
+            int absoluteX = (int) (x * screenWidth);
+            int absoluteY = (int) (y * screenHeight);
+
+            long downTime = SystemClock.uptimeMillis();
+            long eventTime = SystemClock.uptimeMillis();
+
+            int action = MotionEvent.ACTION_DOWN;
+            if (button == 1) {
+                // Middle button
+                action = MotionEvent.ACTION_DOWN;
+            } else if (button == 2) {
+                // Right button
+                action = MotionEvent.ACTION_DOWN;
+            }
+
+            MotionEvent motionEvent = MotionEvent.obtain(
+                    downTime,
+                    eventTime,
+                    action,
+                    absoluteX,
+                    absoluteY,
+                    0
+            );
+
+            instrumentation.sendPointerSync(motionEvent);
+            motionEvent.recycle();
+
+            JSObject result = new JSObject();
+            result.put("success", true);
+            call.resolve(result);
+            Log.d(TAG, "Mouse down executed: button=" + button + ", x=" + absoluteX + ", y=" + absoluteY);
+        } catch (Exception e) {
+            Log.e(TAG, "Error executing mouse down: " + e.getMessage());
+            JSObject result = new JSObject();
+            result.put("success", false);
+            result.put("error", e.getMessage());
+            call.resolve(result);
+        }
     }
 
-    private void executeMouseDown(PluginCall call) {
-        Double x = call.getDouble("x");
-        Double y = call.getDouble("y");
-        Integer button = call.getInt("button", 0);
-        
-        if (x == null || y == null) return;
-        
-        float targetX = (float) (x * screenWidth);
-        float targetY = (float) (y * screenHeight);
-        
-        lastX = targetX;
-        lastY = targetY;
-        lastDownTime = SystemClock.uptimeMillis();
-        
-        int buttonState = getButtonState(button);
-        lastButtonState = buttonState;
-        
-        injectMotionEvent(MotionEvent.ACTION_DOWN, targetX, targetY, buttonState);
-        Log.d(TAG, "MouseDown: " + targetX + ", " + targetY + ", button: " + button);
+    @PluginMethod
+    public void executeMouseUp(PluginCall call) {
+        try {
+            float x = (float) (double) call.getDouble("x", 0.0);
+            float y = (float) (double) call.getDouble("y", 0.0);
+            int button = call.getInt("button", 0);
+            int screenWidth = call.getInt("screenWidth", 1920);
+            int screenHeight = call.getInt("screenHeight", 1080);
+
+            int absoluteX = (int) (x * screenWidth);
+            int absoluteY = (int) (y * screenHeight);
+
+            long downTime = SystemClock.uptimeMillis();
+            long eventTime = SystemClock.uptimeMillis();
+
+            int action = MotionEvent.ACTION_UP;
+
+            MotionEvent motionEvent = MotionEvent.obtain(
+                    downTime,
+                    eventTime,
+                    action,
+                    absoluteX,
+                    absoluteY,
+                    0
+            );
+
+            instrumentation.sendPointerSync(motionEvent);
+            motionEvent.recycle();
+
+            JSObject result = new JSObject();
+            result.put("success", true);
+            call.resolve(result);
+            Log.d(TAG, "Mouse up executed: button=" + button + ", x=" + absoluteX + ", y=" + absoluteY);
+        } catch (Exception e) {
+            Log.e(TAG, "Error executing mouse up: " + e.getMessage());
+            JSObject result = new JSObject();
+            result.put("success", false);
+            result.put("error", e.getMessage());
+            call.resolve(result);
+        }
     }
 
-    private void executeMouseUp(PluginCall call) {
-        Double x = call.getDouble("x");
-        Double y = call.getDouble("y");
-        Integer button = call.getInt("button", 0);
-        
-        if (x == null || y == null) return;
-        
-        float targetX = (float) (x * screenWidth);
-        float targetY = (float) (y * screenHeight);
-        
-        lastX = targetX;
-        lastY = targetY;
-        
-        int buttonState = getButtonState(button);
-        
-        injectMotionEvent(MotionEvent.ACTION_UP, targetX, targetY, buttonState);
-        lastButtonState = 0;
-        Log.d(TAG, "MouseUp: " + targetX + ", " + targetY + ", button: " + button);
+    @PluginMethod
+    public void executeMouseWheel(PluginCall call) {
+        try {
+            float deltaY = (float) (double) call.getDouble("deltaY", 0.0);
+
+            // Use key events to simulate mouse wheel
+            int keyCode = deltaY > 0 ? KeyEvent.KEYCODE_PAGE_DOWN : KeyEvent.KEYCODE_PAGE_UP;
+
+            long downTime = SystemClock.uptimeMillis();
+            long eventTime = SystemClock.uptimeMillis();
+
+            KeyEvent downEvent = new KeyEvent(downTime, eventTime, KeyEvent.ACTION_DOWN, keyCode, 0);
+            KeyEvent upEvent = new KeyEvent(downTime, eventTime, KeyEvent.ACTION_UP, keyCode, 0);
+
+            instrumentation.sendKeySync(downEvent);
+            instrumentation.sendKeySync(upEvent);
+
+            JSObject result = new JSObject();
+            result.put("success", true);
+            call.resolve(result);
+            Log.d(TAG, "Mouse wheel executed: deltaY=" + deltaY);
+        } catch (Exception e) {
+            Log.e(TAG, "Error executing mouse wheel: " + e.getMessage());
+            JSObject result = new JSObject();
+            result.put("success", false);
+            result.put("error", e.getMessage());
+            call.resolve(result);
+        }
     }
 
-    private void executeWheel(PluginCall call) {
-        Double deltaY = call.getDouble("deltaY", 0.0);
-        Double deltaX = call.getDouble("deltaX", 0.0);
-        
-        float scrollY = (float) (deltaY * 50);
-        float scrollX = (float) (deltaX * 50);
-        
-        injectScrollEvent(lastX, lastY, scrollX, scrollY);
-        Log.d(TAG, "Wheel: deltaY=" + deltaY + ", deltaX=" + deltaX);
+    @PluginMethod
+    public void executeKeyDown(PluginCall call) {
+        try {
+            String key = call.getString("key", "");
+            int keyCode = getKeyCode(key);
+
+            if (keyCode != -1) {
+                long downTime = SystemClock.uptimeMillis();
+                long eventTime = SystemClock.uptimeMillis();
+
+                KeyEvent downEvent = new KeyEvent(downTime, eventTime, KeyEvent.ACTION_DOWN, keyCode, 0);
+                instrumentation.sendKeySync(downEvent);
+
+                JSObject result = new JSObject();
+                result.put("success", true);
+                call.resolve(result);
+                Log.d(TAG, "Key down executed: key=" + key + ", keyCode=" + keyCode);
+            } else {
+                JSObject result = new JSObject();
+                result.put("success", false);
+                result.put("error", "Unknown key: " + key);
+                call.resolve(result);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error executing key down: " + e.getMessage());
+            JSObject result = new JSObject();
+            result.put("success", false);
+            result.put("error", e.getMessage());
+            call.resolve(result);
+        }
     }
 
-    private void executeKeyDown(PluginCall call) {
-        String code = call.getString("code");
-        String key = call.getString("key");
-        
-        Log.d(TAG, "KeyDown: code=" + code + ", key=" + key);
+    @PluginMethod
+    public void executeKeyUp(PluginCall call) {
+        try {
+            String key = call.getString("key", "");
+            int keyCode = getKeyCode(key);
+
+            if (keyCode != -1) {
+                long downTime = SystemClock.uptimeMillis();
+                long eventTime = SystemClock.uptimeMillis();
+
+                KeyEvent upEvent = new KeyEvent(downTime, eventTime, KeyEvent.ACTION_UP, keyCode, 0);
+                instrumentation.sendKeySync(upEvent);
+
+                JSObject result = new JSObject();
+                result.put("success", true);
+                call.resolve(result);
+                Log.d(TAG, "Key up executed: key=" + key + ", keyCode=" + keyCode);
+            } else {
+                JSObject result = new JSObject();
+                result.put("success", false);
+                result.put("error", "Unknown key: " + key);
+                call.resolve(result);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error executing key up: " + e.getMessage());
+            JSObject result = new JSObject();
+            result.put("success", false);
+            result.put("error", e.getMessage());
+            call.resolve(result);
+        }
     }
 
-    private void executeKeyUp(PluginCall call) {
-        String code = call.getString("code");
-        String key = call.getString("key");
-        
-        Log.d(TAG, "KeyUp: code=" + code + ", key=" + key);
-    }
-
-    private int getButtonState(int button) {
-        switch (button) {
-            case 0:
-                return MotionEvent.BUTTON_PRIMARY;
-            case 1:
-                return MotionEvent.BUTTON_TERTIARY;
-            case 2:
-                return MotionEvent.BUTTON_SECONDARY;
+    private int getKeyCode(String key) {
+        switch (key) {
+            case "Enter":
+                return KeyEvent.KEYCODE_ENTER;
+            case "Backspace":
+                return KeyEvent.KEYCODE_DEL;
+            case "Tab":
+                return KeyEvent.KEYCODE_TAB;
+            case "Escape":
+                return KeyEvent.KEYCODE_ESCAPE;
+            case "Space":
+                return KeyEvent.KEYCODE_SPACE;
+            case "ArrowUp":
+                return KeyEvent.KEYCODE_DPAD_UP;
+            case "ArrowDown":
+                return KeyEvent.KEYCODE_DPAD_DOWN;
+            case "ArrowLeft":
+                return KeyEvent.KEYCODE_DPAD_LEFT;
+            case "ArrowRight":
+                return KeyEvent.KEYCODE_DPAD_RIGHT;
+            case "Shift":
+                return KeyEvent.KEYCODE_SHIFT_LEFT;
+            case "Control":
+                return KeyEvent.KEYCODE_CTRL_LEFT;
+            case "Alt":
+                return KeyEvent.KEYCODE_ALT_LEFT;
+            case "Meta":
+                return KeyEvent.KEYCODE_META_LEFT;
+            case "F1":
+                return KeyEvent.KEYCODE_F1;
+            case "F2":
+                return KeyEvent.KEYCODE_F2;
+            case "F3":
+                return KeyEvent.KEYCODE_F3;
+            case "F4":
+                return KeyEvent.KEYCODE_F4;
+            case "F5":
+                return KeyEvent.KEYCODE_F5;
+            case "F6":
+                return KeyEvent.KEYCODE_F6;
+            case "F7":
+                return KeyEvent.KEYCODE_F7;
+            case "F8":
+                return KeyEvent.KEYCODE_F8;
+            case "F9":
+                return KeyEvent.KEYCODE_F9;
+            case "F10":
+                return KeyEvent.KEYCODE_F10;
+            case "F11":
+                return KeyEvent.KEYCODE_F11;
+            case "F12":
+                return KeyEvent.KEYCODE_F12;
+            case "Delete":
+                return KeyEvent.KEYCODE_FORWARD_DEL;
+            case "Home":
+                return KeyEvent.KEYCODE_HOME;
+            case "End":
+                return KeyEvent.KEYCODE_MOVE_END;
+            case "PageUp":
+                return KeyEvent.KEYCODE_PAGE_UP;
+            case "PageDown":
+                return KeyEvent.KEYCODE_PAGE_DOWN;
             default:
-                return MotionEvent.BUTTON_PRIMARY;
+                // Handle single characters
+                if (key.length() == 1) {
+                    char c = key.charAt(0);
+                    if (c >= 'a' && c <= 'z') {
+                        return KeyEvent.KEYCODE_A + (c - 'a');
+                    } else if (c >= 'A' && c <= 'Z') {
+                        return KeyEvent.KEYCODE_A + (c - 'A');
+                    } else if (c >= '0' && c <= '9') {
+                        return KeyEvent.KEYCODE_0 + (c - '0');
+                    }
+                }
+                return -1;
         }
-    }
-
-    private void injectMotionEvent(int action, float x, float y, int buttonState) {
-        long downTime = lastDownTime > 0 ? lastDownTime : SystemClock.uptimeMillis();
-        long eventTime = SystemClock.uptimeMillis();
-        
-        MotionEvent.PointerProperties[] properties = new MotionEvent.PointerProperties[1];
-        properties[0] = new MotionEvent.PointerProperties();
-        properties[0].id = 0;
-        properties[0].toolType = MotionEvent.TOOL_TYPE_MOUSE;
-        
-        MotionEvent.PointerCoords[] coords = new MotionEvent.PointerCoords[1];
-        coords[0] = new MotionEvent.PointerCoords();
-        coords[0].x = x;
-        coords[0].y = y;
-        coords[0].pressure = 1.0f;
-        coords[0].size = 1.0f;
-        
-        MotionEvent event = MotionEvent.obtain(
-            downTime,
-            eventTime,
-            action,
-            1,
-            properties,
-            coords,
-            0,
-            buttonState,
-            1.0f,
-            1.0f,
-            0,
-            0,
-            InputDevice.SOURCE_MOUSE,
-            0
-        );
-        
-        try {
-            Activity activity = getActivity();
-            if (activity != null) {
-                activity.runOnUiThread(() -> {
-                    View rootView = activity.getWindow().getDecorView().getRootView();
-                    boolean handled = rootView.dispatchGenericMotionEvent(event);
-                    Log.d(TAG, "Motion event dispatched, handled: " + handled);
-                });
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Inject motion event error: " + e.getMessage());
-        }
-        
-        event.recycle();
-    }
-
-    private void injectScrollEvent(float x, float y, float scrollX, float scrollY) {
-        long downTime = SystemClock.uptimeMillis();
-        long eventTime = SystemClock.uptimeMillis();
-        
-        MotionEvent.PointerProperties[] properties = new MotionEvent.PointerProperties[1];
-        properties[0] = new MotionEvent.PointerProperties();
-        properties[0].id = 0;
-        properties[0].toolType = MotionEvent.TOOL_TYPE_MOUSE;
-        
-        MotionEvent.PointerCoords[] coords = new MotionEvent.PointerCoords[1];
-        coords[0] = new MotionEvent.PointerCoords();
-        coords[0].x = x;
-        coords[0].y = y;
-        coords[0].pressure = 1.0f;
-        coords[0].size = 1.0f;
-        coords[0].setAxisValue(MotionEvent.AXIS_VSCROLL, -scrollY / 100);
-        coords[0].setAxisValue(MotionEvent.AXIS_HSCROLL, scrollX / 100);
-        
-        MotionEvent event = MotionEvent.obtain(
-            downTime,
-            eventTime,
-            MotionEvent.ACTION_SCROLL,
-            1,
-            properties,
-            coords,
-            0,
-            0,
-            1.0f,
-            1.0f,
-            0,
-            0,
-            InputDevice.SOURCE_MOUSE,
-            0
-        );
-        
-        try {
-            Activity activity = getActivity();
-            if (activity != null) {
-                activity.runOnUiThread(() -> {
-                    View rootView = activity.getWindow().getDecorView().getRootView();
-                    boolean handled = rootView.dispatchGenericMotionEvent(event);
-                    Log.d(TAG, "Scroll event dispatched, handled: " + handled);
-                });
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Inject scroll event error: " + e.getMessage());
-        }
-        
-        event.recycle();
-    }
-
-    public void handleInputCommand(JSONObject inputData) {
-        if (!isControlled) {
-            Log.d(TAG, "Not in controlled mode, ignoring input");
-            return;
-        }
-
-        try {
-            String inputType = inputData.getString("inputType");
-            
-            switch (inputType) {
-                case "mousemove":
-                    handleMouseMove(inputData);
-                    break;
-                case "mousedown":
-                    handleMouseDown(inputData);
-                    break;
-                case "mouseup":
-                    handleMouseUp(inputData);
-                    break;
-                case "wheel":
-                    handleWheel(inputData);
-                    break;
-                case "keydown":
-                    handleKeyDown(inputData);
-                    break;
-                case "keyup":
-                    handleKeyUp(inputData);
-                    break;
-            }
-        } catch (JSONException e) {
-            Log.e(TAG, "Handle input command error: " + e.getMessage());
-        }
-    }
-
-    private void handleMouseMove(JSONObject data) throws JSONException {
-        double x = data.optDouble("x", 0);
-        double y = data.optDouble("y", 0);
-        
-        float targetX = (float) (x * screenWidth);
-        float targetY = (float) (y * screenHeight);
-        
-        lastX = targetX;
-        lastY = targetY;
-        
-        injectMotionEvent(MotionEvent.ACTION_HOVER_MOVE, targetX, targetY, lastButtonState);
-    }
-
-    private void handleMouseDown(JSONObject data) throws JSONException {
-        double x = data.optDouble("x", 0);
-        double y = data.optDouble("y", 0);
-        int button = data.optInt("button", 0);
-        
-        float targetX = (float) (x * screenWidth);
-        float targetY = (float) (y * screenHeight);
-        
-        lastX = targetX;
-        lastY = targetY;
-        lastDownTime = SystemClock.uptimeMillis();
-        lastButtonState = getButtonState(button);
-        
-        injectMotionEvent(MotionEvent.ACTION_DOWN, targetX, targetY, lastButtonState);
-    }
-
-    private void handleMouseUp(JSONObject data) throws JSONException {
-        double x = data.optDouble("x", 0);
-        double y = data.optDouble("y", 0);
-        int button = data.optInt("button", 0);
-        
-        float targetX = (float) (x * screenWidth);
-        float targetY = (float) (y * screenHeight);
-        
-        lastX = targetX;
-        lastY = targetY;
-        
-        int buttonState = getButtonState(button);
-        injectMotionEvent(MotionEvent.ACTION_UP, targetX, targetY, buttonState);
-        lastButtonState = 0;
-    }
-
-    private void handleWheel(JSONObject data) throws JSONException {
-        double deltaY = data.optDouble("deltaY", 0);
-        double deltaX = data.optDouble("deltaX", 0);
-        
-        injectScrollEvent(lastX, lastY, (float)deltaX, (float)deltaY);
-    }
-
-    private void handleKeyDown(JSONObject data) throws JSONException {
-        String code = data.optString("code", "");
-        String key = data.optString("key", "");
-        Log.d(TAG, "KeyDown: code=" + code + ", key=" + key);
-    }
-
-    private void handleKeyUp(JSONObject data) throws JSONException {
-        String code = data.optString("code", "");
-        String key = data.optString("key", "");
-        Log.d(TAG, "KeyUp: code=" + code + ", key=" + key);
     }
 }

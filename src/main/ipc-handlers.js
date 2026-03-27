@@ -9,6 +9,7 @@ const {
   sendDirectMessage,
   closeDirectConnection
 } = require('./direct-server')
+const signalingServer = require('./signaling-server')
 const authManager = require('./auth-manager')
 
 let deviceId = null
@@ -43,6 +44,9 @@ function init(deviceIdParam, loggerParam) {
   } else {
     console.log('IPC 处理器初始化，设备ID:', deviceId)
   }
+  
+  // 初始化信令服务器
+  signalingServer.init(deviceId, logger)
   
   ipcMain.handle('get-device-id', safeIpcHandler(() => {
     return deviceId
@@ -193,6 +197,76 @@ function init(deviceIdParam, loggerParam) {
   ipcMain.handle('decrypt-data', safeIpcHandler((event, encryptedData, password) => {
     return authManager.decrypt(encryptedData, password)
   }, 'decrypt-data'))
+
+  // 信令服务器相关
+  ipcMain.handle('connect-signaling-server', safeIpcHandler(async (event, serverUrl) => {
+    return await signalingServer.connect(serverUrl)
+  }, 'connect-signaling-server'))
+
+  ipcMain.handle('disconnect-signaling-server', safeIpcHandler(() => {
+    signalingServer.disconnect()
+    return { success: true, message: '已断开连接' }
+  }, 'disconnect-signaling-server'))
+
+  ipcMain.handle('send-connect-request', safeIpcHandler((event, toDeviceId) => {
+    return signalingServer.sendConnectRequest(toDeviceId)
+  }, 'send-connect-request'))
+
+  ipcMain.handle('send-connection-response', safeIpcHandler((event, sessionId, accepted, fromDeviceId, toDeviceId) => {
+    return signalingServer.sendConnectionResponse(sessionId, accepted, fromDeviceId, toDeviceId)
+  }, 'send-connection-response'))
+
+  ipcMain.handle('send-offer', safeIpcHandler((event, sessionId, offer, toDeviceId) => {
+    return signalingServer.sendOffer(sessionId, offer, toDeviceId)
+  }, 'send-offer'))
+
+  ipcMain.handle('send-answer', safeIpcHandler((event, sessionId, answer, toDeviceId) => {
+    return signalingServer.sendAnswer(sessionId, answer, toDeviceId)
+  }, 'send-answer'))
+
+  ipcMain.handle('send-ice-candidate', safeIpcHandler((event, sessionId, candidate, toDeviceId) => {
+    return signalingServer.sendIceCandidate(sessionId, candidate, toDeviceId)
+  }, 'send-ice-candidate'))
+
+  ipcMain.handle('get-signaling-status', safeIpcHandler(() => {
+    return signalingServer.getConnectionStatus()
+  }, 'get-signaling-status'))
+
+  // 信令服务器事件监听
+  signalingServer.onIncomingConnection((data) => {
+    const mainWindow = getMainWindow()
+    if (mainWindow) {
+      mainWindow.webContents.send('incoming-connection', data)
+    }
+  })
+
+  signalingServer.onConnectionResult((data) => {
+    const mainWindow = getMainWindow()
+    if (mainWindow) {
+      mainWindow.webContents.send('connection-result', data)
+    }
+  })
+
+  signalingServer.onOffer((data) => {
+    const mainWindow = getMainWindow()
+    if (mainWindow) {
+      mainWindow.webContents.send('offer', data)
+    }
+  })
+
+  signalingServer.onAnswer((data) => {
+    const mainWindow = getMainWindow()
+    if (mainWindow) {
+      mainWindow.webContents.send('answer', data)
+    }
+  })
+
+  signalingServer.onIceCandidate((data) => {
+    const mainWindow = getMainWindow()
+    if (mainWindow) {
+      mainWindow.webContents.send('ice-candidate', data)
+    }
+  })
 }
 
 module.exports = {

@@ -7,6 +7,7 @@ import { registerPlugin } from '@capacitor/core';
 const TCPSocket = registerPlugin('TCPSocket');
 const InputExecutor = registerPlugin('InputExecutor');
 const FloatingMouse = registerPlugin('FloatingMouse');
+const ScreenCapture = registerPlugin('ScreenCapture');
 
 class MatrixTransformer {
     constructor() {
@@ -1514,6 +1515,11 @@ async function startDirectControllerConnection() {
       remoteVideo.onloadedmetadata = () => {
         log('视频元数据加载: ' + remoteVideo.videoWidth + 'x' + remoteVideo.videoHeight)
         if (matrixTransformer) {
+          if (matrixTransformer.remoteScreenWidth === 1920 && matrixTransformer.remoteScreenHeight === 1080) {
+            log('使用视频尺寸更新 remoteScreenSize')
+            matrixTransformer.setRemoteScreenSize(remoteVideo.videoWidth, remoteVideo.videoHeight)
+          }
+          
           const videoContainer = document.getElementById('videoContainer')
           const videoWrapper = document.getElementById('videoWrapper')
           if (videoContainer && videoWrapper) {
@@ -1872,7 +1878,51 @@ async function handleReceivedInput(inputData) {
   log('处理接收到的输入: ' + inputData.inputType)
   
   try {
-    await InputExecutor.executeInput(inputData)
+    switch (inputData.inputType) {
+      case 'mousemove':
+        await InputExecutor.executeMouseMove({
+          x: inputData.x,
+          y: inputData.y,
+          screenWidth: matrixTransformer?.remoteScreenWidth || 1920,
+          screenHeight: matrixTransformer?.remoteScreenHeight || 1080
+        });
+        break;
+      case 'mousedown':
+        await InputExecutor.executeMouseDown({
+          x: inputData.x,
+          y: inputData.y,
+          button: inputData.button,
+          screenWidth: matrixTransformer?.remoteScreenWidth || 1920,
+          screenHeight: matrixTransformer?.remoteScreenHeight || 1080
+        });
+        break;
+      case 'mouseup':
+        await InputExecutor.executeMouseUp({
+          x: inputData.x,
+          y: inputData.y,
+          button: inputData.button,
+          screenWidth: matrixTransformer?.remoteScreenWidth || 1920,
+          screenHeight: matrixTransformer?.remoteScreenHeight || 1080
+        });
+        break;
+      case 'wheel':
+        await InputExecutor.executeMouseWheel({
+          deltaY: inputData.deltaY || 0
+        });
+        break;
+      case 'keydown':
+        await InputExecutor.executeKeyDown({
+          key: inputData.key
+        });
+        break;
+      case 'keyup':
+        await InputExecutor.executeKeyUp({
+          key: inputData.key
+        });
+        break;
+      default:
+        log('未知输入类型: ' + inputData.inputType);
+    }
   } catch (e) {
     log('执行输入失败: ' + e.message)
   }
@@ -1880,39 +1930,40 @@ async function handleReceivedInput(inputData) {
 
 function simulateMouseMove(x, y) {
   log('模拟鼠标移动: ' + x + ', ' + y)
-  InputExecutor.executeInput({
-    inputType: 'mousemove',
+  InputExecutor.executeMouseMove({
     x: x,
-    y: y
+    y: y,
+    screenWidth: matrixTransformer?.remoteScreenWidth || 1920,
+    screenHeight: matrixTransformer?.remoteScreenHeight || 1080
   }).catch(e => log('执行鼠标移动失败: ' + e.message))
 }
 
 function simulateMouseDown(x, y, button) {
   log('模拟鼠标按下: ' + x + ', ' + y + ', button: ' + button)
-  InputExecutor.executeInput({
-    inputType: 'mousedown',
+  InputExecutor.executeMouseDown({
     x: x,
     y: y,
-    button: button
+    button: button,
+    screenWidth: matrixTransformer?.remoteScreenWidth || 1920,
+    screenHeight: matrixTransformer?.remoteScreenHeight || 1080
   }).catch(e => log('执行鼠标按下失败: ' + e.message))
 }
 
 function simulateMouseUp(x, y, button) {
   log('模拟鼠标释放: ' + x + ', ' + y + ', button: ' + button)
-  InputExecutor.executeInput({
-    inputType: 'mouseup',
+  InputExecutor.executeMouseUp({
     x: x,
     y: y,
-    button: button
+    button: button,
+    screenWidth: matrixTransformer?.remoteScreenWidth || 1920,
+    screenHeight: matrixTransformer?.remoteScreenHeight || 1080
   }).catch(e => log('执行鼠标释放失败: ' + e.message))
 }
 
 function simulateWheel(deltaY, deltaX) {
   log('模拟滚轮: deltaY=' + deltaY + ', deltaX=' + deltaX)
-  InputExecutor.executeInput({
-    inputType: 'wheel',
-    deltaY: deltaY,
-    deltaX: deltaX
+  InputExecutor.executeMouseWheel({
+    deltaY: deltaY
   }).catch(e => log('执行滚轮失败: ' + e.message))
 }
 
@@ -1921,27 +1972,15 @@ function simulateKeyDown(code, key, modifiers) {
       ', ctrl: ' + (modifiers.ctrlKey || false) +
       ', shift: ' + (modifiers.shiftKey || false) +
       ', alt: ' + (modifiers.altKey || false))
-  InputExecutor.executeInput({
-    inputType: 'keydown',
-    code: code,
-    key: key,
-    ctrlKey: modifiers.ctrlKey || false,
-    shiftKey: modifiers.shiftKey || false,
-    altKey: modifiers.altKey || false,
-    metaKey: modifiers.metaKey || false
+  InputExecutor.executeKeyDown({
+    key: key
   }).catch(e => log('执行键盘按下失败: ' + e.message))
 }
 
 function simulateKeyUp(code, key, modifiers) {
   log('模拟键盘释放: ' + code + ', key: ' + key)
-  InputExecutor.executeInput({
-    inputType: 'keyup',
-    code: code,
-    key: key,
-    ctrlKey: modifiers.ctrlKey || false,
-    shiftKey: modifiers.shiftKey || false,
-    altKey: modifiers.altKey || false,
-    metaKey: modifiers.metaKey || false
+  InputExecutor.executeKeyUp({
+    key: key
   }).catch(e => log('执行键盘释放失败: ' + e.message))
 }
 

@@ -109,12 +109,29 @@
       overflow: hidden;
       max-width: 100%;
       max-height: 100%;
+      position: relative;
+    }
+
+    .video-wrapper {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .video-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      transform-origin: 0 0;
     }
 
     .screen-video {
       display: block;
       width: 100%;
-      height: auto;
+      height: 100%;
       background: #000;
       cursor: crosshair;
     }
@@ -192,13 +209,17 @@
   </div>
 
   <div class="content">
-    <div class="screen-container">
+    <div class="screen-container" id="remoteScreen">
       <div class="placeholder" id="placeholder">
         <div class="placeholder-icon">🖥️</div>
         <div class="placeholder-text">正在建立连接...</div>
         <div class="placeholder-subtext" id="subtext">请稍候</div>
       </div>
-      <video class="screen-video" id="screenVideo" autoplay playsinline style="display: none;"></video>
+      <div class="video-wrapper" id="videoWrapper">
+        <div class="video-container" id="videoContainer">
+          <video class="screen-video" id="screenVideo" autoplay playsinline style="display: none;"></video>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -219,6 +240,7 @@
 
   <div id="debugLog" style="position: fixed; top: 60px; right: 10px; width: 350px; max-height: 300px; background: rgba(0,0,0,0.8); color: #0f0; font-family: monospace; font-size: 11px; padding: 10px; overflow-y: auto; border-radius: 5px; z-index: 9999;"></div>
 
+  <script src="src/renderer/js/matrix-transformer.js"></script>
   <script>
     const DATA_CHANNEL_STATE = {
       CONNECTING: 'connecting',
@@ -487,6 +509,9 @@
     }
 
     let videoElement = null;
+    let videoContainer = null;
+    let videoWrapper = null;
+    let matrixTransformer = null;
     let frameCount = 0;
     let lastTime = performance.now();
     let sendInputEvent = null;
@@ -495,6 +520,11 @@
     let peerConnection = null;
     let dataChannelManager = null;
     let pendingIceCandidates = [];
+    let isDragging = false;
+    let lastMouseX = 0;
+    let lastMouseY = 0;
+    let initialScale = 1;
+    let initialDistance = 0;
 
     function log(message) {
       const timestamp = new Date().toLocaleTimeString();
@@ -564,8 +594,20 @@
       }, 500);
     }
 
+    function setupMatrixTransformer() {
+      matrixTransformer = new MatrixTransformer();
+      videoContainer = document.getElementById('videoContainer');
+      videoWrapper = document.getElementById('videoWrapper');
+      
+      const remoteScreen = document.getElementById('remoteScreen');
+      const rect = remoteScreen.getBoundingClientRect();
+      matrixTransformer.setScreenSize(rect.width, rect.height);
+      
+      log('MatrixTransformer 初始化完成，屏幕尺寸: ' + rect.width + 'x' + rect.height);
+    }
+
     function setupInputEvents() {
-      const videoContainer = document.querySelector('.screen-container');
+      const videoWrapper = document.getElementById('videoWrapper');
       
       if (dataChannelManager && dataChannelManager.isOpen()) {
         sendInputEvent = (eventData) => {
@@ -575,54 +617,104 @@
           }, false);
         };
 
-        videoContainer.addEventListener('mousemove', (e) => {
-          const rect = videoElement.getBoundingClientRect();
-          const x = (e.clientX - rect.left) / rect.width;
-          const y = (e.clientY - rect.top) / rect.height;
+        videoWrapper.addEventListener('mousemove', (e) => {
+          const rect = videoContainer.getBoundingClientRect();
+          const containerX = e.clientX - rect.left;
+          const containerY = e.clientY - rect.top;
           
-          sendInputEvent({
-            inputType: 'mousemove',
-            x: Math.max(0, Math.min(1, x)),
-            y: Math.max(0, Math.min(1, y))
-          });
+          const remote = matrixTransformer.containerToRemote(containerX, containerY);
+          if (remote) {
+            sendInputEvent({
+              inputType: 'mousemove',
+              x: Math.max(0, Math.min(1, remote.x / matrixTransformer.remoteScreenWidth)),
+              y: Math.max(0, Math.min(1, remote.y / matrixTransformer.remoteScreenHeight))
+            });
+          }
         });
 
-        videoContainer.addEventListener('mousedown', (e) => {
-          const rect = videoElement.getBoundingClientRect();
-          const x = (e.clientX - rect.left) / rect.width;
-          const y = (e.clientY - rect.top) / rect.height;
+        videoWrapper.addEventListener('mousedown', (e) => {
+          const rect = videoContainer.getBoundingClientRect();
+          const containerX = e.clientX - rect.left;
+          const containerY = e.clientY - rect.top;
           
-          sendInputEvent({
-            inputType: 'mousedown',
-            button: e.button,
-            x: Math.max(0, Math.min(1, x)),
-            y: Math.max(0, Math.min(1, y))
-          });
+          const remote = matrixTransformer.containerToRemote(containerX, containerY);
+          if (remote) {
+            sendInputEvent({
+              inputType: 'mousedown',
+              button: e.button,
+              x: Math.max(0, Math.min(1, remote.x / matrixTransformer.remoteScreenWidth)),
+              y: Math.max(0, Math.min(1, remote.y / matrixTransformer.remoteScreenHeight))
+            });
+          }
         });
 
-        videoContainer.addEventListener('mouseup', (e) => {
-          const rect = videoElement.getBoundingClientRect();
-          const x = (e.clientX - rect.left) / rect.width;
-          const y = (e.clientY - rect.top) / rect.height;
+        videoWrapper.addEventListener('mouseup', (e) => {
+          const rect = videoContainer.getBoundingClientRect();
+          const containerX = e.clientX - rect.left;
+          const containerY = e.clientY - rect.top;
           
-          sendInputEvent({
-            inputType: 'mouseup',
-            button: e.button,
-            x: Math.max(0, Math.min(1, x)),
-            y: Math.max(0, Math.min(1, y))
-          });
+          const remote = matrixTransformer.containerToRemote(containerX, containerY);
+          if (remote) {
+            sendInputEvent({
+              inputType: 'mouseup',
+              button: e.button,
+              x: Math.max(0, Math.min(1, remote.x / matrixTransformer.remoteScreenWidth)),
+              y: Math.max(0, Math.min(1, remote.y / matrixTransformer.remoteScreenHeight))
+            });
+          }
         });
 
-        videoContainer.addEventListener('wheel', (e) => {
+        videoWrapper.addEventListener('wheel', (e) => {
           e.preventDefault();
-          sendInputEvent({
-            inputType: 'wheel',
-            deltaY: e.deltaY,
-            deltaX: e.deltaX || 0
-          });
+          
+          if (e.deltaY !== 0) {
+            const rect = videoContainer.getBoundingClientRect();
+            const containerX = e.clientX - rect.left;
+            const containerY = e.clientY - rect.top;
+            
+            const scaleFactor = e.deltaY > 0 ? 0.9 : 1.1;
+            const newScale = matrixTransformer.scale * scaleFactor;
+            matrixTransformer.updateScale(newScale, e.clientX, e.clientY);
+            matrixTransformer.applyTransform(videoContainer);
+          } else {
+            sendInputEvent({
+              inputType: 'wheel',
+              deltaY: e.deltaY,
+              deltaX: e.deltaX || 0
+            });
+          }
         }, { passive: false });
 
-        videoContainer.addEventListener('contextmenu', (e) => {
+        videoWrapper.addEventListener('mousedown', (e) => {
+          if (e.button === 1) { // 中键
+            isDragging = true;
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+          }
+        });
+
+        videoWrapper.addEventListener('mousemove', (e) => {
+          if (isDragging) {
+            const deltaX = e.clientX - lastMouseX;
+            const deltaY = e.clientY - lastMouseY;
+            matrixTransformer.updatePan(deltaX, deltaY);
+            matrixTransformer.applyTransform(videoContainer);
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+          }
+        });
+
+        videoWrapper.addEventListener('mouseup', (e) => {
+          if (e.button === 1) {
+            isDragging = false;
+          }
+        });
+
+        videoWrapper.addEventListener('mouseleave', () => {
+          isDragging = false;
+        });
+
+        videoWrapper.addEventListener('contextmenu', (e) => {
           e.preventDefault();
         });
 
@@ -671,6 +763,7 @@
 
     function showVideo() {
       document.getElementById('placeholder').style.display = 'none';
+      document.getElementById('videoWrapper').style.display = 'block';
       document.getElementById('screenVideo').style.display = 'block';
     }
 
@@ -719,11 +812,24 @@
           videoElement.srcObject = stream;
           
           videoElement.onloadedmetadata = () => {
-            log('视频流加载成功');
+            log('视频流加载成功，尺寸: ' + videoElement.videoWidth + 'x' + videoElement.videoHeight);
             showVideo();
             updateStatus('已连接');
             document.getElementById('resolution').textContent = 
               `${videoElement.videoWidth}x${videoElement.videoHeight}`;
+            
+            if (matrixTransformer) {
+              matrixTransformer.videoWidth = videoElement.videoWidth;
+              matrixTransformer.videoHeight = videoElement.videoHeight;
+              
+              if (matrixTransformer.remoteScreenWidth === 1920 && matrixTransformer.remoteScreenHeight === 1080) {
+                log('使用视频尺寸更新 remoteScreenSize');
+                matrixTransformer.setRemoteScreenSize(videoElement.videoWidth, videoElement.videoHeight);
+              }
+              matrixTransformer.applyContainerSize(videoContainer, videoWrapper);
+              log('视频加载后更新 container: ' + matrixTransformer.displayWidth + 'x' + matrixTransformer.displayHeight);
+            }
+            
             requestAnimationFrame(onVideoFrame);
             setupInputEvents();
             startLatencyCheck();
@@ -845,11 +951,24 @@
           videoElement.srcObject = stream;
           
           videoElement.onloadedmetadata = () => {
-            log('视频流加载成功');
+            log('视频流加载成功，尺寸: ' + videoElement.videoWidth + 'x' + videoElement.videoHeight);
             showVideo();
             updateStatus('已连接');
             document.getElementById('resolution').textContent = 
               `${videoElement.videoWidth}x${videoElement.videoHeight}`;
+            
+            if (matrixTransformer) {
+              matrixTransformer.videoWidth = videoElement.videoWidth;
+              matrixTransformer.videoHeight = videoElement.videoHeight;
+              
+              if (matrixTransformer.remoteScreenWidth === 1920 && matrixTransformer.remoteScreenHeight === 1080) {
+                log('使用视频尺寸更新 remoteScreenSize');
+                matrixTransformer.setRemoteScreenSize(videoElement.videoWidth, videoElement.videoHeight);
+              }
+              matrixTransformer.applyContainerSize(videoContainer, videoWrapper);
+              log('视频加载后更新 container: ' + matrixTransformer.displayWidth + 'x' + matrixTransformer.displayHeight);
+            }
+            
             requestAnimationFrame(onVideoFrame);
             setupInputEvents();
             startLatencyCheck();
@@ -914,6 +1033,12 @@
       } catch (error) {
         log('获取屏幕尺寸失败: ' + error.message);
       }
+
+      // 初始化MatrixTransformer
+      setupMatrixTransformer();
+      
+      // 初始隐藏视频包装器
+      document.getElementById('videoWrapper').style.display = 'none';
 
       updateStatus('正在连接...');
       showPlaceholder('正在建立WebRTC连接...', '请稍候');

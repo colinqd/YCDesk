@@ -3,6 +3,16 @@ apply plugin: 'com.android.application'
 android {
     namespace "com.ycdesk.mobile"
     compileSdk rootProject.ext.compileSdkVersion
+    
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    
+    tasks.withType(JavaCompile) {
+        options.compilerArgs << "-Xlint:deprecation" << "-Xlint:unchecked"
+    }
+    
     defaultConfig {
         applicationId "com.ycdesk.mobile"
         minSdkVersion rootProject.ext.minSdkVersion
