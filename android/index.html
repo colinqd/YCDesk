@@ -509,7 +509,7 @@
       overflow: hidden;
       border: 1px solid #00ff00;
       z-index: 1;
-      transform-origin: center center;
+      transform-origin: 0 0;
     }
     
     .video-wrapper {
@@ -863,78 +863,6 @@
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
-
-    .mouse-mode-modal {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.7);
-      display: none;
-      align-items: center;
-      justify-content: center;
-      z-index: 10002;
-    }
-
-    .mouse-mode-modal.show {
-      display: flex;
-    }
-
-    .mouse-mode-dialog {
-      background: white;
-      border-radius: 16px;
-      padding: 20px;
-      width: 85%;
-      max-width: 320px;
-      text-align: center;
-    }
-
-    .mouse-mode-dialog h3 {
-      margin: 0 0 15px 0;
-      color: #2d3748;
-      font-size: 18px;
-    }
-
-    .mouse-mode-options {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .mouse-mode-option {
-      padding: 15px;
-      border: 2px solid #e2e8f0;
-      border-radius: 12px;
-      cursor: pointer;
-      transition: all 0.25s;
-      text-align: left;
-    }
-
-    .mouse-mode-option:active {
-      transform: scale(0.98);
-    }
-
-    .mouse-mode-option.selected {
-      border-color: #667eea;
-      background: #f0f4ff;
-    }
-
-    .mouse-mode-option .mode-icon {
-      font-size: 24px;
-      margin-bottom: 8px;
-    }
-
-    .mouse-mode-option .mode-title {
-      font-weight: 700;
-      color: #2d3748;
-      margin-bottom: 4px;
-    }
-
-    .mouse-mode-option .mode-desc {
-      font-size: 12px;
-      color: #718096;
-    }
   </style>
 </head>
 <body>
@@ -1110,7 +1038,7 @@
     <div class="control-overlay" id="controlOverlay">
       <button class="control-btn" onclick="toggleControlsHide()">👁️</button>
       <button class="control-btn" onclick="toggleKeyboard()">⌨️</button>
-      <button class="control-btn" onclick="toggleMouseMode()">🖱️</button>
+      <button class="control-btn" id="mouseModeBtn" onclick="toggleMouseMode()">🖱️</button>
       <button class="control-btn" onclick="resetZoomAndPan()">↺</button>
       <button class="control-btn" onclick="toggleFullscreen()">⛶</button>
       <button class="control-btn danger" onclick="disconnect()">✕</button>
@@ -1211,24 +1139,6 @@
   </div>
 
   <div class="toast" id="toast"></div>
-
-  <div class="mouse-mode-modal" id="mouseModeModal">
-    <div class="mouse-mode-dialog">
-      <h3>选择鼠标模式</h3>
-      <div class="mouse-mode-options">
-        <div class="mouse-mode-option" id="pointerModeOption" onclick="selectMouseMode('pointer')">
-          <div class="mode-icon">🖱️</div>
-          <div class="mode-title">指针模式</div>
-          <div class="mode-desc">使用悬浮鼠标指针操作，远程鼠标与悬浮窗指针同步</div>
-        </div>
-        <div class="mouse-mode-option" id="touchModeOption" onclick="selectMouseMode('touch')">
-          <div class="mode-icon">👆</div>
-          <div class="mode-title">触屏模式</div>
-          <div class="mode-desc">直接触摸操作，远程鼠标与触摸位置同步</div>
-        </div>
-      </div>
-    </div>
-  </div>
 
   <script type="module" src="./app.js"></script>
 </body>

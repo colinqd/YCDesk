@@ -14,10 +14,8 @@ class MatrixTransformer {
         this.panX = 0;
         this.panY = 0;
         
-        this.videoWidth = 0;
-        this.videoHeight = 0;
-        this.containerWidth = 0;
-        this.containerHeight = 0;
+        this.screenWidth = 0;
+        this.screenHeight = 0;
         this.remoteScreenWidth = 1920;
         this.remoteScreenHeight = 1080;
         
@@ -34,16 +32,9 @@ class MatrixTransformer {
         this._matrixDirty = true;
     }
     
-    setVideoSize(width, height) {
-        this.videoWidth = width;
-        this.videoHeight = height;
-        this._matrixDirty = true;
-        this._updateDisplayRect();
-    }
-    
-    setContainerSize(width, height) {
-        this.containerWidth = width;
-        this.containerHeight = height;
+    setScreenSize(width, height) {
+        this.screenWidth = width;
+        this.screenHeight = height;
         this._matrixDirty = true;
         this._updateDisplayRect();
     }
@@ -55,39 +46,39 @@ class MatrixTransformer {
     }
     
     _updateDisplayRect() {
-        log('_updateDisplayRect: containerWidth=' + this.containerWidth + ', containerHeight=' + this.containerHeight +
-            ', videoWidth=' + this.videoWidth + ', videoHeight=' + this.videoHeight);
+        log('_updateDisplayRect: screenWidth=' + this.screenWidth + ', screenHeight=' + this.screenHeight +
+            ', remoteScreenWidth=' + this.remoteScreenWidth + ', remoteScreenHeight=' + this.remoteScreenHeight);
         
-        if (this.containerWidth === 0 || this.containerHeight === 0) {
+        if (this.screenWidth === 0 || this.screenHeight === 0) {
             this.displayX = 0;
             this.displayY = 0;
             this.displayWidth = 0;
             this.displayHeight = 0;
-            log('_updateDisplayRect: container 尺寸为 0，跳过计算');
+            log('_updateDisplayRect: screen 尺寸为 0，跳过计算');
             return;
         }
         
-        if (this.videoWidth === 0 || this.videoHeight === 0) {
+        if (this.remoteScreenWidth === 0 || this.remoteScreenHeight === 0) {
             this.displayX = 0;
             this.displayY = 0;
-            this.displayWidth = this.containerWidth;
-            this.displayHeight = this.containerHeight;
-            log('_updateDisplayRect: video 尺寸为 0，使用 container 尺寸');
+            this.displayWidth = this.screenWidth;
+            this.displayHeight = this.screenHeight;
+            log('_updateDisplayRect: remoteScreen 尺寸为 0，使用 screen 尺寸');
             return;
         }
         
-        const containerAspect = this.containerWidth / this.containerHeight;
-        const videoAspect = this.videoWidth / this.videoHeight;
+        const screenAspect = this.screenWidth / this.screenHeight;
+        const remoteAspect = this.remoteScreenWidth / this.remoteScreenHeight;
         
-        if (videoAspect > containerAspect) {
-            this.displayWidth = this.containerWidth;
-            this.displayHeight = this.containerWidth / videoAspect;
+        if (remoteAspect > screenAspect) {
+            this.displayWidth = this.screenWidth;
+            this.displayHeight = this.screenWidth / remoteAspect;
             this.displayX = 0;
-            this.displayY = (this.containerHeight - this.displayHeight) / 2;
+            this.displayY = (this.screenHeight - this.displayHeight) / 2;
         } else {
-            this.displayHeight = this.containerHeight;
-            this.displayWidth = this.containerHeight * videoAspect;
-            this.displayX = (this.containerWidth - this.displayWidth) / 2;
+            this.displayHeight = this.screenHeight;
+            this.displayWidth = this.screenHeight * remoteAspect;
+            this.displayX = (this.screenWidth - this.displayWidth) / 2;
             this.displayY = 0;
         }
         
@@ -212,12 +203,16 @@ class MatrixTransformer {
     }
     
     updateScale(newScale, centerX, centerY) {
-        const centerInVideo = this.viewToVideo(centerX, centerY);
+        const displayX = centerX - this.displayX;
+        const displayY = centerY - this.displayY;
+        
+        const unscaledX = (displayX - this.panX) / this.scale;
+        const unscaledY = (displayY - this.panY) / this.scale;
         
         this.scale = Math.max(0.5, Math.min(3.0, newScale));
         
-        this.panX = centerX - centerInVideo.x * this.scale;
-        this.panY = centerY - centerInVideo.y * this.scale;
+        this.panX = displayX - unscaledX * this.scale;
+        this.panY = displayY - unscaledY * this.scale;
         
         this._matrixDirty = true;
         this.clampPan();
@@ -231,21 +226,12 @@ class MatrixTransformer {
     }
     
     clampPan() {
-        const scaledWidth = this.displayWidth * this.scale;
-        const scaledHeight = this.displayHeight * this.scale;
-        
-        const maxOffsetX = (scaledWidth - this.displayWidth) / 2;
-        const maxOffsetY = (scaledHeight - this.displayHeight) / 2;
-        
-        this.panX = Math.max(-maxOffsetX, Math.min(maxOffsetX, this.panX));
-        this.panY = Math.max(-maxOffsetY, Math.min(maxOffsetY, this.panY));
-        
         this._matrixDirty = true;
     }
     
     applyTransform(element) {
         element.style.transform = `translate(${this.panX}px, ${this.panY}px) scale(${this.scale})`;
-        element.style.transformOrigin = 'center center';
+        element.style.transformOrigin = '0 0';
     }
     
     applyContainerSize(containerElement, wrapperElement) {
@@ -276,6 +262,21 @@ class MatrixTransformer {
         this.scale = 1.0;
         this.panX = 0;
         this.panY = 0;
+        this._matrixDirty = true;
+    }
+    
+    fullReset() {
+        this.scale = 1.0;
+        this.panX = 0;
+        this.panY = 0;
+        this.screenWidth = 0;
+        this.screenHeight = 0;
+        this.remoteScreenWidth = 1920;
+        this.remoteScreenHeight = 1080;
+        this.displayX = 0;
+        this.displayY = 0;
+        this.displayWidth = 0;
+        this.displayHeight = 0;
         this._matrixDirty = true;
     }
 }
@@ -469,7 +470,6 @@ class GestureHandler {
         this.onDirectInput = onDirectInput;
         
         this.touches = new Map();
-        this.lastTapTime = 0;
         
         this.isPinching = false;
         this.initialPinchDistance = 0;
@@ -477,24 +477,27 @@ class GestureHandler {
         this.pinchCenterX = 0;
         this.pinchCenterY = 0;
         
-        this.isInTouchMode = true;
-        this.activePointerId = null;
-        this.isMouseDown = false;
-    }
-    
-    setTouchMode(enabled) {
-        this.isInTouchMode = enabled;
+        this.lastTapTime = 0;
+        this.longPressTimer = null;
+        this.isLongPress = false;
+        this.isDragging = false;
+        this.dragStartX = 0;
+        this.dragStartY = 0;
+        this.lastMouseX = 0;
+        this.lastMouseY = 0;
+        
+        this.scrollStartY = 0;
+        this.isScrolling = false;
+        
+        this.isPanning = false;
+        this.panStartX = 0;
+        this.panStartY = 0;
+        this.initialPanX = 0;
+        this.initialPanY = 0;
     }
     
     handleTouchStart(event) {
-        event.preventDefault();
-        
-        log('GestureHandler: touchstart - touches.length=' + event.touches.length);
-        
-        for (let i = 0; i < event.touches.length; i++) {
-            const touch = event.touches[i];
-            log('GestureHandler: touch[' + i + '] - clientX=' + touch.clientX + ', clientY=' + touch.clientY);
-        }
+        const touchCount = event.touches.length;
         
         for (let i = 0; i < event.touches.length; i++) {
             const touch = event.touches[i];
@@ -503,64 +506,53 @@ class GestureHandler {
             this.touches.set(pointerId, {
                 x: touch.clientX,
                 y: touch.clientY,
+                startX: touch.clientX,
+                startY: touch.clientY,
                 startTime: Date.now()
             });
         }
         
-        if (event.touches.length === 2) {
-            this.isMouseDown = false;
-            this.startPinch(event.touches[0], event.touches[1]);
-        } else if (event.touches.length === 1 && !this.isPinching) {
-            this.startSingleTouch(event.touches[0]);
+        if (touchCount === 1) {
+            this.handleSingleTouchStart(event.touches[0]);
+        } else if (touchCount === 2) {
+            this.handleTwoTouchStart(event.touches[0], event.touches[1]);
+        } else if (touchCount === 3) {
+            this.handleThreeTouchStart();
         }
     }
     
-    handleTouchMove(event) {
-        event.preventDefault();
+    handleSingleTouchStart(touch) {
+        const now = Date.now();
         
-        if (this.isPinching && event.touches.length === 2) {
-            this.updatePinch(event.touches[0], event.touches[1]);
-        } else if (event.touches.length === 1 && !this.isPinching && this.isInTouchMode) {
-            this.updateSingleTouch(event.touches[0]);
-        }
-    }
-    
-    handleTouchEnd(event) {
-        event.preventDefault();
+        this.dragStartX = touch.clientX;
+        this.dragStartY = touch.clientY;
+        this.lastMouseX = touch.clientX;
+        this.lastMouseY = touch.clientY;
         
-        log('GestureHandler: touchend - changedTouches.length=' + event.changedTouches.length + ', touches.length=' + event.touches.length);
+        this.isLongPress = false;
+        this.isDragging = false;
         
-        for (let i = 0; i < event.changedTouches.length; i++) {
-            const touch = event.changedTouches[i];
-            const pointerId = touch.identifier;
-            const touchData = this.touches.get(pointerId);
-            
-            log('GestureHandler: touchend[' + i + '] - clientX=' + touch.clientX + ', clientY=' + touch.clientY + ', identifier=' + touch.identifier);
-            
-            if (touchData) {
-                const duration = Date.now() - touchData.startTime;
-                const distance = Math.hypot(
-                    touch.clientX - touchData.x,
-                    touch.clientY - touchData.y
-                );
-                
-                log('GestureHandler: 触摸数据 - duration=' + duration + 'ms, distance=' + distance.toFixed(2) + 'px');
-                
-                if (event.touches.length === 0 && !this.isPinching) {
-                    this.endSingleTouch(touchData, touch, duration, distance);
+        if (now - this.lastTapTime < 300) {
+            this.isDragging = true;
+            this.sendMouseDown(touch.clientX, touch.clientY, 0);
+            log('双击拖拽开始');
+        } else {
+            this.longPressTimer = setTimeout(() => {
+                this.isLongPress = true;
+                this.sendMouseDown(this.lastMouseX, this.lastMouseY, 2);
+                log('长按触发右键');
+                if (navigator.vibrate) {
+                    navigator.vibrate(50);
                 }
-            }
-            
-            this.touches.delete(pointerId);
-        }
-        
-        if (event.touches.length < 2) {
-            this.isPinching = false;
+            }, 600);
         }
     }
     
-    startPinch(touch1, touch2) {
+    handleTwoTouchStart(touch1, touch2) {
         this.isPinching = true;
+        this.isScrolling = false;
+        this.isPanning = false;
+        
         this.initialPinchDistance = Math.hypot(
             touch2.clientX - touch1.clientX,
             touch2.clientY - touch1.clientY
@@ -568,85 +560,217 @@ class GestureHandler {
         this.initialScale = this.transformer.scale;
         this.pinchCenterX = (touch1.clientX + touch2.clientX) / 2;
         this.pinchCenterY = (touch1.clientY + touch2.clientY) / 2;
+        this.scrollStartY = (touch1.clientY + touch2.clientY) / 2;
+        
+        this.panStartX = this.pinchCenterX;
+        this.panStartY = this.pinchCenterY;
+        this.initialPanX = this.transformer.panX;
+        this.initialPanY = this.transformer.panY;
+        
+        if (this.longPressTimer) {
+            clearTimeout(this.longPressTimer);
+            this.longPressTimer = null;
+        }
     }
     
-    updatePinch(touch1, touch2) {
+    handleThreeTouchStart() {
+        if (this.longPressTimer) {
+            clearTimeout(this.longPressTimer);
+            this.longPressTimer = null;
+        }
+        toggleControlsHide();
+        log('三指轻点 - 切换工具栏');
+    }
+    
+    handleTouchMove(event) {
+        const touchCount = event.touches.length;
+        
+        if (touchCount === 1) {
+            this.handleSingleTouchMove(event.touches[0]);
+        } else if (touchCount === 2) {
+            this.handleTwoTouchMove(event.touches[0], event.touches[1]);
+        }
+    }
+    
+    handleSingleTouchMove(touch) {
+        if (this.longPressTimer) {
+            const dx = touch.clientX - this.dragStartX;
+            const dy = touch.clientY - this.dragStartY;
+            if (Math.hypot(dx, dy) > 10) {
+                clearTimeout(this.longPressTimer);
+                this.longPressTimer = null;
+            }
+        }
+        
+        if (!this.isLongPress) {
+            if (this.isDragging) {
+                this.sendMouseMove(touch.clientX, touch.clientY);
+            } else {
+                const dx = touch.clientX - this.dragStartX;
+                const dy = touch.clientY - this.dragStartY;
+                if (Math.hypot(dx, dy) > 10) {
+                    this.isDragging = true;
+                    this.sendMouseDown(touch.clientX, touch.clientY, 0);
+                    log('开始拖拽');
+                }
+            }
+            
+            this.lastMouseX = touch.clientX;
+            this.lastMouseY = touch.clientY;
+        }
+    }
+    
+    handleTwoTouchMove(touch1, touch2) {
         const currentDistance = Math.hypot(
             touch2.clientX - touch1.clientX,
             touch2.clientY - touch1.clientY
         );
         
-        const scaleDelta = currentDistance / this.initialPinchDistance;
-        const newScale = Math.max(0.5, Math.min(3.0, this.initialScale * scaleDelta));
+        const currentCenterX = (touch1.clientX + touch2.clientX) / 2;
+        const currentCenterY = (touch1.clientY + touch2.clientY) / 2;
         
-        this.transformer.updateScale(newScale, this.pinchCenterX, this.pinchCenterY);
+        const distanceDelta = Math.abs(currentDistance - this.initialPinchDistance);
+        const deltaX = currentCenterX - this.panStartX;
+        const deltaY = currentCenterY - this.panStartY;
+        const centerDelta = Math.hypot(deltaX, deltaY);
         
-        const videoContainer = document.getElementById('videoContainer');
-        if (videoContainer) {
-            this.transformer.applyTransform(videoContainer);
+        if (distanceDelta > 30) {
+            this.isScrolling = false;
+            this.isPanning = false;
+            const scaleDelta = currentDistance / this.initialPinchDistance;
+            const newScale = Math.max(0.5, Math.min(3.0, this.initialScale * scaleDelta));
+            
+            this.transformer.updateScale(newScale, currentCenterX, currentCenterY);
+            log('双指缩放: scale=' + newScale.toFixed(2));
+            
+            const videoContainer = document.getElementById('videoContainer');
+            if (videoContainer) {
+                this.transformer.applyTransform(videoContainer);
+            }
+        } else if (this.transformer.scale > 1.05 && centerDelta > 10) {
+            this.isScrolling = false;
+            this.isPanning = true;
+            
+            this.transformer.panX = this.initialPanX + deltaX;
+            this.transformer.panY = this.initialPanY + deltaY;
+            this.transformer.clampPan();
+            this.transformer._matrixDirty = true;
+            
+            const videoContainer = document.getElementById('videoContainer');
+            if (videoContainer) {
+                this.transformer.applyTransform(videoContainer);
+            }
+            log('双指平移: panX=' + this.transformer.panX.toFixed(0) + ', panY=' + this.transformer.panY.toFixed(0));
+        } else if (Math.abs(deltaY) > 10 && Math.abs(deltaX) < 20 && !this.isPanning) {
+            this.isScrolling = true;
+            const scrollDelta = -deltaY * 2;
+            this.sendWheel(scrollDelta);
+            this.panStartY = currentCenterY;
+            this.scrollStartY = currentCenterY;
+            log('双指滚动: delta=' + scrollDelta.toFixed(0));
         }
     }
     
-    startSingleTouch(touch) {
-        if (!this.isInTouchMode) {
-            log('GestureHandler: startSingleTouch - 非触摸模式，跳过');
-            return;
+    handleTouchEnd(event) {
+        const touchCount = event.touches.length;
+        
+        for (let i = 0; i < event.changedTouches.length; i++) {
+            const touch = event.changedTouches[i];
+            const pointerId = touch.identifier;
+            const touchData = this.touches.get(pointerId);
+            
+            if (touchData && touchCount === 0) {
+                this.handleSingleTouchEnd(touch, touchData);
+            }
+            
+            this.touches.delete(pointerId);
         }
         
-        log('GestureHandler: startSingleTouch - clientX=' + touch.clientX + ', clientY=' + touch.clientY + ', identifier=' + touch.identifier);
-        
-        this.activePointerId = touch.identifier;
-        this.isMouseDown = true;
-        
-        this.inputDispatcher.dispatchTouchInput(
-            touch.clientX,
-            touch.clientY,
-            'mousedown',
-            0
-        );
+        if (touchCount < 2) {
+            this.isPinching = false;
+            this.isScrolling = false;
+            this.isPanning = false;
+        }
     }
     
-    updateSingleTouch(touch) {
-        if (!this.isInTouchMode || this.activePointerId !== touch.identifier || !this.isMouseDown) {
-            return;
+    handleSingleTouchEnd(touch, touchData) {
+        if (this.longPressTimer) {
+            clearTimeout(this.longPressTimer);
+            this.longPressTimer = null;
         }
         
-        log('GestureHandler: updateSingleTouch - clientX=' + touch.clientX + ', clientY=' + touch.clientY);
-        
-        this.inputDispatcher.dispatchTouchInput(
-            touch.clientX,
-            touch.clientY,
-            'mousemove',
-            0
+        const duration = Date.now() - touchData.startTime;
+        const distance = Math.hypot(
+            touch.clientX - touchData.startX,
+            touch.clientY - touchData.startY
         );
+        
+        if (this.isLongPress) {
+            this.sendMouseUp(touch.clientX, touch.clientY, 2);
+            log('右键释放');
+        } else if (this.isDragging) {
+            this.sendMouseUp(touch.clientX, touch.clientY, 0);
+            log('拖拽结束');
+        } else if (distance < 15 && duration < 300) {
+            const now = Date.now();
+            if (now - this.lastTapTime < 300) {
+                this.sendDoubleClick(touch.clientX, touch.clientY);
+                log('双击');
+            } else {
+                this.sendMouseClick(touch.clientX, touch.clientY, 0);
+                log('单击');
+            }
+            this.lastTapTime = now;
+        }
+        
+        this.isDragging = false;
+        this.isLongPress = false;
     }
     
-    endSingleTouch(touchData, touch, duration, distance) {
-        log('GestureHandler: endSingleTouch - clientX=' + touch.clientX + ', clientY=' + touch.clientY + ', duration=' + duration + 'ms, distance=' + distance.toFixed(2) + 'px');
-        
-        this.isMouseDown = false;
-        
-        const now = Date.now();
-        if (now - this.lastTapTime < 300 && distance < 10) {
-            log('GestureHandler: 检测到双击');
-            this.inputDispatcher.dispatchTouchInput(
-                touch.clientX,
-                touch.clientY,
-                'doubleclick',
-                0
-            );
+    sendMouseMove(x, y) {
+        if (this.inputDispatcher) {
+            this.inputDispatcher.dispatchTouchInput(x, y, 'mousemove', 0);
         }
-        
-        this.lastTapTime = now;
-        
-        this.inputDispatcher.dispatchTouchInput(
-            touch.clientX,
-            touch.clientY,
-            'mouseup',
-            0
-        );
-        
-        this.activePointerId = null;
+    }
+    
+    sendMouseDown(x, y, button) {
+        if (this.inputDispatcher) {
+            this.inputDispatcher.dispatchTouchInput(x, y, 'mousedown', button);
+        }
+        if (navigator.vibrate) {
+            navigator.vibrate(30);
+        }
+    }
+    
+    sendMouseUp(x, y, button) {
+        if (this.inputDispatcher) {
+            this.inputDispatcher.dispatchTouchInput(x, y, 'mouseup', button);
+        }
+    }
+    
+    sendMouseClick(x, y, button) {
+        if (this.inputDispatcher) {
+            this.inputDispatcher.dispatchTouchInput(x, y, 'mousedown', button);
+            this.inputDispatcher.dispatchTouchInput(x, y, 'mouseup', button);
+        }
+        if (navigator.vibrate) {
+            navigator.vibrate(30);
+        }
+    }
+    
+    sendDoubleClick(x, y) {
+        if (this.inputDispatcher) {
+            this.inputDispatcher.dispatchTouchInput(x, y, 'doubleclick', 0);
+        }
+        if (navigator.vibrate) {
+            navigator.vibrate([30, 50, 30]);
+        }
+    }
+    
+    sendWheel(deltaY) {
+        if (this.inputDispatcher) {
+            this.inputDispatcher.dispatchTouchInput(0, 0, 'wheel', 0, deltaY);
+        }
     }
 }
 
@@ -669,8 +793,6 @@ let dataChannel = null
 let connectionLogDiv = null
 let currentRole = null
 let isConnected = false
-let isMouseMode = false
-let mouseModeType = 'pointer'
 let pendingIceCandidates = []
 
 const CONNECTION_STATUS = {
@@ -1388,6 +1510,18 @@ async function startDirectControllerConnection() {
       remoteVideo.srcObject = stream
       remoteVideo.play().catch(e => log('播放视频失败: ' + e.message))
       log('视频流已设置到video元素')
+      
+      remoteVideo.onloadedmetadata = () => {
+        log('视频元数据加载: ' + remoteVideo.videoWidth + 'x' + remoteVideo.videoHeight)
+        if (matrixTransformer) {
+          const videoContainer = document.getElementById('videoContainer')
+          const videoWrapper = document.getElementById('videoWrapper')
+          if (videoContainer && videoWrapper) {
+            matrixTransformer.applyContainerSize(videoContainer, videoWrapper)
+            log('视频加载后更新 container: ' + matrixTransformer.displayWidth + 'x' + matrixTransformer.displayHeight)
+          }
+        }
+      }
     }
   }
   
@@ -1695,10 +1829,6 @@ function setupDataChannel() {
     
     setTimeout(() => {
       showRemoteScreen()
-      // setupTouchEvents()  // 已注释，使用新的手势处理器
-      if (isMouseMode) {
-        showFloatingMouse()
-      }
     }, 500)
   }
 
@@ -1940,340 +2070,6 @@ let lastPanX = 0
 let lastPanY = 0
 let isPanning = false
 let isFullscreen = false
-let isZoomed = false
-let videoWidth = 0
-let videoHeight = 0
-let containerWidth = 0
-let containerHeight = 0
-let wrapperX = 0
-let wrapperY = 0
-let wrapperWidth = 0
-let wrapperHeight = 0
-
-function setupTouchEvents() {
-  const remoteVideo = document.getElementById('remoteVideo')
-  const videoContainer = document.getElementById('videoContainer')
-  const videoWrapper = document.getElementById('videoWrapper')
-  if (!remoteVideo || !videoWrapper) return
-  
-  let touchStartTime = 0
-  let touchStartX = 0
-  let touchStartY = 0
-  let lastTapTime = 0
-  let touchCount = 0
-  let isMouseDown = false
-  let initialPinchCenterX = 0
-  let initialPinchCenterY = 0
-  let initialScale = 1
-  let initialPanX = 0
-  let initialPanY = 0
-  let lastTwoTapTime = 0
-  
-  function initWrapperSize() {
-    const containerRect = videoContainer.getBoundingClientRect()
-    containerWidth = containerRect.width
-    containerHeight = containerRect.height
-    
-    wrapperWidth = containerWidth
-    wrapperHeight = containerHeight
-    wrapperX = 0
-    wrapperY = 0
-    
-    videoWrapper.style.width = wrapperWidth + 'px'
-    videoWrapper.style.height = wrapperHeight + 'px'
-    videoWrapper.style.left = wrapperX + 'px'
-    videoWrapper.style.top = wrapperY + 'px'
-    
-    currentScale = 1
-    panX = 0
-    panY = 0
-    isZoomed = false
-    updateVideoTransform()
-  }
-  
-  function updateVideoTransform() {
-    const container = document.getElementById('videoContainer')
-    const videoWrapper = document.getElementById('videoWrapper')
-    if (!container || !videoWrapper) return
-    
-    const containerRect = container.getBoundingClientRect()
-    
-    // 计算缩放后的尺寸
-    const scaledWidth = containerRect.width * currentScale
-    const scaledHeight = containerRect.height * currentScale
-    
-    // 向右拖动时，视频最左边不能离开屏幕最左边
-    if (panX > 0) panX = 0
-    
-    // 向左拖动时，视频最右边不能离开屏幕最右边
-    const maxPanX = containerRect.width - scaledWidth
-    if (panX < maxPanX) panX = maxPanX
-    
-    // 向下拖动时，视频最上边不能离开屏幕最上边
-    if (panY > 0) panY = 0
-    
-    // 向上拖动时，视频最下边不能离开屏幕最下边
-    const maxPanY = containerRect.height - scaledHeight
-    if (panY < maxPanY) panY = maxPanY
-    
-    // 将缩放应用到 video-wrapper
-    videoWrapper.style.transform = `translate(${panX}px, ${panY}px) scale(${currentScale})`
-    videoWrapper.style.transformOrigin = '0 0'
-  }
-  
-  setTimeout(initWrapperSize, 100)
-  window.addEventListener('resize', initWrapperSize)
-  
-  videoWrapper.addEventListener('touchstart', (e) => {
-    e.preventDefault()
-    touchCount = e.touches.length
-    isZoomed = currentScale > 1
-    
-    const rect = remoteVideo.getBoundingClientRect()
-    if (!rect || rect.width === 0 || rect.height === 0) {
-      return
-    }
-    videoWidth = rect.width
-    videoHeight = rect.height
-    
-    if (touchCount === 2) {
-      const touch1 = e.touches[0]
-      const touch2 = e.touches[1]
-      lastTouchDistance = Math.hypot(
-        touch2.clientX - touch1.clientX,
-        touch2.clientY - touch1.clientY
-      )
-      initialPinchCenterX = (touch1.clientX + touch2.clientX) / 2
-      initialPinchCenterY = (touch1.clientY + touch2.clientY) / 2
-      initialPanX = panX
-      initialPanY = panY
-      initialScale = currentScale
-      isPanning = true
-      return
-    }
-    
-    const touch = e.touches[0]
-    touchStartTime = Date.now()
-    touchStartX = touch.clientX
-    touchStartY = touch.clientY
-    initialPanX = panX
-    initialPanY = panY
-    
-    if (isZoomed) {
-      return
-    }
-    
-    const scaledX = (touch.clientX - rect.left) / currentScale
-    const scaledY = (touch.clientY - rect.top) / currentScale
-    const x = Math.round(scaledX / rect.width * 65535)
-    const y = Math.round(scaledY / rect.height * 65535)
-    
-    if (isMouseMode && mouseModeType === 'touch') {
-      sendControlCommand({
-        type: 'mousemove',
-        x: x,
-        y: y
-      })
-      sendControlCommand({
-        type: 'mousedown',
-        x: x,
-        y: y,
-        button: 'left'
-      })
-      isMouseDown = true
-    } else if (isMouseMode && mouseModeType === 'pointer') {
-      // 指针模式：不使用触摸坐标，悬浮鼠标位置由悬浮窗控制
-      return
-    } else {
-      sendControlCommand({
-        type: 'mousemove',
-        x: x,
-        y: y
-      })
-      sendControlCommand({
-        type: 'mousedown',
-        x: x,
-        y: y,
-        button: 'left'
-      })
-      isMouseDown = true
-    }
-  }, { passive: false })
-  
-  videoWrapper.addEventListener('touchmove', (e) => {
-    e.preventDefault()
-    touchCount = e.touches.length
-    
-    if (touchCount === 2) {
-      const touch1 = e.touches[0]
-      const touch2 = e.touches[1]
-      const distance = Math.hypot(
-        touch2.clientX - touch1.clientX,
-        touch2.clientY - touch1.clientY
-      )
-      
-      const currentCenterX = (touch1.clientX + touch2.clientX) / 2
-      const currentCenterY = (touch1.clientY + touch2.clientY) / 2
-      
-      if (lastTouchDistance > 0) {
-        const scaleDelta = distance / lastTouchDistance
-        const newScale = Math.max(0.5, Math.min(5, currentScale * scaleDelta))
-        
-        // 以两指中心为基准点缩放
-        const rect = remoteVideo.getBoundingClientRect()
-        const centerXInVideo = (currentCenterX - rect.left - panX) / currentScale
-        const centerYInVideo = (currentCenterY - rect.top - panY) / currentScale
-        
-        currentScale = newScale
-        isZoomed = currentScale > 1
-        
-        // 调整pan使缩放后中心点保持不变
-        panX = currentCenterX - rect.left - centerXInVideo * currentScale
-        panY = currentCenterY - rect.top - centerYInVideo * currentScale
-        
-        updateVideoTransform()
-      }
-      
-      lastTouchDistance = distance
-      return
-    }
-    
-    if (touchCount !== 1) return
-    
-    const touch = e.touches[0]
-    
-    const deltaX = touch.clientX - touchStartX
-    const deltaY = touch.clientY - touchStartY
-    
-    if (isZoomed) {
-      panX = initialPanX + deltaX
-      panY = initialPanY + deltaY
-      updateVideoTransform()
-      return
-    }
-    
-    const rect = remoteVideo.getBoundingClientRect()
-    const scaledX = (touch.clientX - rect.left) / currentScale
-    const scaledY = (touch.clientY - rect.top) / currentScale
-    const x = Math.round(scaledX / rect.width * 65535)
-    const y = Math.round(scaledY / rect.height * 65535)
-    
-    if (isMouseMode && mouseModeType === 'pointer') {
-      return
-    }
-    
-    if (isMouseMode && mouseModeType === 'touch' && isMouseDown) {
-      sendControlCommand({
-        type: 'mousemove',
-        x: x,
-        y: y
-      })
-    } else if (!isMouseMode && isMouseDown) {
-      sendControlCommand({
-        type: 'mousemove',
-        x: x,
-        y: y
-      })
-    }
-  }, { passive: false })
-  
-  videoWrapper.addEventListener('touchend', (e) => {
-    e.preventDefault()
-    const touchEndTime = Date.now()
-    const touchDuration = touchEndTime - touchStartTime
-    
-    if (touchCount === 2) {
-      const now = Date.now()
-      if (now - lastTwoTapTime < 300) {
-        const rect = remoteVideo.getBoundingClientRect()
-        const scaledX = (initialPinchCenterX - rect.left) / currentScale
-        const scaledY = (initialPinchCenterY - rect.top) / currentScale
-        const x = Math.round(scaledX / rect.width * 65535)
-        const y = Math.round(scaledY / rect.height * 65535)
-        sendControlCommand({
-          type: 'mousedown',
-          x: x,
-          y: y,
-          button: 'right'
-        })
-        sendControlCommand({
-          type: 'mouseup',
-          x: x,
-          y: y,
-          button: 'right'
-        })
-        showToast('右键点击')
-      }
-      lastTwoTapTime = now
-      lastTouchDistance = 0
-      isPanning = false
-      touchCount = 0
-      return
-    }
-    
-    if (isZoomed) {
-      touchCount = 0
-      return
-    }
-    
-    const rect = remoteVideo.getBoundingClientRect()
-    const scaledX = (touchStartX - rect.left) / currentScale
-    const scaledY = (touchStartY - rect.top) / currentScale
-    const x = Math.round(scaledX / rect.width * 65535)
-    const y = Math.round(scaledY / rect.height * 65535)
-    
-    if (isMouseMode && mouseModeType === 'touch') {
-      if (isMouseDown) {
-        sendControlCommand({
-          type: 'mouseup',
-          x: x,
-          y: y,
-          button: 'left'
-        })
-        isMouseDown = false
-      }
-    } else if (isMouseMode && mouseModeType === 'pointer') {
-      // 指针模式：使用悬浮鼠标位置，不使用触摸坐标
-      return
-    } else {
-      if (isMouseDown) {
-        sendControlCommand({
-          type: 'mouseup',
-          x: x,
-          y: y,
-          button: 'left'
-        })
-        isMouseDown = false
-      }
-    }
-    
-    touchCount = 0
-  }, { passive: false })
-  
-  videoWrapper.addEventListener('touchcancel', (e) => {
-    e.preventDefault()
-    if (isMouseDown && !isZoomed) {
-      const rect = remoteVideo.getBoundingClientRect()
-      const scaledX = (touchStartX - rect.left) / currentScale
-      const scaledY = (touchStartY - rect.top) / currentScale
-      const x = Math.round(scaledX / rect.width * 65535)
-      const y = Math.round(scaledY / rect.height * 65535)
-      sendControlCommand({
-        type: 'mouseup',
-        x: x,
-        y: y,
-        button: 'left'
-      })
-      isMouseDown = false
-    }
-    lastTouchDistance = 0
-    isPanning = false
-    touchCount = 0
-  }, { passive: false })
-  
-  log('触摸事件已设置')
-}
-
 let isFloatMode = false
 let controlsHidden = false
 
@@ -2287,9 +2083,9 @@ function updateVideoTransformGlobal() {
 function resetZoomAndPan() {
   if (matrixTransformer) {
       matrixTransformer.reset();
-      const videoWrapper = document.getElementById('videoWrapper');
-      if (videoWrapper) {
-          matrixTransformer.applyTransform(videoWrapper);
+      const videoContainer = document.getElementById('videoContainer');
+      if (videoContainer) {
+          matrixTransformer.applyTransform(videoContainer);
       }
       showToast('已重置缩放和位置');
   } else {
@@ -2300,6 +2096,30 @@ function resetZoomAndPan() {
       updateVideoTransformGlobal();
       showToast('已重置缩放和位置');
   }
+}
+
+let isPointerMode = false
+
+function toggleMouseMode() {
+    isPointerMode = !isPointerMode
+    
+    const mouseModeBtn = document.getElementById('mouseModeBtn')
+    
+    if (isPointerMode) {
+        showFloatingMouse().catch(e => log('显示悬浮鼠标失败: ' + e.message))
+        showToast('指针模式已开启')
+        if (mouseModeBtn) {
+            mouseModeBtn.style.background = '#667eea'
+            mouseModeBtn.style.color = 'white'
+        }
+    } else {
+        hideFloatingMouse().catch(e => log('隐藏悬浮鼠标失败: ' + e.message))
+        showToast('指针模式已关闭')
+        if (mouseModeBtn) {
+            mouseModeBtn.style.background = ''
+            mouseModeBtn.style.color = ''
+        }
+    }
 }
 
 function toggleControlsHide() {
@@ -2365,63 +2185,19 @@ function handleOrientationChange() {
         const screenRect = remoteScreen.getBoundingClientRect()
         
         if (matrixTransformer) {
-          matrixTransformer.setContainerSize(screenRect.width, screenRect.height)
+          matrixTransformer.setScreenSize(screenRect.width, screenRect.height)
           matrixTransformer.reset()
           matrixTransformer.applyContainerSize(videoContainer, videoWrapper)
-          matrixTransformer.applyTransform(videoWrapper)
+          matrixTransformer.applyTransform(videoContainer)
+        }
+        
+        if (inputDispatcher) {
+          inputDispatcher.updateRemoteScreenRect()
         }
         
         log('横竖屏切换: 屏幕尺寸更新为 ' + screenRect.width + 'x' + screenRect.height)
       }
     }, 300)
-  }
-}
-
-function toggleMouseMode() {
-  const modal = document.getElementById('mouseModeModal')
-  if (modal) {
-    modal.classList.add('show')
-    updateMouseModeSelection()
-  }
-}
-
-function updateMouseModeSelection() {
-  const pointerOption = document.getElementById('pointerModeOption')
-  const touchOption = document.getElementById('touchModeOption')
-  
-  if (pointerOption && touchOption) {
-    pointerOption.classList.toggle('selected', mouseModeType === 'pointer')
-    touchOption.classList.toggle('selected', mouseModeType === 'touch')
-  }
-}
-
-function selectMouseMode(mode) {
-  try {
-    mouseModeType = mode
-    isMouseMode = true
-    
-    const modal = document.getElementById('mouseModeModal')
-    if (modal) {
-      modal.classList.remove('show')
-    }
-    
-    if (mode === 'pointer') {
-      showToast('指针模式 - 悬浮鼠标')
-      showFloatingMouse().catch(e => log('显示悬浮鼠标失败: ' + e.message))
-      if (gestureHandler) {
-          gestureHandler.setTouchMode(false);
-      }
-    } else {
-      showToast('触屏模式 - 直接触摸')
-      hideFloatingMouse().catch(e => log('隐藏悬浮鼠标失败: ' + e.message))
-      if (gestureHandler) {
-          gestureHandler.setTouchMode(true);
-      }
-    }
-    
-    updateMouseModeSelection()
-  } catch (e) {
-    log('选择鼠标模式失败: ' + e.message)
   }
 }
 
@@ -2610,6 +2386,7 @@ function setupRemoteScreenInteraction() {
     
     const remoteScreen = document.getElementById('remoteScreen');
     const videoContainer = document.getElementById('videoContainer');
+    const videoWrapper = document.getElementById('videoWrapper');
     
     if (!remoteScreen || !videoContainer) {
         log('错误：找不到 remoteScreen 或 videoContainer 元素');
@@ -2617,13 +2394,24 @@ function setupRemoteScreenInteraction() {
     }
     
     const screenRect = remoteScreen.getBoundingClientRect();
-    const containerRect = videoContainer.getBoundingClientRect();
     log('屏幕尺寸: ' + screenRect.width + 'x' + screenRect.height);
-    log('初始化 videoContainer: left=' + containerRect.left + ', top=' + containerRect.top + 
-        ', width=' + containerRect.width + ', height=' + containerRect.height);
     
     matrixTransformer = new MatrixTransformer();
-    matrixTransformer.setContainerSize(screenRect.width, screenRect.height);
+    matrixTransformer.setScreenSize(screenRect.width, screenRect.height);
+    
+    videoContainer.style.width = screenRect.width + 'px';
+    videoContainer.style.height = screenRect.height + 'px';
+    videoContainer.style.left = '0px';
+    videoContainer.style.top = '0px';
+    
+    if (videoWrapper) {
+        videoWrapper.style.width = '100%';
+        videoWrapper.style.height = '100%';
+        videoWrapper.style.left = '0px';
+        videoWrapper.style.top = '0px';
+    }
+    
+    log('初始化 videoContainer 填满屏幕: ' + screenRect.width + 'x' + screenRect.height);
     
     inputDispatcher = new InputDispatcher(matrixTransformer);
     
@@ -2638,9 +2426,8 @@ function setupRemoteScreenInteraction() {
         const controlToggle = document.getElementById('controlToggle');
         const statsOverlay = document.getElementById('statsOverlay');
         const keyboardOverlay = document.getElementById('keyboardOverlay');
-        const mouseModeModal = document.getElementById('mouseModeModal');
         
-        const uiElements = [controlOverlay, controlToggle, statsOverlay, keyboardOverlay, mouseModeModal];
+        const uiElements = [controlOverlay, controlToggle, statsOverlay, keyboardOverlay];
         
         for (const element of uiElements) {
             if (element && element.style.display !== 'none') {
@@ -2657,12 +2444,28 @@ function setupRemoteScreenInteraction() {
     
     window.isTouchOnUI = isTouchOnUI;
     
+    let isMiddleButtonDown = false;
+    
+    remoteScreen.addEventListener('mousedown', (e) => {
+        if (e.button === 1) {
+            isMiddleButtonDown = true;
+            e.preventDefault();
+        }
+    });
+    
+    remoteScreen.addEventListener('mouseup', (e) => {
+        if (e.button === 1) {
+            isMiddleButtonDown = false;
+            e.preventDefault();
+        }
+    });
+    
     remoteScreen.addEventListener('touchstart', (e) => {
         const touch = e.touches[0];
         if (isTouchOnUI(touch.clientX, touch.clientY)) {
             return;
         }
-        log('GestureHandler: touchstart on remoteScreen');
+        e.preventDefault();
         gestureHandler.handleTouchStart(e);
     }, { passive: false });
     
@@ -2671,6 +2474,7 @@ function setupRemoteScreenInteraction() {
         if (isTouchOnUI(touch.clientX, touch.clientY)) {
             return;
         }
+        e.preventDefault();
         gestureHandler.handleTouchMove(e);
     }, { passive: false });
     
@@ -2679,7 +2483,6 @@ function setupRemoteScreenInteraction() {
         if (isTouchOnUI(touch.clientX, touch.clientY)) {
             return;
         }
-        log('GestureHandler: touchend on remoteScreen');
         gestureHandler.handleTouchEnd(e);
     }, { passive: false });
     
@@ -2697,14 +2500,15 @@ function setupRemoteScreenInteraction() {
         const deltaX = e.deltaX || 0;
         const deltaY = e.deltaY || 0;
         
-        if (e.ctrlKey) {
+        if (e.ctrlKey || isMiddleButtonDown) {
             const scaleDelta = deltaY > 0 ? 0.9 : 1.1;
             const newScale = matrixTransformer.scale * scaleDelta;
             matrixTransformer.updateScale(newScale, e.clientX, e.clientY);
-            const videoWrapper = document.getElementById('videoWrapper');
-            if (videoWrapper) {
-                matrixTransformer.applyTransform(videoWrapper);
+            const videoContainer = document.getElementById('videoContainer');
+            if (videoContainer) {
+                matrixTransformer.applyTransform(videoContainer);
             }
+            log('缩放: scale=' + newScale.toFixed(2) + ', center=(' + e.clientX + ', ' + e.clientY + ')');
         } else {
             inputDispatcher.dispatchTouchInput(
                 e.clientX,
@@ -2734,46 +2538,34 @@ function setupRemoteScreenInteraction() {
     
     const remoteVideo = document.getElementById('remoteVideo');
     if (remoteVideo) {
-        remoteVideo.onloadedmetadata = () => {
-            log('视频元数据加载: ' + remoteVideo.videoWidth + 'x' + remoteVideo.videoHeight);
-            matrixTransformer.setVideoSize(remoteVideo.videoWidth, remoteVideo.videoHeight);
-            const videoContainer = document.getElementById('videoContainer');
-            const videoWrapper = document.getElementById('videoWrapper');
-            if (videoContainer && videoWrapper) {
-                matrixTransformer.applyContainerSize(videoContainer, videoWrapper);
-            }
-        };
+        log('remoteVideo 元素已找到');
     }
     
     log('远程屏幕交互已初始化 - 事件绑定在 remoteScreen 层，已添加 UI 检测');
 }
 
 function updateScreenSize(width, height, scaleFactor, workArea) {
-  log('更新屏幕尺寸: ' + width + 'x' + height + ', scaleFactor=' + scaleFactor);
-  if (matrixTransformer) {
-      matrixTransformer.setRemoteScreenSize(width, height);
-      if (scaleFactor) {
-          matrixTransformer.scaleFactor = scaleFactor;
-      }
-      if (workArea) {
-          matrixTransformer.workArea = workArea;
-      }
-      
-      const remoteVideo = document.getElementById('remoteVideo');
-      if (remoteVideo && remoteVideo.videoWidth > 0) {
-          matrixTransformer.setVideoSize(remoteVideo.videoWidth, remoteVideo.videoHeight);
-      }
-      
-      const videoContainer = document.getElementById('videoContainer');
-      const videoWrapper = document.getElementById('videoWrapper');
-      if (videoContainer && videoWrapper) {
-          matrixTransformer.applyContainerSize(videoContainer, videoWrapper);
-          
-          const containerRect = videoContainer.getBoundingClientRect();
-          log('获得被控端尺寸后 videoContainer: left=' + containerRect.left + ', top=' + containerRect.top + 
-              ', width=' + containerRect.width + ', height=' + containerRect.height);
-      }
-  }
+    log('收到远程屏幕尺寸: ' + width + 'x' + height + ', scaleFactor=' + scaleFactor);
+    
+    if (matrixTransformer) {
+        matrixTransformer.setRemoteScreenSize(width, height);
+        
+        if (scaleFactor) {
+            matrixTransformer.scaleFactor = scaleFactor;
+        }
+        if (workArea) {
+            matrixTransformer.workArea = workArea;
+        }
+        
+        const videoContainer = document.getElementById('videoContainer');
+        const videoWrapper = document.getElementById('videoWrapper');
+        if (videoContainer && videoWrapper) {
+            matrixTransformer.applyContainerSize(videoContainer, videoWrapper);
+            
+            log('调整 videoContainer: ' + matrixTransformer.displayWidth + 'x' + matrixTransformer.displayHeight +
+                ', 位置 (' + matrixTransformer.displayX + ', ' + matrixTransformer.displayY + ')');
+        }
+    }
 }
 
 async function handleOffer(data) {
@@ -2803,6 +2595,10 @@ async function handleIceCandidate(data) {
 }
 
 function showRemoteScreen() {
+  if (matrixTransformer) {
+      matrixTransformer.fullReset();
+  }
+  
   document.getElementById('mainContainer').style.display = 'none'
   document.getElementById('remoteScreen').classList.add('active')
   startStatsMonitoring()
@@ -3064,6 +2860,11 @@ function disconnect() {
     keyboardVisible = false
     const keyboardOverlay = document.getElementById('keyboardOverlay')
     if (keyboardOverlay) keyboardOverlay.classList.remove('active')
+    
+    if (matrixTransformer) {
+        matrixTransformer.fullReset()
+    }
+    
     hideRemoteScreen()
     showToast('已断开连接')
   }
@@ -3138,4 +2939,3 @@ window.acceptConnection = acceptConnection
 window.rejectConnection = rejectConnection
 window.deleteFromHistory = deleteFromHistory
 window.reconnectFromHistory = reconnectFromHistory
-window.selectMouseMode = selectMouseMode
