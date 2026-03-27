@@ -743,8 +743,22 @@
       
       dataChannelManager = new DataChannelManager({ logger: { log: log, error: console.error } });
       
-      dataChannelManager.setOnOpen(() => {
+      dataChannelManager.setOnOpen(async () => {
         log('数据通道已打开');
+        
+        try {
+          const screenInfo = await window.electronAPI.getScreenSize();
+          log('发送屏幕尺寸: ' + screenInfo.width + 'x' + screenInfo.height);
+          dataChannelManager.send({
+            type: 'screen-size',
+            width: screenInfo.width,
+            height: screenInfo.height,
+            scaleFactor: screenInfo.scaleFactor,
+            workArea: screenInfo.workArea
+          });
+        } catch (e) {
+          console.error('获取屏幕尺寸失败:', e);
+        }
       });
       
       dataChannelManager.setOnMessage((data) => {

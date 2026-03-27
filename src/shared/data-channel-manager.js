@@ -269,4 +269,7 @@ if (typeof module !== 'undefined' && module.exports) {
     DataChannelManager,
     DATA_CHANNEL_STATE
   }
+} else {
+  window.DataChannelManager = DataChannelManager
+  window.DATA_CHANNEL_STATE = DATA_CHANNEL_STATE
 }

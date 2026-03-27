@@ -1,8 +1,12 @@
 package com.ycdesk.mobile;
 
 import android.annotation.SuppressLint;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
+import android.content.Intent;
 import android.graphics.PixelFormat;
 import android.graphics.Point;
 import android.graphics.drawable.GradientDrawable;
@@ -19,8 +23,14 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import androidx.core.app.NotificationCompat;
+
+import com.ycdesk.mobile.R;
+
 public class FloatingMouseService extends Service {
     private static final String TAG = "FloatingMouseService";
+    private static final String CHANNEL_ID = "floating_mouse_channel";
+    private static final int NOTIFICATION_ID = 1;
     private static final int MAX_CLICK_DISTANCE = 10;
     private static final int LONG_PRESS_TIMEOUT = 500;
     private static final int SCROLL_THRESHOLD = 10;
@@ -35,12 +45,9 @@ public class FloatingMouseService extends Service {
     private View closeBtn;
     private View minimizeBtn;
     private TextView scrollIndicator;
-    private ImageView cursorPointer;
 
     private int screenWidth;
     private int screenHeight;
-    private float cursorX = 0;
-    private float cursorY = 0;
     private float sensitivity = 1.0f;
 
     private float touchStartX = 0;
@@ -54,6 +61,12 @@ public class FloatingMouseService extends Service {
     private float scrollStartY = 0;
     private float scrollAccumulator = 0;
     private boolean isMinimized = false;
+
+    // 悬浮窗位置
+    private int windowX = 0;
+    private int windowY = 0;
+    private int windowWidth = 300;
+    private int windowHeight = 300;
 
     private Handler handler = new Handler();
     private Runnable longPressRunnable;
@@ -73,13 +86,50 @@ public class FloatingMouseService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        createNotificationChannel();
         Log.d(TAG, "FloatingMouseService created");
     }
 
     @Override
-    public int onStartCommand(android.content.Intent intent, int flags, int startId) {
+    public int onStartCommand(Intent intent, int flags, int startId) {
         Log.d(TAG, "FloatingMouseService started");
+        
+        // 启动前台服务
+        Notification notification = createNotification();
+        startForeground(NOTIFICATION_ID, notification);
+        Log.d(TAG, "前台服务已启动");
+        
         return START_STICKY;
+    }
+
+    private void createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(
+                CHANNEL_ID,
+                "悬浮鼠标服务",
+                NotificationManager.IMPORTANCE_LOW
+            );
+            channel.setDescription("远程控制悬浮鼠标服务");
+            channel.setShowBadge(false);
+            
+            NotificationManager manager = getSystemService(NotificationManager.class);
+            if (manager != null) {
+                manager.createNotificationChannel(channel);
+                Log.d(TAG, "通知渠道已创建");
+            }
+        }
+    }
+
+    private Notification createNotification() {
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("YCDesk 远程控制")
+            .setContentText("悬浮鼠标服务运行中")
+            .setSmallIcon(android.R.drawable.ic_menu_send)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOngoing(true)
+            .setShowWhen(false);
+        
+        return builder.build();
     }
 
     @Override
@@ -100,8 +150,8 @@ public class FloatingMouseService extends Service {
     public void setScreenSize(int width, int height) {
         this.screenWidth = width;
         this.screenHeight = height;
-        this.cursorX = width / 2f;
-        this.cursorY = height / 2f;
+        this.windowX = width / 2;
+        this.windowY = height / 2;
     }
 
     public void setSensitivity(float sensitivity) {
@@ -127,8 +177,8 @@ public class FloatingMouseService extends Service {
         windowManager.getDefaultDisplay().getRealSize(size);
         screenWidth = size.x;
         screenHeight = size.y;
-        cursorX = screenWidth / 2f;
-        cursorY = screenHeight / 2f;
+        windowX = screenWidth / 2;
+        windowY = 200;
 
         Log.d(TAG, "屏幕尺寸: " + screenWidth + "x" + screenHeight);
         Log.d(TAG, "开始创建悬浮窗...");
@@ -157,6 +207,7 @@ public class FloatingMouseService extends Service {
             try {
                 windowManager.removeView(minimizedView);
                 minimizedView = null;
+                Log.d(TAG, "最小化视图已移除");
             } catch (Exception e) {
                 Log.e(TAG, "移除最小化视图失败: " + e.getMessage());
             }
@@ -166,6 +217,14 @@ public class FloatingMouseService extends Service {
 
     public boolean isShowing() {
         return floatingView != null || minimizedView != null;
+    }
+
+    public int[] getMousePosition() {
+        return new int[] { windowX, windowY };
+    }
+
+    public int[] getScreenSize() {
+        return new int[] { screenWidth, screenHeight };
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -188,6 +247,10 @@ public class FloatingMouseService extends Service {
         params.gravity = Gravity.TOP | Gravity.START;
         params.x = screenWidth / 2 - 150;
         params.y = 200;
+        
+        // 初始化鼠标位置为悬浮窗左上角
+        windowX = params.x;
+        windowY = params.y;
 
         Log.d(TAG, "悬浮窗参数: x=" + params.x + ", y=" + params.y + ", width=" + params.width + ", height=" + params.height);
 
@@ -214,40 +277,26 @@ public class FloatingMouseService extends Service {
         mainLayout.setOrientation(LinearLayout.VERTICAL);
         mainLayout.setPadding(10, 10, 10, 10);
         
-        // 更透明的背景
+        // 透明背景
         GradientDrawable mainBg = new GradientDrawable();
-        mainBg.setColor(0x80000000); // 50% 透明度
+        mainBg.setColor(0x00000000);
         mainBg.setCornerRadius(25);
-        mainBg.setStroke(2, 0x80667eea); // 50% 透明度边框
+        mainBg.setStroke(2, 0x00000000);
         mainLayout.setBackground(mainBg);
 
-        // 固定的鼠标指针 - 显示在左侧
-        cursorPointer = new ImageView(this);
-        cursorPointer.setImageResource(android.R.drawable.ic_menu_send);
-        cursorPointer.setRotation(135);
-        cursorPointer.setScaleX(1.5f);
-        cursorPointer.setScaleY(1.5f);
-        cursorPointer.setColorFilter(0xFFFFFFFF);
-        FrameLayout.LayoutParams cursorParams = new FrameLayout.LayoutParams(40, 40);
-        cursorParams.gravity = Gravity.LEFT | Gravity.CENTER_VERTICAL;
-        cursorParams.leftMargin = 5;
-        cursorPointer.setLayoutParams(cursorParams);
-        container.addView(cursorPointer);
-
-        // 主内容区域 - 右移以避免与鼠标指针重叠
+        // 主内容区域
         LinearLayout contentLayout = new LinearLayout(this);
         contentLayout.setOrientation(LinearLayout.VERTICAL);
         FrameLayout.LayoutParams contentParams = new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT
         );
-        contentParams.leftMargin = 30; // 为鼠标指针留出空间
         contentLayout.setLayoutParams(contentParams);
 
         // Scroll area (top) - 灰色
         scrollArea = new View(this);
         GradientDrawable scrollBg = new GradientDrawable();
-        scrollBg.setColor(0x60808080); // 更透明
+        scrollBg.setColor(0x80000000); // 50%透明
         scrollBg.setCornerRadius(12);
         scrollArea.setBackground(scrollBg);
         LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(
@@ -271,7 +320,7 @@ public class FloatingMouseService extends Service {
         // Left button - 蓝色
         leftButton = new View(this);
         GradientDrawable leftBg = new GradientDrawable();
-        leftBg.setColor(0x604285f4); // 更透明
+        leftBg.setColor(0x60808080); // 更透明
         leftBg.setCornerRadius(12);
         leftButton.setBackground(leftBg);
         LinearLayout.LayoutParams leftParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1);
@@ -283,7 +332,7 @@ public class FloatingMouseService extends Service {
         // Right button - 红色
         rightButton = new View(this);
         GradientDrawable rightBg = new GradientDrawable();
-        rightBg.setColor(0x60ea4335); // 更透明
+        rightBg.setColor(0x60808080); // 更透明
         rightBg.setCornerRadius(12);
         rightButton.setBackground(rightBg);
         LinearLayout.LayoutParams rightParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1);
@@ -297,11 +346,11 @@ public class FloatingMouseService extends Service {
         // Drag handle (bottom) - 绿色
         dragHandle = new View(this);
         GradientDrawable dragBg = new GradientDrawable();
-        dragBg.setColor(0x6034a853); // 更透明
+        dragBg.setColor(0x60808080); // 更透明
         dragBg.setCornerRadius(12);
         dragHandle.setBackground(dragBg);
         LinearLayout.LayoutParams dragParams = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 50
+            LinearLayout.LayoutParams.MATCH_PARENT, 80
         );
         dragParams.setMargins(5, 5, 5, 5);
         dragHandle.setLayoutParams(dragParams);
@@ -360,6 +409,16 @@ public class FloatingMouseService extends Service {
         container.addView(closeBtn);
         container.addView(minimizeBtn);
 
+        // 鼠标指针图标 - 位于悬浮窗左上角
+        ImageView mousePointer = new ImageView(this);
+        mousePointer.setImageResource(R.drawable.cursor_pointer);
+        FrameLayout.LayoutParams pointerParams = new FrameLayout.LayoutParams(48, 48);
+        pointerParams.gravity = Gravity.TOP | Gravity.START;
+        pointerParams.setMargins(-8, -8, 0, 0);
+        mousePointer.setLayoutParams(pointerParams);
+        container.addView(mousePointer);
+        Log.d(TAG, "鼠标指针图标已创建");
+
         Log.d(TAG, "悬浮鼠标UI创建完成");
         return container;
     }
@@ -408,7 +467,7 @@ public class FloatingMouseService extends Service {
         minimizedView.setBackground(bg);
 
         ImageView icon = new ImageView(this);
-        icon.setImageResource(android.R.drawable.ic_menu_send);
+        icon.setImageResource(R.drawable.cursor_pointer);
         icon.setRotation(135);
         icon.setColorFilter(0xFFFFFFFF);
         FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(30, 30);
@@ -477,12 +536,18 @@ public class FloatingMouseService extends Service {
                         float dy = event.getRawY() - lastY[0];
                         params.x += (int) dx;
                         params.y += (int) dy;
+                        // 同步更新鼠标位置
+                        windowX = params.x;
+                        windowY = params.y;
                         windowManager.updateViewLayout(floatingView, params);
                         lastX[0] = event.getRawX();
                         lastY[0] = event.getRawY();
                         return true;
 
                     case MotionEvent.ACTION_UP:
+                        // 同步更新鼠标位置
+                        windowX = params.x;
+                        windowY = params.y;
                         Log.d(TAG, "拖动区域释放，位置: " + params.x + ", " + params.y);
                         return true;
                 }
@@ -541,7 +606,8 @@ public class FloatingMouseService extends Service {
                         isDragging = true;
                         Log.d(TAG, "长按触发拖拽模式");
                         if (mouseEventListener != null) {
-                            mouseEventListener.onDragStart(button, cursorX / screenWidth, cursorY / screenHeight);
+                            // 发送像素坐标而不是归一化坐标
+                            mouseEventListener.onDragStart(button, windowX, windowY);
                         }
                     }
                 };
@@ -552,10 +618,12 @@ public class FloatingMouseService extends Service {
                 if (isDragging) {
                     float dx = (event.getX() - lastTouchX) * sensitivity;
                     float dy = (event.getY() - lastTouchY) * sensitivity;
-                    cursorX = Math.max(0, Math.min(screenWidth, cursorX + dx));
-                    cursorY = Math.max(0, Math.min(screenHeight, cursorY + dy));
+                    // 移动悬浮窗位置
+                    windowX = Math.max(0, Math.min(screenWidth, windowX + (int)dx));
+                    windowY = Math.max(0, Math.min(screenHeight, windowY + (int)dy));
                     if (mouseEventListener != null) {
-                        mouseEventListener.onMouseMove(cursorX / screenWidth, cursorY / screenHeight);
+                        // 发送像素坐标而不是归一化坐标
+                        mouseEventListener.onMouseMove(windowX, windowY);
                     }
                 }
                 lastTouchX = event.getX();
@@ -584,23 +652,27 @@ public class FloatingMouseService extends Service {
                     Math.pow(event.getY() - touchStartY, 2)
                 );
 
+                // 发送像素坐标而不是归一化坐标
+                int pixelX = windowX;
+                int pixelY = windowY;
+
                 if (isDragging) {
                     isDragging = false;
                     Log.d(TAG, "拖拽结束");
                     if (mouseEventListener != null) {
-                        mouseEventListener.onDragEnd(button, cursorX / screenWidth, cursorY / screenHeight);
+                        mouseEventListener.onDragEnd(button, pixelX, pixelY);
                     }
                 } else if (distance < MAX_CLICK_DISTANCE) {
                     if (duration < 200) {
                         Log.d(TAG, "单击 button=" + button);
                         if (mouseEventListener != null) {
-                            mouseEventListener.onMouseDown(button, cursorX / screenWidth, cursorY / screenHeight);
-                            mouseEventListener.onMouseUp(button, cursorX / screenWidth, cursorY / screenHeight);
+                            mouseEventListener.onMouseDown(button, pixelX, pixelY);
+                            mouseEventListener.onMouseUp(button, pixelX, pixelY);
                         }
                     } else if (duration < 400) {
                         Log.d(TAG, "双击 button=" + button);
                         if (mouseEventListener != null) {
-                            mouseEventListener.onDoubleClick(button, cursorX / screenWidth, cursorY / screenHeight);
+                            mouseEventListener.onDoubleClick(button, pixelX, pixelY);
                         }
                     }
                 }

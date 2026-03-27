@@ -37,7 +37,14 @@
         <service
             android:name=".FloatingMouseService"
             android:enabled="true"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="specialUse" />
+
+        <service
+            android:name=".FloatingKeyboardService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse" />
     </application>
 
     <!-- Permissions -->

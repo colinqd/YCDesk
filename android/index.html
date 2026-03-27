@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#667eea">
   <title>YCDesk - 远程桌面控制</title>
   <style>
@@ -18,6 +18,7 @@
       height: 100%;
       overflow: hidden;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
     }
 
     body {
@@ -486,9 +487,10 @@
     .remote-screen {
       width: 100%;
       height: 100%;
-      background: #000;
+      background: #cab1b186;
       display: none;
       position: relative;
+      border: 1px solid #ff0000;
     }
 
     .remote-screen.active {
@@ -497,25 +499,67 @@
     }
 
     .remote-video-container {
-      flex: 1;
-      width: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: #000;
+      background: rgba(0, 255, 0, 0.5);
+      overflow: hidden;
+      border: 1px solid #00ff00;
+      z-index: 1;
+      transform-origin: center center;
+    }
+    
+    .video-wrapper {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      left: 0;
+      top: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 255, 0.5);
+      touch-action: none;
+      border: 1px solid #0000ff;
+    }
+
+    .video-wrapper.float-mode {
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .video-wrapper.fullscreen-mode {
+      border-radius: 0;
+      box-shadow: none;
+      border: none;
     }
 
     .remote-video {
       width: 100%;
       height: 100%;
       object-fit: contain;
-      background: #000;
-      transform-origin: center center;
-      transition: transform 0.1s ease-out;
+      background: transparent;
+      border-radius: 8px;
     }
 
     .remote-video.fullscreen {
       object-fit: cover;
+    }
+
+    .video-drag-hint {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 12px;
+      pointer-events: none;
+      text-align: center;
+      z-index: 10;
     }
 
     .stats-overlay {
@@ -530,6 +574,7 @@
       font-family: 'Consolas', monospace;
       z-index: 100;
       min-width: 120px;
+      border: none;
     }
 
     .stats-item {
@@ -551,22 +596,6 @@
       font-weight: 600;
     }
 
-    .mouse-cursor {
-      position: absolute;
-      width: 24px;
-      height: 24px;
-      pointer-events: none;
-      z-index: 200;
-      transform: translate(-50%, -50%);
-      transition: none;
-    }
-
-    .mouse-cursor svg {
-      width: 100%;
-      height: 100%;
-      filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.5));
-    }
-
     .control-overlay {
       position: fixed;
       bottom: 15px;
@@ -575,6 +604,51 @@
       display: flex;
       gap: 10px;
       z-index: 1000;
+      transition: all 0.3s ease;
+      background: transparent;
+      padding: 8px;
+      border-radius: 8px;
+      border: none;
+    }
+
+    .control-overlay.minimized {
+      bottom: 5px;
+      gap: 5px;
+    }
+
+    .control-overlay.minimized .control-btn {
+      width: 36px;
+      height: 36px;
+      font-size: 14px;
+    }
+
+    .control-overlay.hidden {
+      transform: translateX(-50%) translateY(100px);
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .control-toggle {
+      position: fixed;
+      bottom: 5px;
+      right: 10px;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: none;
+      background: rgba(255, 255, 255, 0.9);
+      color: #2d3748;
+      font-size: 16px;
+      cursor: pointer;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+      z-index: 999;
+      display: none;
+    }
+
+    .control-toggle.visible {
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     .control-btn {
@@ -607,13 +681,30 @@
       bottom: 0;
       left: 0;
       right: 0;
-      background: rgba(30, 30, 30, 0.98);
-      padding: 8px;
-      z-index: 2000;
+      background: rgba(30, 30, 30, 0.7);
+      padding: 6px;
+      z-index: 10001;
       display: none;
       flex-direction: column;
-      gap: 6px;
+      gap: 4px;
       border-top: 1px solid #444;
+      max-height: 33.33vh;
+      overflow-y: auto;
+      box-sizing: border-box;
+      pointer-events: none;
+      backdrop-filter: blur(4px);
+    }
+
+    @media (orientation: landscape) {
+      .keyboard-overlay {
+        padding: 4px;
+        gap: 2px;
+      }
+      .keyboard-key {
+        min-width: 24px;
+        height: 30px;
+        font-size: 10px;
+      }
     }
 
     .keyboard-overlay.active {
@@ -623,24 +714,27 @@
     .keyboard-row {
       display: flex;
       justify-content: center;
-      gap: 4px;
+      gap: 3px;
+      pointer-events: none;
     }
 
     .keyboard-key {
-      min-width: 32px;
-      height: 40px;
+      min-width: 28px;
+      height: 36px;
       background: #505050;
       color: white;
       border: none;
-      border-radius: 5px;
-      font-size: 14px;
+      border-radius: 4px;
+      font-size: 12px;
       font-weight: 500;
       display: flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
       transition: background 0.1s;
-      padding: 0 8px;
+      padding: 0 6px;
+      flex-shrink: 0;
+      pointer-events: auto;
     }
 
     .keyboard-key:active {
@@ -670,12 +764,68 @@
       z-index: 9999;
     }
 
+    .remote-screen.fullscreen-mode {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 9998;
+    }
+
     .remote-screen.fullscreen-mode .stats-overlay {
       display: none;
     }
 
     .remote-screen.fullscreen-mode .control-overlay {
       bottom: 70px;
+    }
+
+    .remote-screen.landscape-mode {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 9998;
+    }
+
+    .remote-screen.landscape-mode .stats-overlay {
+      display: none;
+    }
+
+    .remote-screen.keyboard-visible .control-overlay {
+      bottom: calc(33.33vh + 70px);
+    }
+
+    .remote-screen.keyboard-visible .stats-overlay {
+      bottom: calc(33.33vh + 10px);
+      top: auto;
+    }
+
+    @media screen and (orientation: landscape) {
+      .remote-screen.active {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 9998;
+      }
+      
+      .remote-screen.active .stats-overlay {
+        display: none;
+      }
+      
+      .remote-screen.active .control-overlay {
+        bottom: 10px;
+      }
+      
+      .control-btn {
+        width: 40px;
+        height: 40px;
+        font-size: 16px;
+      }
     }
 
     .toast {
@@ -712,6 +862,78 @@
 
     @keyframes spin {
       to { transform: rotate(360deg); }
+    }
+
+    .mouse-mode-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 10002;
+    }
+
+    .mouse-mode-modal.show {
+      display: flex;
+    }
+
+    .mouse-mode-dialog {
+      background: white;
+      border-radius: 16px;
+      padding: 20px;
+      width: 85%;
+      max-width: 320px;
+      text-align: center;
+    }
+
+    .mouse-mode-dialog h3 {
+      margin: 0 0 15px 0;
+      color: #2d3748;
+      font-size: 18px;
+    }
+
+    .mouse-mode-options {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .mouse-mode-option {
+      padding: 15px;
+      border: 2px solid #e2e8f0;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.25s;
+      text-align: left;
+    }
+
+    .mouse-mode-option:active {
+      transform: scale(0.98);
+    }
+
+    .mouse-mode-option.selected {
+      border-color: #667eea;
+      background: #f0f4ff;
+    }
+
+    .mouse-mode-option .mode-icon {
+      font-size: 24px;
+      margin-bottom: 8px;
+    }
+
+    .mouse-mode-option .mode-title {
+      font-weight: 700;
+      color: #2d3748;
+      margin-bottom: 4px;
+    }
+
+    .mouse-mode-option .mode-desc {
+      font-size: 12px;
+      color: #718096;
     }
   </style>
 </head>
@@ -881,19 +1103,19 @@
       </div>
     </div>
     <div class="remote-video-container" id="videoContainer">
-      <video class="remote-video" id="remoteVideo" autoplay playsinline></video>
-      <div class="mouse-cursor" id="mouseCursor" style="display: none;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
-          <path d="M4 4l7 17 2.5-6.5L20 12 4 4z" fill="white" stroke="black"/>
-        </svg>
+      <div class="video-wrapper" id="videoWrapper">
+        <video class="remote-video" id="remoteVideo" autoplay playsinline></video>
       </div>
     </div>
-    <div class="control-overlay">
+    <div class="control-overlay" id="controlOverlay">
+      <button class="control-btn" onclick="toggleControlsHide()">👁️</button>
       <button class="control-btn" onclick="toggleKeyboard()">⌨️</button>
       <button class="control-btn" onclick="toggleMouseMode()">🖱️</button>
+      <button class="control-btn" onclick="resetZoomAndPan()">↺</button>
       <button class="control-btn" onclick="toggleFullscreen()">⛶</button>
       <button class="control-btn danger" onclick="disconnect()">✕</button>
     </div>
+    <button class="control-toggle" id="controlToggle" onclick="showControls()">⚙️</button>
   </div>
 
   <div class="keyboard-overlay" id="keyboardOverlay">
@@ -989,6 +1211,24 @@
   </div>
 
   <div class="toast" id="toast"></div>
+
+  <div class="mouse-mode-modal" id="mouseModeModal">
+    <div class="mouse-mode-dialog">
+      <h3>选择鼠标模式</h3>
+      <div class="mouse-mode-options">
+        <div class="mouse-mode-option" id="pointerModeOption" onclick="selectMouseMode('pointer')">
+          <div class="mode-icon">🖱️</div>
+          <div class="mode-title">指针模式</div>
+          <div class="mode-desc">使用悬浮鼠标指针操作，远程鼠标与悬浮窗指针同步</div>
+        </div>
+        <div class="mouse-mode-option" id="touchModeOption" onclick="selectMouseMode('touch')">
+          <div class="mode-icon">👆</div>
+          <div class="mode-title">触屏模式</div>
+          <div class="mode-desc">直接触摸操作，远程鼠标与触摸位置同步</div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script type="module" src="./app.js"></script>
 </body>

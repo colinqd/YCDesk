@@ -27,7 +27,9 @@
   },
   "dependencies": {
     "socket.io-client": "^4.6.0",
-    "@nut-tree/nut-js": "^3.1.2"
+    "@nut-tree/nut-js": "^3.1.2",
+    "winston": "^3.11.0",
+    "winston-daily-rotate-file": "^4.7.1"
   },
   "build": {
     "appId": "com.ycdesk.desktop",

@@ -1,6 +1,6 @@
 const { ipcMain, desktopCapturer, screen } = require('electron')
 const { createRemoteWindow, getMainWindow, getRemoteWindow } = require('./window-manager')
-const { handleRemoteInput, resetModifiers } = require('./input-handler')
+const { handleRemoteInput } = require('./input-handler')
 const {
   getLocalIps,
   startDirectServer,
@@ -13,6 +13,7 @@ const authManager = require('./auth-manager')
 
 let deviceId = null
 let remoteStreamInfo = null
+let logger = null
 
 function generateDeviceId() {
   return Math.random().toString(36).substr(2, 9).toUpperCase()
@@ -23,22 +24,36 @@ function safeIpcHandler(handler, handlerName) {
     try {
       return await handler(...args)
     } catch (error) {
-      console.error(`[IPC Error] ${handlerName}:`, error)
+      if (logger) {
+        logger.error(`[IPC Error] ${handlerName}`, { error: error.message })
+      } else {
+        console.error(`[IPC Error] ${handlerName}:`, error)
+      }
       throw error
     }
   }
 }
 
-function init(deviceIdParam) {
+function init(deviceIdParam, loggerParam) {
   deviceId = deviceIdParam
-  console.log('IPC 处理器初始化，设备ID:', deviceId)
+  logger = loggerParam
+  
+  if (logger) {
+    logger.info('IPC 处理器初始化', { deviceId })
+  } else {
+    console.log('IPC 处理器初始化，设备ID:', deviceId)
+  }
   
   ipcMain.handle('get-device-id', safeIpcHandler(() => {
     return deviceId
   }, 'get-device-id'))
 
   ipcMain.handle('get-sources', safeIpcHandler(async () => {
-    console.log('正在获取屏幕源...')
+    if (logger) {
+      logger.info('正在获取屏幕源...')
+    } else {
+      console.log('正在获取屏幕源...')
+    }
     const sources = await desktopCapturer.getSources({
       types: ['window', 'screen'],
       thumbnailSize: {
@@ -48,7 +63,12 @@ function init(deviceIdParam) {
       fetchWindowIcons: true
     })
     
-    console.log(`找到 ${sources.length} 个屏幕源`)
+    if (logger) {
+      logger.info(`找到 ${sources.length} 个屏幕源`)
+    } else {
+      console.log(`找到 ${sources.length} 个屏幕源`)
+    }
+    
     return sources.map(source => ({
       id: source.id,
       name: source.name,

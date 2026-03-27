@@ -5,6 +5,9 @@
   "server": {
     "androidScheme": "https"
   },
+  "android": {
+    "backgroundColor": "#00000000"
+  },
   "plugins": {
     "SplashScreen": {
       "launchShowDuration": 2000,

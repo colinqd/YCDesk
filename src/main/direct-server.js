@@ -88,9 +88,11 @@ async function startDirectServer(event, port) {
   
   return new Promise((resolve, reject) => {
     if (directServer) {
-      directServer.close()
-      directServer = null
+      directServer.close(() => {
+        directServer = null
+      })
     }
+    
     directClientConnections.clear()
     
     directServer = net.createServer((clientSocket) => {

@@ -31,9 +31,11 @@ import com.getcapacitor.annotation.PermissionCallback;
 public class FloatingMousePlugin extends Plugin {
     private static final String TAG = "FloatingMousePlugin";
     private static final int OVERLAY_PERMISSION_REQUEST_CODE = 1001;
-    
+
     private FloatingMouseService floatingMouseService;
+    private FloatingKeyboardService floatingKeyboardService;
     private boolean isBound = false;
+    private boolean isKeyboardBound = false;
     private PluginCall savedCall;
 
     private ServiceConnection serviceConnection = new ServiceConnection() {
@@ -50,6 +52,23 @@ public class FloatingMousePlugin extends Plugin {
             floatingMouseService = null;
             isBound = false;
             Log.d(TAG, "FloatingMouseService disconnected");
+        }
+    };
+
+    private ServiceConnection keyboardServiceConnection = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder service) {
+            FloatingKeyboardService.LocalBinder binder = (FloatingKeyboardService.LocalBinder) service;
+            floatingKeyboardService = binder.getService();
+            isKeyboardBound = true;
+            Log.d(TAG, "FloatingKeyboardService connected");
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            floatingKeyboardService = null;
+            isKeyboardBound = false;
+            Log.d(TAG, "FloatingKeyboardService disconnected");
         }
     };
 
@@ -120,12 +139,24 @@ public class FloatingMousePlugin extends Plugin {
             } else {
                 activity.startService(intent);
             }
+
+            Intent keyboardIntent = new Intent(activity, FloatingKeyboardService.class);
+            activity.bindService(keyboardIntent, keyboardServiceConnection, Context.BIND_AUTO_CREATE);
             
-            JSObject result = new JSObject();
-            result.put("success", true);
-            result.put("hasPermission", hasOverlayPermission());
-            call.resolve(result);
-            Log.d(TAG, "FloatingMouseService started, hasPermission=" + hasOverlayPermission());
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                activity.startForegroundService(keyboardIntent);
+            } else {
+                activity.startService(keyboardIntent);
+            }
+
+            new android.os.Handler().postDelayed(() -> {
+                JSObject result = new JSObject();
+                result.put("success", true);
+                result.put("hasPermission", hasOverlayPermission());
+                result.put("keyboardReady", floatingKeyboardService != null);
+                call.resolve(result);
+                Log.d(TAG, "FloatingMouseService started, hasPermission=" + hasOverlayPermission() + ", keyboardReady=" + (floatingKeyboardService != null));
+            }, 500);
         } catch (Exception e) {
             Log.e(TAG, "startService error: " + e.getMessage());
             JSObject result = new JSObject();
@@ -299,6 +330,131 @@ public class FloatingMousePlugin extends Plugin {
         call.resolve(result);
     }
 
+    @PluginMethod
+    public void getMousePosition(PluginCall call) {
+        JSObject result = new JSObject();
+        if (floatingMouseService != null && floatingMouseService.isShowing()) {
+            int[] pos = floatingMouseService.getMousePosition();
+            int[] size = floatingMouseService.getScreenSize();
+            result.put("x", pos[0]);
+            result.put("y", pos[1]);
+            result.put("screenWidth", size[0]);
+            result.put("screenHeight", size[1]);
+            result.put("success", true);
+        } else {
+            result.put("success", false);
+            result.put("error", "Mouse service not running");
+        }
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void showKeyboard(PluginCall call) {
+        Log.d(TAG, "showKeyboard called");
+        if (floatingKeyboardService == null) {
+            JSObject result = new JSObject();
+            result.put("success", false);
+            result.put("error", "Keyboard service not started");
+            call.resolve(result);
+            return;
+        }
+
+        getActivity().runOnUiThread(() -> {
+            try {
+                floatingKeyboardService.showKeyboard();
+                floatingKeyboardService.setOnKeyListener(new FloatingKeyboardService.OnKeyListener() {
+                    @Override
+                    public void onKeyPress(String key) {
+                        sendKeyEvent("keypress", key);
+                    }
+
+                    @Override
+                    public void onSpecialKey(String key, boolean ctrl, boolean alt, boolean shift) {
+                        sendKeyEvent("specialkey", key, ctrl, alt, shift);
+                    }
+                });
+
+                JSObject result = new JSObject();
+                result.put("success", true);
+                call.resolve(result);
+                Log.d(TAG, "Floating keyboard shown successfully");
+            } catch (Exception e) {
+                Log.e(TAG, "showKeyboard error: " + e.getMessage());
+                JSObject result = new JSObject();
+                result.put("success", false);
+                result.put("error", e.getMessage());
+                call.resolve(result);
+            }
+        });
+    }
+
+    @PluginMethod
+    public void hideKeyboard(PluginCall call) {
+        Log.d(TAG, "hideKeyboard called");
+        if (floatingKeyboardService == null) {
+            JSObject result = new JSObject();
+            result.put("success", false);
+            result.put("error", "Keyboard service not started");
+            call.resolve(result);
+            return;
+        }
+
+        getActivity().runOnUiThread(() -> {
+            floatingKeyboardService.hideKeyboard();
+        });
+
+        JSObject result = new JSObject();
+        result.put("success", true);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void minimizeKeyboard(PluginCall call) {
+        Log.d(TAG, "minimizeKeyboard called");
+        if (floatingKeyboardService == null) {
+            JSObject result = new JSObject();
+            result.put("success", false);
+            result.put("error", "Keyboard service not started");
+            call.resolve(result);
+            return;
+        }
+
+        getActivity().runOnUiThread(() -> {
+            floatingKeyboardService.minimize();
+        });
+
+        JSObject result = new JSObject();
+        result.put("success", true);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void restoreKeyboard(PluginCall call) {
+        Log.d(TAG, "restoreKeyboard called");
+        if (floatingKeyboardService == null) {
+            JSObject result = new JSObject();
+            result.put("success", false);
+            result.put("error", "Keyboard service not started");
+            call.resolve(result);
+            return;
+        }
+
+        getActivity().runOnUiThread(() -> {
+            floatingKeyboardService.restore();
+        });
+
+        JSObject result = new JSObject();
+        result.put("success", true);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void isKeyboardShowing(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("showing", floatingKeyboardService != null && floatingKeyboardService.isVisible());
+        call.resolve(result);
+    }
+
     private void sendMouseEvent(String type, int button, float x, float y, float delta) {
         JSObject event = new JSObject();
         event.put("type", type);
@@ -307,5 +463,22 @@ public class FloatingMousePlugin extends Plugin {
         event.put("y", y);
         event.put("delta", delta);
         notifyListeners("mouseEvent", event);
+    }
+
+    private void sendKeyEvent(String type, String key) {
+        JSObject event = new JSObject();
+        event.put("type", type);
+        event.put("key", key);
+        notifyListeners("keyEvent", event);
+    }
+
+    private void sendKeyEvent(String type, String key, boolean ctrl, boolean alt, boolean shift) {
+        JSObject event = new JSObject();
+        event.put("type", type);
+        event.put("key", key);
+        event.put("ctrl", ctrl);
+        event.put("alt", alt);
+        event.put("shift", shift);
+        notifyListeners("keyEvent", event);
     }
 }
