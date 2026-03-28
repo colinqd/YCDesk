@@ -28,6 +28,17 @@ body {
   color: white;
   padding: 28px 35px;
   text-align: center;
+  position: relative;
+}
+
+.header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.header-title {
+  flex: 1;
 }
 
 .header h1 {
@@ -40,6 +51,39 @@ body {
 .header p {
   opacity: 0.92;
   font-size: 15px;
+}
+
+.window-controls {
+  display: flex;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+}
+
+.win-ctrl-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+}
+
+.win-ctrl-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.minimize-btn:hover {
+  background: rgba(255, 193, 7, 0.7);
+}
+
+.close-btn:hover {
+  background: rgba(220, 53, 69, 0.9);
 }
 
 .content {

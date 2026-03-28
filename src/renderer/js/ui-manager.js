@@ -48,8 +48,9 @@ class UIManager {
     const modeTabs = document.querySelectorAll(`#${role}Page .mode-tab`)
     modeTabs.forEach(tab => tab.classList.remove('active'))
 
-    if (event && event.target) {
-      event.target.classList.add('active')
+    const clickedTab = Array.from(modeTabs).find(tab => tab.textContent === (mode === 'direct' ? '直连模式' : '信令服务器模式'))
+    if (clickedTab) {
+      clickedTab.classList.add('active')
     }
 
     const directMode = document.getElementById(`${role}DirectMode`)
@@ -162,6 +163,11 @@ class UIManager {
     if (!el) return 8080
     const port = parseInt(el.value)
     return this._validatePort(port) ? port : 8080
+  }
+
+  getRemoteIp() {
+    const el = document.getElementById('remoteIp')
+    return el ? el.value.trim() : ''
   }
 
   _validatePort(port) {

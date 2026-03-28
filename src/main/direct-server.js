@@ -6,23 +6,33 @@ let directServer = null
 let directClientConnections = new Map()
 
 function getLocalIps() {
-  const interfaces = os.networkInterfaces()
-  const ipList = []
-  
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name]) {
-      if (iface.family === 'IPv4' && !iface.internal) {
-        ipList.push({ address: iface.address, family: 'IPv4', name: name })
-      } else if (iface.family === 'IPv6' && !iface.internal && iface.scopeid === 0) {
-        ipList.push({ address: iface.address, family: 'IPv6', name: name })
+  try {
+    const interfaces = os.networkInterfaces()
+    const ipList = []
+    
+    console.log('开始获取本地IP地址...')
+    
+    for (const name of Object.keys(interfaces)) {
+      for (const iface of interfaces[name]) {
+        if (iface.family === 'IPv4' && !iface.internal) {
+          console.log('找到IPv4地址:', name, iface.address)
+          ipList.push({ address: iface.address, family: 'IPv4', name: name })
+        } else if (iface.family === 'IPv6' && !iface.internal && iface.scopeid === 0) {
+          console.log('找到IPv6地址:', name, iface.address)
+          ipList.push({ address: iface.address, family: 'IPv6', name: name })
+        }
       }
     }
+    
+    console.log('获取到的IP列表:', ipList)
+    return ipList
+  } catch (error) {
+    console.error('获取本地IP地址失败:', error)
+    return []
   }
-  
-  return ipList
 }
 
-function setupClientSocket(clientSocket, clientId, mainWindow) {
+function setupClientSocket(clientSocket, clientId) {
   let lastHeartbeat = Date.now()
   let heartbeatInterval = null
   
@@ -46,11 +56,14 @@ function setupClientSocket(clientSocket, clientId, mainWindow) {
           const message = JSON.parse(line)
           if (message.type === 'heartbeat') {
             clientSocket.write(JSON.stringify({ type: 'heartbeat-ack' }) + '\n')
-          } else if (mainWindow) {
-            mainWindow.webContents.send('direct-message', {
-              clientId: clientId,
-              message: message
-            })
+          } else {
+            const mainWindow = getMainWindow()
+            if (mainWindow) {
+              mainWindow.webContents.send('direct-message', {
+                clientId: clientId,
+                message: message
+              })
+            }
           }
         } catch (e) {
           console.error('解析消息失败:', e)
@@ -63,6 +76,7 @@ function setupClientSocket(clientSocket, clientId, mainWindow) {
     cleanup()
     directClientConnections.delete(clientId)
     console.log('客户端连接关闭:', clientId)
+    const mainWindow = getMainWindow()
     if (mainWindow) {
       mainWindow.webContents.send('direct-connection-closed', { clientId: clientId })
     }
@@ -83,9 +97,7 @@ function setupClientSocket(clientSocket, clientId, mainWindow) {
   }, 10000)
 }
 
-async function startDirectServer(event, port) {
-  const mainWindow = getMainWindow()
-  
+async function startDirectServerImpl(port) {
   return new Promise((resolve, reject) => {
     if (directServer) {
       directServer.close(() => {
@@ -101,6 +113,7 @@ async function startDirectServer(event, port) {
       
       console.log('新客户端连接:', clientId, clientSocket.remoteAddress, clientSocket.remotePort)
       
+      const mainWindow = getMainWindow()
       if (mainWindow) {
         mainWindow.webContents.send('direct-incoming-connection', {
           clientId: clientId,
@@ -109,7 +122,7 @@ async function startDirectServer(event, port) {
         })
       }
       
-      setupClientSocket(clientSocket, clientId, mainWindow)
+      setupClientSocket(clientSocket, clientId)
     })
     
     directServer.on('error', (err) => {
@@ -124,7 +137,7 @@ async function startDirectServer(event, port) {
   })
 }
 
-async function stopDirectServer(event) {
+async function stopDirectServerImpl() {
   return new Promise((resolve) => {
     if (directServer) {
       directServer.close(() => {
@@ -140,27 +153,26 @@ async function stopDirectServer(event) {
   })
 }
 
-async function connectDirectClient(event, host, port) {
-  const mainWindow = getMainWindow()
-  
+async function connectDirectClientImpl(host, port) {
   return new Promise((resolve, reject) => {
     const clientSocket = new net.Socket()
     const clientId = Math.random().toString(36).substr(2, 8)
     
     clientSocket.on('error', (err) => {
+      console.error('连接错误:', err)
       reject(err)
     })
     
     clientSocket.connect(port, host, () => {
       directClientConnections.set(clientId, clientSocket)
       console.log('成功连接到服务器:', host, port)
-      setupClientSocket(clientSocket, clientId, mainWindow)
+      setupClientSocket(clientSocket, clientId)
       resolve({ success: true, clientId: clientId })
     })
   })
 }
 
-async function sendDirectMessage(event, clientId, message) {
+async function sendDirectMessageImpl(clientId, message) {
   const clientSocket = directClientConnections.get(clientId)
   if (clientSocket) {
     try {
@@ -173,7 +185,7 @@ async function sendDirectMessage(event, clientId, message) {
   return { success: false, error: '客户端未找到' }
 }
 
-async function closeDirectConnection(event, clientId) {
+async function closeDirectConnectionImpl(clientId) {
   const clientSocket = directClientConnections.get(clientId)
   if (clientSocket) {
     clientSocket.destroy()
@@ -184,9 +196,9 @@ async function closeDirectConnection(event, clientId) {
 
 module.exports = {
   getLocalIps,
-  startDirectServer,
-  stopDirectServer,
-  connectDirectClient,
-  sendDirectMessage,
-  closeDirectConnection
+  startDirectServerImpl,
+  stopDirectServerImpl,
+  connectDirectClientImpl,
+  sendDirectMessageImpl,
+  closeDirectConnectionImpl
 }

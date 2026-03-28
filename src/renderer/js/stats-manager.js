@@ -194,5 +194,7 @@ module.exports = {
   getAverageLatency,
   getSessionDuration,
   addStatsListener,
-  reset
+  reset,
+  formatDuration,
+  formatBytes
 }

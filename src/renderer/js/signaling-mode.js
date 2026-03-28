@@ -1,8 +1,6 @@
 class SignalingModeManager {
   constructor(options = {}) {
     this.socket = null
-    this.peerConnection = null
-    this.dataChannel = null
     this.currentSessionId = null
     this.incomingFromDeviceId = null
     this.isController = false
@@ -97,6 +95,17 @@ class SignalingModeManager {
       fromDeviceId: this.incomingFromDeviceId,
       toDeviceId: this.myDeviceId
     })
+    
+    this.logFn('已接受连接，打开远程窗口（被控端）')
+    window.electronAPI.openRemoteWindow()
+    
+    setTimeout(() => {
+      window.electronAPI.sendToRemoteWindow('signaling-mode-start', {
+        mode: 'controlled',
+        sessionId: this.currentSessionId,
+        targetDeviceId: this.incomingFromDeviceId
+      })
+    }, 500)
   }
 
   rejectConnection() {
@@ -110,16 +119,22 @@ class SignalingModeManager {
   }
 
   async startControllerConnection() {
-    this.logFn('作为主控端建立连接')
+    this.logFn('作为主控端建立连接，打开远程窗口')
     this.isController = true
-    await this._createPeerConnection()
-    await this._createOffer()
+    window.electronAPI.openRemoteWindow()
+    
+    setTimeout(() => {
+      window.electronAPI.sendToRemoteWindow('signaling-mode-start', {
+        mode: 'controller',
+        sessionId: this.currentSessionId,
+        targetDeviceId: this.incomingFromDeviceId
+      })
+    }, 500)
   }
 
   async startControlledConnection() {
     this.logFn('作为被控端建立连接')
     this.isController = false
-    await this._createPeerConnection()
   }
 
   _setupSocketListeners(role) {
@@ -140,6 +155,8 @@ class SignalingModeManager {
       if (typeof this.onDisconnected === 'function') {
         this.onDisconnected()
       }
+      
+      window.electronAPI.sendToRemoteWindow('signaling-disconnected', { reason })
     })
 
     this.socket.on('connect_error', (error) => {
@@ -181,160 +198,59 @@ class SignalingModeManager {
     })
 
     this.socket.on('offer', async (data) => {
-      this.logFn('收到 offer')
-      await this._handleOffer(data)
+      this.logFn('收到 offer，转发到远程窗口')
+      window.electronAPI.sendToRemoteWindow('signaling-offer', data)
     })
 
     this.socket.on('answer', async (data) => {
-      this.logFn('收到 answer')
-      await this._handleAnswer(data)
+      this.logFn('收到 answer，转发到远程窗口')
+      window.electronAPI.sendToRemoteWindow('signaling-answer', data)
     })
 
     this.socket.on('ice-candidate', async (data) => {
-      this.logFn('收到 ICE candidate')
-      await this._handleIceCandidate(data)
+      this.logFn('收到 ICE candidate，转发到远程窗口')
+      window.electronAPI.sendToRemoteWindow('signaling-ice-candidate', data)
+    })
+
+    window.electronAPI.on('send-signaling-offer', (data) => {
+      this.logFn('从远程窗口收到 offer，发送到信令服务器')
+      if (this.socket) {
+        this.socket.emit('offer', {
+          sessionId: data.sessionId || this.currentSessionId,
+          offer: data.offer,
+          toDeviceId: data.targetDeviceId || this.incomingFromDeviceId
+        })
+      }
+    })
+
+    window.electronAPI.on('send-signaling-answer', (data) => {
+      this.logFn('从远程窗口收到 answer，发送到信令服务器')
+      if (this.socket) {
+        this.socket.emit('answer', {
+          sessionId: data.sessionId || this.currentSessionId,
+          answer: data.answer,
+          toDeviceId: data.targetDeviceId || this.incomingFromDeviceId
+        })
+      }
+    })
+
+    window.electronAPI.on('send-signaling-ice-candidate', (data) => {
+      this.logFn('从远程窗口收到 ICE candidate，发送到信令服务器')
+      if (this.socket) {
+        this.socket.emit('ice-candidate', {
+          sessionId: data.sessionId || this.currentSessionId,
+          candidate: data.candidate,
+          toDeviceId: data.targetDeviceId || this.incomingFromDeviceId
+        })
+      }
     })
   }
 
-  _getIceConfig() {
-    if (typeof getIceConfig === 'function') {
-      return getIceConfig()
-    }
-    return {
-      iceServers: (this.config.stunServers || []).map(url => ({ urls: url }))
-    }
-  }
-
-  async _createPeerConnection() {
-    this.peerConnection = new RTCPeerConnection(this._getIceConfig())
-
-    this.peerConnection.onicecandidate = (event) => {
-      if (event.candidate && this.socket) {
-        this.socket.emit('ice-candidate', {
-          sessionId: this.currentSessionId,
-          candidate: event.candidate,
-          toDeviceId: this.incomingFromDeviceId
-        })
-      }
-    }
-
-    this.peerConnection.ontrack = (event) => {
-      this.logFn('收到远程媒体流')
-      const stream = event.streams[0]
-      window.remoteStream = stream
-      window.electronAPI.openRemoteWindow()
-
-      setTimeout(() => {
-        window.electronAPI.sendToRemoteWindow('remote-stream', { hasStream: true })
-      }, 500)
-    }
-
-    this.peerConnection.onconnectionstatechange = () => {
-      this.logFn('连接状态: ' + this.peerConnection.connectionState)
-    }
-
-    this.peerConnection.ondatachannel = (event) => {
-      this.logFn('收到数据通道')
-      this.dataChannel = event.channel
-      this._setupDataChannel()
-    }
-
-    if (this.isController) {
-      this.logFn('创建数据通道（主控端）')
-      this.dataChannel = this.peerConnection.createDataChannel('control')
-      this._setupDataChannel()
-    }
-  }
-
-  _setupDataChannel() {
-    if (!this.dataChannel) return
-
-    this.dataChannel.onopen = () => {
-      this.logFn('数据通道已打开')
-    }
-
-    this.dataChannel.onmessage = (event) => {
-      this.logFn('收到数据通道消息:', event.data)
-      try {
-        const data = JSON.parse(event.data)
-        if (data.type === 'input') {
-          window.electronAPI.send('remote-input', data)
-        }
-      } catch (e) {
-        console.error('解析数据失败:', e)
-      }
-    }
-
-    this.dataChannel.onclose = () => {
-      this.logFn('数据通道已关闭')
-    }
-
-    this.dataChannel.onerror = (error) => {
-      console.error('数据通道错误:', error)
-    }
-  }
-
-  async _createOffer() {
-    try {
-      const offer = await this.peerConnection.createOffer()
-      await this.peerConnection.setLocalDescription(offer)
-
-      if (this.socket) {
-        this.socket.emit('offer', {
-          sessionId: this.currentSessionId,
-          offer: offer,
-          toDeviceId: this.incomingFromDeviceId
-        })
-      }
-    } catch (error) {
-      this.logFn('创建 offer 失败: ' + error.message)
-    }
-  }
-
-  async _handleOffer(data) {
-    this.incomingFromDeviceId = data.fromDeviceId || this.incomingFromDeviceId
-    this.currentSessionId = data.sessionId
-
-    await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer))
-
-    const answer = await this.peerConnection.createAnswer()
-    await this.peerConnection.setLocalDescription(answer)
-
-    if (this.socket) {
-      this.socket.emit('answer', {
-        sessionId: this.currentSessionId,
-        answer: answer,
-        toDeviceId: this.incomingFromDeviceId
-      })
-    }
-  }
-
-  async _handleAnswer(data) {
-    await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer))
-  }
-
-  async _handleIceCandidate(data) {
-    if (data.candidate && this.peerConnection) {
-      await this.peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate))
-    }
-  }
-
-  sendData(data) {
-    if (this.dataChannel && this.dataChannel.readyState === 'open') {
-      this.dataChannel.send(JSON.stringify(data))
-      return true
-    }
-    return false
-  }
-
   reset() {
-    if (this.peerConnection) {
-      this.peerConnection.close()
-      this.peerConnection = null
-    }
-    this.dataChannel = null
     this.currentSessionId = null
     this.incomingFromDeviceId = null
     this.isController = false
+    
+    this.logFn('信令模式管理器已重置')
   }
 }

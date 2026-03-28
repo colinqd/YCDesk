@@ -241,12 +241,15 @@ async function getLocalIps() {
 }
 
 async function startListening() {
+  console.log('startListening 函数被调用')
   const port = uiManager.getListenPort()
+  console.log('获取到的端口:', port)
   if (!uiManager._validatePort(port)) {
     alert('请输入有效的端口号 (1024-65535)')
     return
   }
 
+  console.log('调用 directManager.startListening')
   await directManager.startListening(port)
 }
 
@@ -342,6 +345,22 @@ function copyDeviceId() {
 
 function openRemoteWindow() {
   window.electronAPI.openRemoteWindow()
+}
+
+async function minimizeWindow() {
+  try {
+    await window.electronAPI.windowMinimize()
+  } catch (e) {
+    console.error('最小化失败:', e)
+  }
+}
+
+async function closeWindow() {
+  try {
+    await window.electronAPI.windowClose()
+  } catch (e) {
+    console.error('关闭失败:', e)
+  }
 }
 
 document.addEventListener('DOMContentLoaded', () => {

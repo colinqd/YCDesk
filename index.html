@@ -10,8 +10,16 @@
 <body>
   <div class="container">
     <div class="header">
-      <h1>YCDesk</h1>
-      <p>远程桌面控制 - 安全、快速、便捷</p>
+      <div class="header-content">
+        <div class="header-title">
+          <h1>YCDesk</h1>
+          <p>远程桌面控制 - 安全、快速、便捷</p>
+        </div>
+        <div class="window-controls">
+          <button class="win-ctrl-btn minimize-btn" onclick="minimizeWindow()" title="最小化">─</button>
+          <button class="win-ctrl-btn close-btn" onclick="closeWindow()" title="关闭">✕</button>
+        </div>
+      </div>
     </div>
 
     <div class="content">

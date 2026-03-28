@@ -13,6 +13,9 @@ class ConnectionManager {
     this.reconnectTimeout = null
     this.maxReconnectAttempts = options.maxReconnectAttempts || 10
     this.baseReconnectDelay = options.baseReconnectDelay || 1000
+    this.maxReconnectDelay = options.maxReconnectDelay || 30000 // 最大延迟 30 秒
+    this.reconnectWindow = options.reconnectWindow || 300000 // 重连时间窗口 5 分钟
+    this.reconnectStartTime = null
     this.heartbeatIntervalMs = options.heartbeatInterval || 5000
     this.logFn = options.log || console.log
     this.onStatusChange = options.onStatusChange || null
@@ -59,9 +62,26 @@ class ConnectionManager {
   }
 
   async attemptReconnect(reconnectFn, networkManager = null) {
+    // 记录重连开始时间
+    if (!this.reconnectStartTime) {
+      this.reconnectStartTime = Date.now()
+    }
+    
+    // 检查是否超过重连时间窗口
+    const elapsed = Date.now() - this.reconnectStartTime
+    if (elapsed > this.reconnectWindow) {
+      this.logFn('重连时间窗口已过期，停止重连')
+      this.reconnectAttempts = 0
+      this.reconnectStartTime = null
+      this.setStatus(CONNECTION_STATUS.ERROR)
+      return false
+    }
+    
+    // 检查重连次数
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       this.logFn('重连次数已达上限，停止重连')
       this.reconnectAttempts = 0
+      this.reconnectStartTime = null
       this.setStatus(CONNECTION_STATUS.ERROR)
       return false
     }
@@ -72,9 +92,18 @@ class ConnectionManager {
     }
 
     this.reconnectAttempts++
-    const delay = networkManager
-      ? networkManager.calculateReconnectDelay(this.reconnectAttempts, this.baseReconnectDelay)
-      : this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts)
+    // 计算延迟时间，使用指数退避但有上限
+    let delay
+    if (networkManager) {
+      delay = networkManager.calculateReconnectDelay(this.reconnectAttempts, this.baseReconnectDelay)
+    } else {
+      delay = this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts - 1)
+    }
+    // 限制最大延迟
+    delay = Math.min(delay, this.maxReconnectDelay)
+    // 添加 jitter 防止同时重连
+    const jitter = delay * 0.1 * Math.random()
+    delay = delay + jitter
 
     this.logFn(`将在 ${Math.round(delay / 1000)} 秒后尝试重连... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
 
@@ -84,8 +113,10 @@ class ConnectionManager {
       try {
         this.setStatus(CONNECTION_STATUS.CONNECTING)
         await reconnectFn()
+        // 重连成功，重置时间窗口
+        this.reconnectStartTime = null
       } catch (error) {
-        this.logFn('重连失败: ' + error.message)
+        this.logFn('重连失败：' + error.message)
         await this.attemptReconnect(reconnectFn, networkManager)
       }
     }, delay)
@@ -99,6 +130,7 @@ class ConnectionManager {
       this.reconnectTimeout = null
     }
     this.reconnectAttempts = 0
+    this.reconnectStartTime = null
   }
 
   reset() {

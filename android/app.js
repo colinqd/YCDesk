@@ -1515,10 +1515,7 @@ async function startDirectControllerConnection() {
       remoteVideo.onloadedmetadata = () => {
         log('视频元数据加载: ' + remoteVideo.videoWidth + 'x' + remoteVideo.videoHeight)
         if (matrixTransformer) {
-          if (matrixTransformer.remoteScreenWidth === 1920 && matrixTransformer.remoteScreenHeight === 1080) {
-            log('使用视频尺寸更新 remoteScreenSize')
-            matrixTransformer.setRemoteScreenSize(remoteVideo.videoWidth, remoteVideo.videoHeight)
-          }
+          matrixTransformer.setVideoSize(remoteVideo.videoWidth, remoteVideo.videoHeight)
           
           const videoContainer = document.getElementById('videoContainer')
           const videoWrapper = document.getElementById('videoWrapper')
@@ -1665,11 +1662,6 @@ async function initController() {
   try {
     const serviceResult = await FloatingMouse.startService()
     log('悬浮鼠标服务已启动')
-    if (serviceResult.keyboardReady) {
-      log('悬浮键盘服务已就绪')
-    } else {
-      log('悬浮键盘服务未就绪，请稍后重试')
-    }
     
     FloatingMouse.addListener('mouseEvent', (event) => {
       handleFloatingMouseEvent(event)
@@ -1796,6 +1788,20 @@ async function createPeerConnection() {
       remoteVideo.srcObject = stream
       remoteVideo.play().catch(e => log('播放视频失败: ' + e.message))
       log('视频流已设置到video元素')
+      
+      remoteVideo.onloadedmetadata = () => {
+        log('视频元数据加载: ' + remoteVideo.videoWidth + 'x' + remoteVideo.videoHeight)
+        if (matrixTransformer) {
+          matrixTransformer.setVideoSize(remoteVideo.videoWidth, remoteVideo.videoHeight)
+          
+          const videoContainer = document.getElementById('videoContainer')
+          const videoWrapper = document.getElementById('videoWrapper')
+          if (videoContainer && videoWrapper) {
+            matrixTransformer.applyContainerSize(videoContainer, videoWrapper)
+            log('视频加载后更新 container: ' + matrixTransformer.displayWidth + 'x' + matrixTransformer.displayHeight)
+          }
+        }
+      }
     }
   }
 
@@ -2598,11 +2604,44 @@ function updateScreenSize(width, height, scaleFactor, workArea) {
         
         const videoContainer = document.getElementById('videoContainer');
         const videoWrapper = document.getElementById('videoWrapper');
-        if (videoContainer && videoWrapper) {
+        const remoteVideo = document.getElementById('remoteVideo');
+        const remoteScreen = document.getElementById('remoteScreen');
+        
+        if (videoContainer && videoWrapper && remoteScreen) {
+            // 重置缩放和平移
+            matrixTransformer.reset();
+            
+            // 更新本地屏幕尺寸
+            const screenRect = remoteScreen.getBoundingClientRect();
+            matrixTransformer.setScreenSize(screenRect.width, screenRect.height);
+            
+            // 设置视频尺寸（优先使用实际视频尺寸）
+            if (remoteVideo && remoteVideo.videoWidth > 0) {
+                matrixTransformer.setVideoSize(remoteVideo.videoWidth, remoteVideo.videoHeight);
+                log('使用视频尺寸: ' + remoteVideo.videoWidth + 'x' + remoteVideo.videoHeight);
+            } else {
+                // 如果视频还没加载，使用远程屏幕尺寸作为视频尺寸
+                matrixTransformer.setVideoSize(width, height);
+                log('使用远程屏幕尺寸作为视频尺寸: ' + width + 'x' + height);
+            }
+            
+            // 立即应用容器尺寸（类似横屏后的重构）
             matrixTransformer.applyContainerSize(videoContainer, videoWrapper);
             
             log('调整 videoContainer: ' + matrixTransformer.displayWidth + 'x' + matrixTransformer.displayHeight +
                 ', 位置 (' + matrixTransformer.displayX + ', ' + matrixTransformer.displayY + ')');
+            
+            // 多次延迟重构，确保视频加载后正确调整
+            [100, 300, 500, 1000].forEach(delay => {
+                setTimeout(() => {
+                    if (remoteVideo && remoteVideo.videoWidth > 0) {
+                        matrixTransformer.setVideoSize(remoteVideo.videoWidth, remoteVideo.videoHeight);
+                        matrixTransformer.setScreenSize(remoteScreen.getBoundingClientRect().width, remoteScreen.getBoundingClientRect().height);
+                        matrixTransformer.applyContainerSize(videoContainer, videoWrapper);
+                        log('延迟' + delay + 'ms重构容器尺寸: ' + matrixTransformer.displayWidth + 'x' + matrixTransformer.displayHeight);
+                    }
+                }, delay);
+            });
         }
     }
 }
@@ -2644,7 +2683,40 @@ function showRemoteScreen() {
   
   setTimeout(() => {
       setupRemoteScreenInteraction();
+      // 额外延迟后再次更新尺寸，确保视频加载后正确调整
+      setTimeout(() => {
+          updateContainerSizeAfterVideoLoad();
+      }, 500);
   }, 100);
+}
+
+function updateContainerSizeAfterVideoLoad() {
+  log('更新容器尺寸（视频加载后）');
+  const remoteVideo = document.getElementById('remoteVideo');
+  const videoContainer = document.getElementById('videoContainer');
+  const videoWrapper = document.getElementById('videoWrapper');
+  const remoteScreen = document.getElementById('remoteScreen');
+  
+  if (!remoteVideo || !videoContainer || !videoWrapper || !remoteScreen) {
+      log('缺少必要元素，跳过尺寸更新');
+      return;
+  }
+  
+  // 更新屏幕尺寸
+  const screenRect = remoteScreen.getBoundingClientRect();
+  if (matrixTransformer) {
+      matrixTransformer.setScreenSize(screenRect.width, screenRect.height);
+      
+      // 如果视频有尺寸，更新视频尺寸
+      if (remoteVideo.videoWidth > 0 && remoteVideo.videoHeight > 0) {
+          matrixTransformer.setVideoSize(remoteVideo.videoWidth, remoteVideo.videoHeight);
+          log('视频尺寸: ' + remoteVideo.videoWidth + 'x' + remoteVideo.videoHeight);
+      }
+      
+      // 应用容器尺寸
+      matrixTransformer.applyContainerSize(videoContainer, videoWrapper);
+      log('容器尺寸已更新: ' + matrixTransformer.displayWidth + 'x' + matrixTransformer.displayHeight);
+  }
 }
 
 function hideRemoteScreen() {
@@ -2723,6 +2795,17 @@ function stopStatsMonitoring() {
 }
 
 let keyboardVisible = false
+let currentKeyboardPosition = 'bottom'
+let currentKeyboardSize = 'medium'
+let currentKeyboardOpacity = '100'
+let keyboardPositions = ['bottom', 'top', 'center', 'left', 'right']
+let keyboardSizes = ['small', 'medium', 'large']
+let keyboardOpacities = ['100', '80', '60', '40']
+let isDraggingKeyboard = false
+let dragStartX = 0
+let dragStartY = 0
+let dragStartLeft = 0
+let dragStartTop = 0
 let activeModifiers = {
   Control: false,
   Shift: false,
@@ -2731,83 +2814,199 @@ let activeModifiers = {
   CapsLock: false
 }
 
-async function toggleKeyboard() {
+function cycleKeyboardPosition() {
+  const currentIndex = keyboardPositions.indexOf(currentKeyboardPosition)
+  const nextIndex = (currentIndex + 1) % keyboardPositions.length
+  currentKeyboardPosition = keyboardPositions[nextIndex]
+  applyKeyboardPosition()
+  const positionNames = {
+    'bottom': '底部',
+    'top': '顶部',
+    'center': '中间',
+    'left': '左侧',
+    'right': '右侧'
+  }
+  showToast(`键盘位置: ${positionNames[currentKeyboardPosition]}`)
+  saveKeyboardSettings()
+}
+
+function cycleKeyboardSize() {
+  const currentIndex = keyboardSizes.indexOf(currentKeyboardSize)
+  const nextIndex = (currentIndex + 1) % keyboardSizes.length
+  currentKeyboardSize = keyboardSizes[nextIndex]
+  applyKeyboardSize()
+  const sizeNames = {
+    'small': '小',
+    'medium': '中',
+    'large': '大'
+  }
+  showToast(`键盘大小: ${sizeNames[currentKeyboardSize]}`)
+  saveKeyboardSettings()
+}
+
+function cycleKeyboardOpacity() {
+  const currentIndex = keyboardOpacities.indexOf(currentKeyboardOpacity)
+  const nextIndex = (currentIndex + 1) % keyboardOpacities.length
+  currentKeyboardOpacity = keyboardOpacities[nextIndex]
+  applyKeyboardOpacity()
+  showToast(`键盘透明度: ${currentKeyboardOpacity}%`)
+  saveKeyboardSettings()
+}
+
+function applyKeyboardPosition() {
+  const keyboardOverlay = document.getElementById('keyboardOverlay')
+  if (!keyboardOverlay) return
+  
+  keyboardPositions.forEach(pos => {
+    keyboardOverlay.classList.remove(`position-${pos}`)
+  })
+  keyboardOverlay.classList.add(`position-${currentKeyboardPosition}`)
+}
+
+function applyKeyboardSize() {
+  const keyboardOverlay = document.getElementById('keyboardOverlay')
+  if (!keyboardOverlay) return
+  
+  keyboardSizes.forEach(size => {
+    keyboardOverlay.classList.remove(`size-${size}`)
+  })
+  keyboardOverlay.classList.add(`size-${currentKeyboardSize}`)
+}
+
+function applyKeyboardOpacity() {
+  const keyboardOverlay = document.getElementById('keyboardOverlay')
+  const controlOverlay = document.getElementById('controlOverlay')
+  
+  if (keyboardOverlay) {
+    keyboardOpacities.forEach(opacity => {
+      keyboardOverlay.classList.remove(`opacity-${opacity}`)
+    })
+    keyboardOverlay.classList.add(`opacity-${currentKeyboardOpacity}`)
+  }
+  
+  if (controlOverlay) {
+    keyboardOpacities.forEach(opacity => {
+      controlOverlay.classList.remove(`opacity-${opacity}`)
+    })
+    controlOverlay.classList.add(`opacity-${currentKeyboardOpacity}`)
+  }
+}
+
+function saveKeyboardSettings() {
+  try {
+    localStorage.setItem('ycdesk_keyboard_position', currentKeyboardPosition)
+    localStorage.setItem('ycdesk_keyboard_size', currentKeyboardSize)
+    localStorage.setItem('ycdesk_keyboard_opacity', currentKeyboardOpacity)
+  } catch (e) {
+    console.log('保存键盘设置失败:', e)
+  }
+}
+
+function loadKeyboardSettings() {
+  try {
+    const savedPosition = localStorage.getItem('ycdesk_keyboard_position')
+    const savedSize = localStorage.getItem('ycdesk_keyboard_size')
+    const savedOpacity = localStorage.getItem('ycdesk_keyboard_opacity')
+    
+    if (savedPosition && keyboardPositions.includes(savedPosition)) {
+      currentKeyboardPosition = savedPosition
+    }
+    if (savedSize && keyboardSizes.includes(savedSize)) {
+      currentKeyboardSize = savedSize
+    }
+    if (savedOpacity && keyboardOpacities.includes(savedOpacity)) {
+      currentKeyboardOpacity = savedOpacity
+    }
+  } catch (e) {
+    console.log('加载键盘设置失败:', e)
+  }
+}
+
+function setupKeyboardDrag() {
+  const keyboardOverlay = document.getElementById('keyboardOverlay')
+  const dragHandle = document.getElementById('keyboardDragHandle')
+  
+  if (!keyboardOverlay || !dragHandle) return
+  
+  dragHandle.addEventListener('touchstart', (e) => {
+    if (currentKeyboardPosition === 'center') {
+      isDraggingKeyboard = true
+      const touch = e.touches[0]
+      dragStartX = touch.clientX
+      dragStartY = touch.clientY
+      
+      const rect = keyboardOverlay.getBoundingClientRect()
+      dragStartLeft = rect.left
+      dragStartTop = rect.top
+      
+      e.preventDefault()
+    }
+  }, { passive: false })
+  
+  document.addEventListener('touchmove', (e) => {
+    if (!isDraggingKeyboard) return
+    
+    const touch = e.touches[0]
+    const deltaX = touch.clientX - dragStartX
+    const deltaY = touch.clientY - dragStartY
+    
+    let newLeft = dragStartLeft + deltaX
+    let newTop = dragStartTop + deltaY
+    
+    const maxLeft = window.innerWidth - keyboardOverlay.offsetWidth
+    const maxTop = window.innerHeight - keyboardOverlay.offsetHeight
+    
+    newLeft = Math.max(0, Math.min(maxLeft, newLeft))
+    newTop = Math.max(0, Math.min(maxTop, newTop))
+    
+    keyboardOverlay.style.left = `${newLeft}px`
+    keyboardOverlay.style.top = `${newTop}px`
+    keyboardOverlay.style.transform = 'none'
+    
+    e.preventDefault()
+  }, { passive: false })
+  
+  document.addEventListener('touchend', () => {
+    isDraggingKeyboard = false
+  })
+}
+
+function toggleKeyboard() {
   keyboardVisible = !keyboardVisible
   console.log('toggleKeyboard called, keyboardVisible=' + keyboardVisible)
   
-  try {
-    if (keyboardVisible) {
-      // 先添加键盘事件监听器
-      FloatingMouse.addListener('keyEvent', (event) => {
-        console.log('收到键盘事件:', JSON.stringify(event))
-        
-        if (event.type === 'keypress' || event.type === 'specialkey') {
-          const keyCode = event.key
-          const ctrl = event.ctrl || false
-          const alt = event.alt || false
-          const shift = event.shift || false
-          
-          console.log('发送按键:', keyCode, 'ctrl:', ctrl, 'alt:', alt, 'shift:', shift)
-          
-          const keyEvent = {
-            type: 'keydown',
-            code: keyCode,
-            key: getKeyFromCode(keyCode),
-            ctrlKey: ctrl,
-            shiftKey: shift,
-            altKey: alt,
-            metaKey: false
-          }
-          
-          sendControlCommand(keyEvent)
-          
-          setTimeout(() => {
-            sendControlCommand({
-              type: 'keyup',
-              code: keyCode,
-              key: getKeyFromCode(keyCode),
-              ctrlKey: ctrl,
-              shiftKey: shift,
-              altKey: alt,
-              metaKey: false
-            })
-          }, 50)
-        }
-      })
-      
-      let retries = 3
-      let result = null
-      
-      while (retries > 0) {
-        result = await FloatingMouse.showKeyboard()
-        if (result.success) break
-        if (result.error && result.error.includes('not started')) {
-          console.log('Keyboard service not ready, retrying...')
-          await new Promise(r => setTimeout(r, 500))
-          retries--
-        } else {
-          break
-        }
-      }
-      
-      if (result.success) {
-        showToast('悬浮键盘已打开')
-        console.log('悬浮键盘已打开')
-      } else {
-        showToast('打开悬浮键盘失败: ' + (result.error || '未知错误'))
-      }
-    } else {
-      const result = await FloatingMouse.hideKeyboard()
-      if (result.success) {
-        showToast('悬浮键盘已关闭')
-        console.log('悬浮键盘已关闭')
-      } else {
-        showToast('关闭悬浮键盘失败: ' + (result.error || '未知错误'))
-      }
+  const keyboardOverlay = document.getElementById('keyboardOverlay')
+  const remoteScreen = document.getElementById('remoteScreen')
+  
+  if (keyboardVisible) {
+    loadKeyboardSettings()
+    applyKeyboardPosition()
+    applyKeyboardSize()
+    applyKeyboardOpacity()
+    
+    if (currentKeyboardPosition !== 'center') {
+      keyboardOverlay.style.left = ''
+      keyboardOverlay.style.top = ''
+      keyboardOverlay.style.transform = ''
     }
-  } catch (e) {
-    console.error('toggleKeyboard error:', e)
-    showToast('键盘操作失败: ' + e.message)
+    
+    if (keyboardOverlay) {
+      keyboardOverlay.classList.add('active')
+    }
+    if (remoteScreen) {
+      remoteScreen.classList.add('keyboard-visible')
+    }
+    showToast('键盘已打开')
+    console.log('HTML键盘已打开')
+  } else {
+    if (keyboardOverlay) {
+      keyboardOverlay.classList.remove('active')
+    }
+    if (remoteScreen) {
+      remoteScreen.classList.remove('keyboard-visible')
+    }
+    showToast('键盘已关闭')
+    console.log('HTML键盘已关闭')
   }
 }
 
@@ -2947,6 +3146,8 @@ async function init() {
   window.addEventListener('orientationchange', handleOrientationChange)
   window.addEventListener('resize', handleOrientationChange)
   
+  setupKeyboardDrag()
+  
   console.log('初始化完成，设备ID:', myDeviceId)
 }
 
@@ -2960,6 +3161,9 @@ window.copyDeviceId = copyDeviceId
 window.connectDevice = connectDevice
 window.connectDirect = connectDirect
 window.toggleKeyboard = toggleKeyboard
+window.cycleKeyboardPosition = cycleKeyboardPosition
+window.cycleKeyboardSize = cycleKeyboardSize
+window.cycleKeyboardOpacity = cycleKeyboardOpacity
 window.toggleMouseMode = toggleMouseMode
 window.toggleFullscreen = toggleFullscreen
 window.toggleControlsHide = toggleControlsHide

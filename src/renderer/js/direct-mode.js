@@ -17,21 +17,26 @@ class DirectModeManager {
   }
 
   async startListening(port) {
+    this.logFn('startListening 被调用，端口: ' + port)
     try {
+      this.logFn('正在调用 window.electronAPI.startDirectServer...')
       const result = await window.electronAPI.startDirectServer(port)
-      if (result.success) {
+      this.logFn('startDirectServer 返回结果: ' + JSON.stringify(result))
+      if (result && result.success) {
         this.logFn('开始监听端口 ' + port + '，等待连接...')
         if (this.uiManager) {
           this.uiManager.updateServerStatus('监听中 (端口 ' + port + ')', 'connected')
         }
         return true
       } else {
-        this.logFn('启动监听失败: ' + result.error)
-        alert('监听失败: ' + result.error)
+        const errorMsg = result?.error || '未知错误'
+        this.logFn('启动监听失败: ' + errorMsg)
+        alert('监听失败: ' + errorMsg)
         return false
       }
     } catch (error) {
       this.logFn('启动监听失败: ' + error.message)
+      console.error('startListening 错误:', error)
       alert('启动监听失败: ' + error.message)
       return false
     }
@@ -61,15 +66,16 @@ class DirectModeManager {
 
     try {
       const result = await window.electronAPI.connectDirectClient(host, port)
-      if (result.success) {
+      if (result && result.success) {
         this.logFn('已连接到 ' + host + ':' + port)
         this.currentDirectClientId = result.clientId
         this.isDirectController = true
         await this.startControllerConnection(result.clientId)
         return true
       } else {
-        this.logFn('连接失败: ' + result.error)
-        alert('连接失败: ' + result.error)
+        const errorMsg = result?.error || '连接失败'
+        this.logFn('连接失败: ' + errorMsg)
+        alert('连接失败: ' + errorMsg)
         return false
       }
     } catch (error) {
@@ -86,7 +92,11 @@ class DirectModeManager {
     }
 
     try {
-      await window.electronAPI.sendDirectMessage(this.currentDirectClientId, message)
+      const result = await window.electronAPI.sendDirectMessage(this.currentDirectClientId, message)
+      if (!result || !result.success) {
+        this.logFn('发送消息失败: ' + (result?.error || '未知错误'))
+        return false
+      }
       return true
     } catch (e) {
       this.logFn('发送消息失败: ' + e.message)
@@ -267,7 +277,13 @@ class DirectModeManager {
       }
 
       if (!this.directPeerConnection || !this.directPeerConnection.remoteDescription) {
-        this.logFn('缓存ICE候选（远程描述未设置）')
+        // 限制 ICE 候选缓存数量，防止内存泄漏
+        const MAX_ICE_CANDIDATES = 50
+        if (this.pendingIceCandidates.length >= MAX_ICE_CANDIDATES) {
+          this.logFn('ICE 候选缓存已满，丢弃最早的候选')
+          this.pendingIceCandidates.shift() // 移除最早的候选
+        }
+        this.logFn('缓存 ICE 候选（远程描述未设置）')
         this.pendingIceCandidates.push(candidate)
         return
       }
@@ -334,13 +350,23 @@ class DirectModeManager {
     this.pendingIceCandidates = []
 
     if (this.dataChannelManager) {
-      this.dataChannelManager.close()
+      try {
+        this.dataChannelManager.close()
+      } catch (e) {
+        this.logFn('关闭数据通道管理器时出错:', e)
+      }
       this.dataChannelManager = null
     }
 
     if (this.directPeerConnection) {
-      this.directPeerConnection.close()
+      try {
+        this.directPeerConnection.close()
+      } catch (e) {
+        this.logFn('关闭直连 PeerConnection 时出错:', e)
+      }
       this.directPeerConnection = null
     }
+    
+    this.logFn('直连模式管理器已重置')
   }
 }

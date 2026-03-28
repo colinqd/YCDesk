@@ -1,9 +1,10 @@
-const { BrowserWindow } = require('electron')
+const { BrowserWindow, Tray, Menu, nativeImage, app } = require('electron')
 const path = require('path')
-const os = require('os')
 
 let mainWindow = null
 let remoteWindow = null
+let tray = null
+let isQuitting = false
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
@@ -21,7 +22,9 @@ function createMainWindow() {
     title: 'YCDesk - 远程桌面控制',
     icon: path.join(__dirname, '../../assets/icon.png'),
     show: false,
-    backgroundColor: '#ffffff'
+    backgroundColor: '#ffffff',
+    frame: true,
+    autoHideMenuBar: true
   })
 
   mainWindow.loadFile('index.html')
@@ -33,6 +36,21 @@ function createMainWindow() {
   if (process.argv.includes('--dev') || process.env.NODE_ENV === 'development') {
     mainWindow.webContents.openDevTools({ mode: 'detach' })
   }
+
+  mainWindow.on('minimize', (event) => {
+    event.preventDefault()
+    mainWindow.hide()
+    if (tray) {
+      tray.displayBalloon({
+        iconType: 'info',
+        title: 'YCDesk',
+        content: '程序已最小化到系统托盘，双击图标可恢复窗口'
+      })
+    }
+  })
+
+  mainWindow.on('close', (event) => {
+  })
 
   mainWindow.on('closed', () => {
     mainWindow = null
@@ -47,6 +65,11 @@ function createMainWindow() {
 }
 
 function createRemoteWindow() {
+  if (remoteWindow) {
+    remoteWindow.focus()
+    return remoteWindow
+  }
+
   remoteWindow = new BrowserWindow({
     width: 1400,
     height: 850,
@@ -78,6 +101,81 @@ function createRemoteWindow() {
   remoteWindow.on('closed', () => {
     remoteWindow = null
   })
+
+  return remoteWindow
+}
+
+function createTray() {
+  let icon
+  
+  const iconPaths = [
+    path.join(__dirname, '../../assets/icon.png'),
+    path.join(__dirname, '../../assets/icon.ico'),
+    path.join(__dirname, '../../build/icon.png'),
+    path.join(__dirname, '../../build/icon.ico')
+  ]
+  
+  for (const iconPath of iconPaths) {
+    try {
+      if (require('fs').existsSync(iconPath)) {
+        icon = nativeImage.createFromPath(iconPath)
+        if (!icon.isEmpty()) {
+          console.log('托盘图标加载成功:', iconPath)
+          break
+        }
+      }
+    } catch (e) {
+      console.log('加载图标失败:', iconPath, e.message)
+    }
+  }
+  
+  if (!icon || icon.isEmpty()) {
+    icon = nativeImage.createEmpty()
+    console.log('使用空图标作为托盘图标')
+  }
+
+  tray = new Tray(icon)
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: '显示主窗口',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.show()
+          mainWindow.focus()
+        }
+      }
+    },
+    {
+      label: '显示远程窗口',
+      click: () => {
+        if (remoteWindow) {
+          remoteWindow.show()
+          remoteWindow.focus()
+        } else {
+          createRemoteWindow()
+        }
+      }
+    },
+    { type: 'separator' },
+    {
+      label: '退出',
+      click: () => {
+        isQuitting = true
+        app.quit()
+      }
+    }
+  ])
+
+  tray.setToolTip('YCDesk - 远程桌面控制')
+  tray.setContextMenu(contextMenu)
+
+  tray.on('double-click', () => {
+    if (mainWindow) {
+      mainWindow.show()
+      mainWindow.focus()
+    }
+  })
 }
 
 function getMainWindow() {
@@ -88,9 +186,57 @@ function getRemoteWindow() {
   return remoteWindow
 }
 
+function minimizeMainWindow() {
+  if (mainWindow) {
+    mainWindow.hide()
+    return true
+  }
+  return false
+}
+
+function maximizeMainWindow() {
+  if (mainWindow) {
+    if (mainWindow.isMaximized()) {
+      mainWindow.unmaximize()
+    } else {
+      mainWindow.maximize()
+    }
+    return true
+  }
+  return false
+}
+
+function closeMainWindow() {
+  if (mainWindow) {
+    isQuitting = true
+    mainWindow.close()
+    return true
+  }
+  return false
+}
+
+function showMainWindow() {
+  if (mainWindow) {
+    mainWindow.show()
+    mainWindow.focus()
+    return true
+  }
+  return false
+}
+
+function quitApp() {
+  isQuitting = true
+}
+
 module.exports = {
   createMainWindow,
   createRemoteWindow,
+  createTray,
   getMainWindow,
-  getRemoteWindow
+  getRemoteWindow,
+  minimizeMainWindow,
+  maximizeMainWindow,
+  closeMainWindow,
+  showMainWindow,
+  quitApp
 }

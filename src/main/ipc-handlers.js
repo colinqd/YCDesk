@@ -1,13 +1,22 @@
 const { ipcMain, desktopCapturer, screen } = require('electron')
-const { createRemoteWindow, getMainWindow, getRemoteWindow } = require('./window-manager')
-const { handleRemoteInput } = require('./input-handler')
+const { 
+  createRemoteWindow, 
+  getMainWindow, 
+  getRemoteWindow,
+  minimizeMainWindow,
+  maximizeMainWindow,
+  closeMainWindow,
+  showMainWindow,
+  createTray
+} = require('./window-manager')
+const { handleRemoteInput, resetModifiers } = require('./input-handler')
 const {
   getLocalIps,
-  startDirectServer,
-  stopDirectServer,
-  connectDirectClient,
-  sendDirectMessage,
-  closeDirectConnection
+  startDirectServerImpl,
+  stopDirectServerImpl,
+  connectDirectClientImpl,
+  sendDirectMessageImpl,
+  closeDirectConnectionImpl
 } = require('./direct-server')
 const signalingServer = require('./signaling-server')
 const authManager = require('./auth-manager')
@@ -21,9 +30,9 @@ function generateDeviceId() {
 }
 
 function safeIpcHandler(handler, handlerName) {
-  return async (...args) => {
+  return async (event, ...args) => {
     try {
-      return await handler(...args)
+      return await handler(event, ...args)
     } catch (error) {
       if (logger) {
         logger.error(`[IPC Error] ${handlerName}`, { error: error.message })
@@ -45,8 +54,8 @@ function init(deviceIdParam, loggerParam) {
     console.log('IPC 处理器初始化，设备ID:', deviceId)
   }
   
-  // 初始化信令服务器
   signalingServer.init(deviceId, logger)
+  createTray()
   
   ipcMain.handle('get-device-id', safeIpcHandler(() => {
     return deviceId
@@ -83,12 +92,7 @@ function init(deviceIdParam, loggerParam) {
 
   ipcMain.handle('open-remote-window', safeIpcHandler(() => {
     console.log('打开远程控制窗口')
-    const remoteWindow = getRemoteWindow()
-    if (!remoteWindow) {
-      createRemoteWindow()
-    } else {
-      remoteWindow.focus()
-    }
+    createRemoteWindow()
     return true
   }, 'open-remote-window'))
 
@@ -162,12 +166,35 @@ function init(deviceIdParam, loggerParam) {
     }
   })
 
-  ipcMain.handle('get-local-ips', safeIpcHandler(getLocalIps, 'get-local-ips'))
-  ipcMain.handle('start-direct-server', safeIpcHandler(startDirectServer, 'start-direct-server'))
-  ipcMain.handle('stop-direct-server', safeIpcHandler(stopDirectServer, 'stop-direct-server'))
-  ipcMain.handle('connect-direct-client', safeIpcHandler(connectDirectClient, 'connect-direct-client'))
-  ipcMain.handle('send-direct-message', safeIpcHandler(sendDirectMessage, 'send-direct-message'))
-  ipcMain.handle('close-direct-connection', safeIpcHandler(closeDirectConnection, 'close-direct-connection'))
+  ipcMain.handle('reset-input-modifiers', safeIpcHandler(() => {
+    resetModifiers()
+    logger?.info('已重置输入修饰键状态')
+    return { success: true }
+  }, 'reset-input-modifiers'))
+
+  ipcMain.handle('get-local-ips', safeIpcHandler(() => {
+    return getLocalIps()
+  }, 'get-local-ips'))
+  
+  ipcMain.handle('start-direct-server', safeIpcHandler((event, port) => {
+    return startDirectServerImpl(port)
+  }, 'start-direct-server'))
+  
+  ipcMain.handle('stop-direct-server', safeIpcHandler(() => {
+    return stopDirectServerImpl()
+  }, 'stop-direct-server'))
+  
+  ipcMain.handle('connect-direct-client', safeIpcHandler((event, params) => {
+    return connectDirectClientImpl(params.host, params.port)
+  }, 'connect-direct-client'))
+  
+  ipcMain.handle('send-direct-message', safeIpcHandler((event, params) => {
+    return sendDirectMessageImpl(params.clientId, params.message)
+  }, 'send-direct-message'))
+  
+  ipcMain.handle('close-direct-connection', safeIpcHandler((event, clientId) => {
+    return closeDirectConnectionImpl(clientId)
+  }, 'close-direct-connection'))
 
   ipcMain.handle('set-connection-password', safeIpcHandler((event, password) => {
     return authManager.setPassword(password)
@@ -190,15 +217,34 @@ function init(deviceIdParam, loggerParam) {
     return authManager.verifyPassword(password)
   }, 'verify-connection-password'))
   
-  ipcMain.handle('encrypt-data', safeIpcHandler((event, data, password) => {
-    return authManager.encrypt(data, password)
+  ipcMain.handle('encrypt-data', safeIpcHandler((event, params) => {
+    return authManager.encrypt(params.data, params.password)
   }, 'encrypt-data'))
   
-  ipcMain.handle('decrypt-data', safeIpcHandler((event, encryptedData, password) => {
-    return authManager.decrypt(encryptedData, password)
+  ipcMain.handle('decrypt-data', safeIpcHandler((event, params) => {
+    return authManager.decrypt(params.encryptedData, params.password)
   }, 'decrypt-data'))
 
-  // 信令服务器相关
+  ipcMain.handle('window-minimize', safeIpcHandler(() => {
+    return minimizeMainWindow()
+  }, 'window-minimize'))
+
+  ipcMain.handle('window-maximize', safeIpcHandler(() => {
+    return maximizeMainWindow()
+  }, 'window-maximize'))
+
+  ipcMain.handle('window-close', safeIpcHandler(() => {
+    return closeMainWindow()
+  }, 'window-close'))
+
+  ipcMain.handle('show-main-window', safeIpcHandler(() => {
+    return showMainWindow()
+  }, 'show-main-window'))
+
+  ipcMain.handle('set-tray-icon', safeIpcHandler((event, visible) => {
+    return { success: true }
+  }, 'set-tray-icon'))
+
   ipcMain.handle('connect-signaling-server', safeIpcHandler(async (event, serverUrl) => {
     return await signalingServer.connect(serverUrl)
   }, 'connect-signaling-server'))
@@ -232,7 +278,6 @@ function init(deviceIdParam, loggerParam) {
     return signalingServer.getConnectionStatus()
   }, 'get-signaling-status'))
 
-  // 信令服务器事件监听
   signalingServer.onIncomingConnection((data) => {
     const mainWindow = getMainWindow()
     if (mainWindow) {

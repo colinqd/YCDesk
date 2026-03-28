@@ -24,9 +24,10 @@ app.whenReady().then(() => {
   logger.info('Electron 版本:', { version: process.versions.electron })
   logger.info('Node 版本:', { version: process.versions.node })
   logger.info('平台:', { platform: process.platform })
-  logger.info('日志目录:', { dir: logger.getLogDir() })
+  logger.info('设备ID:', { deviceId: deviceId })
   
   initIpcHandlers(deviceId, logger)
+  
   createMainWindow()
 
   app.on('activate', () => {
