@@ -191,6 +191,11 @@ async function closeDirectConnectionImpl(clientId) {
     clientSocket.destroy()
     directClientConnections.delete(clientId)
   }
+  
+  // 重置所有输入状态
+  const { resetAllInputState } = require('./input-handler')
+  resetAllInputState()
+  
   return { success: true }
 }
 

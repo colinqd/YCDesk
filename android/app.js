@@ -2798,7 +2798,7 @@ let keyboardVisible = false
 let currentKeyboardPosition = 'bottom'
 let currentKeyboardSize = 'medium'
 let currentKeyboardOpacity = '100'
-let keyboardPositions = ['bottom', 'top', 'center', 'left', 'right']
+let keyboardPositions = ['bottom']
 let keyboardSizes = ['small', 'medium', 'large']
 let keyboardOpacities = ['100', '80', '60', '40']
 let isDraggingKeyboard = false
@@ -2815,19 +2815,7 @@ let activeModifiers = {
 }
 
 function cycleKeyboardPosition() {
-  const currentIndex = keyboardPositions.indexOf(currentKeyboardPosition)
-  const nextIndex = (currentIndex + 1) % keyboardPositions.length
-  currentKeyboardPosition = keyboardPositions[nextIndex]
-  applyKeyboardPosition()
-  const positionNames = {
-    'bottom': '底部',
-    'top': '顶部',
-    'center': '中间',
-    'left': '左侧',
-    'right': '右侧'
-  }
-  showToast(`键盘位置: ${positionNames[currentKeyboardPosition]}`)
-  saveKeyboardSettings()
+  showToast('键盘位置: 底部')
 }
 
 function cycleKeyboardSize() {
@@ -2855,12 +2843,77 @@ function cycleKeyboardOpacity() {
 
 function applyKeyboardPosition() {
   const keyboardOverlay = document.getElementById('keyboardOverlay')
+  const remoteScreen = document.getElementById('remoteScreen')
+  
   if (!keyboardOverlay) return
   
+  // 只使用底部位置
   keyboardPositions.forEach(pos => {
     keyboardOverlay.classList.remove(`position-${pos}`)
   })
-  keyboardOverlay.classList.add(`position-${currentKeyboardPosition}`)
+  keyboardOverlay.classList.add('position-bottom')
+  
+  // 重置自定义位置样式
+  keyboardOverlay.style.left = ''
+  keyboardOverlay.style.top = ''
+  keyboardOverlay.style.right = ''
+  keyboardOverlay.style.bottom = ''
+  keyboardOverlay.style.transform = ''
+  
+  // 计算位置，确保键盘底部齐平 remote-screen 底部
+  setTimeout(() => {
+    if (remoteScreen && keyboardOverlay) {
+      const remoteRect = remoteScreen.getBoundingClientRect()
+      const keyboardRect = keyboardOverlay.getBoundingClientRect()
+      
+      // 水平居中
+      const leftPos = remoteRect.left + (remoteRect.width - keyboardRect.width) / 2
+      
+      // 设置位置
+      keyboardOverlay.style.position = 'fixed'
+      keyboardOverlay.style.left = `${leftPos}px`
+      keyboardOverlay.style.bottom = `${window.innerHeight - remoteRect.bottom}px`
+      keyboardOverlay.style.top = 'auto'
+      keyboardOverlay.style.transform = 'none'
+      
+      log(`键盘位置: left=${leftPos.toFixed(0)}, bottom=${(window.innerHeight - remoteRect.bottom).toFixed(0)}`)
+    }
+    
+    ensureKeyboardInBounds()
+  }, 50)
+}
+
+function ensureKeyboardInBounds() {
+  const keyboardOverlay = document.getElementById('keyboardOverlay')
+  const remoteScreen = document.getElementById('remoteScreen')
+  
+  if (!keyboardOverlay || !remoteScreen) return
+  
+  // 使用 remote-screen 元素的边界作为基准
+  const remoteRect = remoteScreen.getBoundingClientRect()
+  const keyboardRect = keyboardOverlay.getBoundingClientRect()
+  
+  // 只检查左右边界，确保键盘在 remote-screen 范围内
+  let needsAdjustment = false
+  let newLeft = keyboardRect.left
+  
+  // 检查是否超出 remote-screen 左侧
+  if (keyboardRect.left < remoteRect.left) {
+    newLeft = remoteRect.left
+    needsAdjustment = true
+  }
+  
+  // 检查是否超出 remote-screen 右侧
+  if (keyboardRect.right > remoteRect.right) {
+    newLeft = remoteRect.right - keyboardRect.width
+    needsAdjustment = true
+  }
+  
+  if (needsAdjustment) {
+    keyboardOverlay.style.left = `${newLeft}px`
+    keyboardOverlay.style.right = 'auto'
+    log(`键盘位置已调整以保持在远程屏幕内`)
+  }
 }
 
 function applyKeyboardSize() {
@@ -2929,18 +2982,16 @@ function setupKeyboardDrag() {
   if (!keyboardOverlay || !dragHandle) return
   
   dragHandle.addEventListener('touchstart', (e) => {
-    if (currentKeyboardPosition === 'center') {
-      isDraggingKeyboard = true
-      const touch = e.touches[0]
-      dragStartX = touch.clientX
-      dragStartY = touch.clientY
-      
-      const rect = keyboardOverlay.getBoundingClientRect()
-      dragStartLeft = rect.left
-      dragStartTop = rect.top
-      
-      e.preventDefault()
-    }
+    isDraggingKeyboard = true
+    const touch = e.touches[0]
+    dragStartX = touch.clientX
+    dragStartY = touch.clientY
+    
+    const rect = keyboardOverlay.getBoundingClientRect()
+    dragStartLeft = rect.left
+    dragStartTop = rect.top
+    
+    e.preventDefault()
   }, { passive: false })
   
   document.addEventListener('touchmove', (e) => {
@@ -2953,14 +3004,25 @@ function setupKeyboardDrag() {
     let newLeft = dragStartLeft + deltaX
     let newTop = dragStartTop + deltaY
     
-    const maxLeft = window.innerWidth - keyboardOverlay.offsetWidth
-    const maxTop = window.innerHeight - keyboardOverlay.offsetHeight
-    
-    newLeft = Math.max(0, Math.min(maxLeft, newLeft))
-    newTop = Math.max(0, Math.min(maxTop, newTop))
+    const remoteScreen = document.getElementById('remoteScreen')
+    if (remoteScreen) {
+      const remoteRect = remoteScreen.getBoundingClientRect()
+      const keyboardRect = keyboardOverlay.getBoundingClientRect()
+      
+      // 限制在 remote-screen 范围内
+      newLeft = Math.max(remoteRect.left, Math.min(remoteRect.right - keyboardRect.width, newLeft))
+      newTop = Math.max(remoteRect.top, Math.min(remoteRect.bottom - keyboardRect.height, newTop))
+    } else {
+      const maxLeft = window.innerWidth - keyboardOverlay.offsetWidth
+      const maxTop = window.innerHeight - keyboardOverlay.offsetHeight
+      
+      newLeft = Math.max(0, Math.min(maxLeft, newLeft))
+      newTop = Math.max(0, Math.min(maxTop, newTop))
+    }
     
     keyboardOverlay.style.left = `${newLeft}px`
     keyboardOverlay.style.top = `${newTop}px`
+    keyboardOverlay.style.bottom = 'auto'
     keyboardOverlay.style.transform = 'none'
     
     e.preventDefault()

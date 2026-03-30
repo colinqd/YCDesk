@@ -487,7 +487,7 @@
     .remote-screen {
       width: 100%;
       height: 100%;
-      background: transparent;
+      background: #000000;
       display: none;
       position: relative;
       border: none;
@@ -696,27 +696,32 @@
       display: flex !important;
       justify-content: space-between !important;
       align-items: center !important;
-      padding: 5px 7px !important;
+      padding: 4px 6px !important;
       background: rgba(0, 0, 0, 0.8) !important;
       border-radius: 4px 4px 0 0 !important;
-      margin: 0 0 4px 0 !important;
-      min-height: 25px !important;
+      margin: 0 !important;
       flex-shrink: 0 !important;
       position: sticky !important;
       top: 0 !important;
       z-index: 15 !important;
       width: 100% !important;
       box-sizing: border-box !important;
+      height: auto !important;
     }
     
     .keyboard-drag-handle {
       color: rgba(255, 255, 255, 0.7) !important;
-      font-size: 8px !important;
+      font-size: 10px !important;
       cursor: grab !important;
       user-select: none !important;
       -webkit-user-select: none !important;
-      padding: 3px !important;
+      padding: 2px 4px !important;
       visibility: visible !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      min-width: 24px !important;
+      min-height: 24px !important;
     }
     
     .keyboard-drag-handle:active {
@@ -725,7 +730,7 @@
     
     .keyboard-controls {
       display: flex !important;
-      gap: 3px;
+      gap: 4px;
       align-items: center;
       z-index: 20;
     }
@@ -734,10 +739,10 @@
       background: rgba(102, 126, 234, 0.9) !important;
       border: 1px solid rgba(255, 255, 255, 0.8) !important;
       color: white !important;
-      width: 22px !important;
-      height: 22px !important;
+      width: 24px !important;
+      height: 24px !important;
       border-radius: 4px !important;
-      font-size: 11px !important;
+      font-size: 12px !important;
       cursor: pointer !important;
       display: flex !important;
       align-items: center !important;
@@ -747,6 +752,7 @@
       box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4) !important;
       visibility: visible !important;
       opacity: 1 !important;
+      flex-shrink: 0 !important;
     }
     
     .keyboard-control-btn:active {
@@ -765,31 +771,27 @@
       gap: 3px;
       border: 1px solid #444;
       border-radius: 8px;
-      overflow-y: auto;
-      overflow-x: hidden;
+      overflow: visible;
       box-sizing: border-box;
       backdrop-filter: blur(8px);
       transition: all 0.3s ease;
+      width: fit-content;
       max-width: 100vw;
-      max-height: 25vh;
+      height: auto;
     }
     
     .keyboard-overlay.position-bottom {
       bottom: 0;
-      left: 0;
-      right: 0;
-      width: 100%;
-      max-width: 100vw;
+      left: 50%;
+      transform: translateX(-50%);
       border-radius: 8px 8px 0 0;
       border-bottom: none;
     }
     
     .keyboard-overlay.position-top {
       top: 0;
-      left: 0;
-      right: 0;
-      width: 100%;
-      max-width: 100vw;
+      left: 50%;
+      transform: translateX(-50%);
       border-radius: 0 0 8px 8px;
       border-top: none;
     }
@@ -799,6 +801,7 @@
       left: 50%;
       transform: translate(-50%, -50%);
       max-width: 95vw;
+      max-height: 50vh;
     }
     
     .keyboard-overlay.position-left {
@@ -808,6 +811,7 @@
       border-radius: 0 8px 8px 0;
       border-left: none;
       max-width: 50vw;
+      max-height: 80vh;
     }
     
     .keyboard-overlay.position-right {
@@ -820,33 +824,51 @@
     }
     
     .keyboard-overlay.size-small {
-      max-height: 20vh;
+      transform: scale(0.75);
+      transform-origin: bottom center;
+    }
+    
+    .keyboard-overlay.size-small.position-bottom {
+      transform: translateX(-50%) scale(0.75);
+      transform-origin: bottom center;
+    }
+    
+    .keyboard-overlay.size-medium {
+      transform: scale(0.9);
+      transform-origin: bottom center;
+    }
+    
+    .keyboard-overlay.size-medium.position-bottom {
+      transform: translateX(-50%) scale(0.9);
+      transform-origin: bottom center;
+    }
+    
+    .keyboard-overlay.size-large {
+      transform: scale(1.0);
+      transform-origin: bottom center;
+    }
+    
+    .keyboard-overlay.size-large.position-bottom {
+      transform: translateX(-50%) scale(1.0);
+      transform-origin: bottom center;
     }
     
     .keyboard-overlay.size-small .keyboard-key {
       min-width: 18px;
       height: 22px;
-      font-size: 9px;
-    }
-    
-    .keyboard-overlay.size-medium {
-      max-height: 25vh;
+      font-size: 8px;
     }
     
     .keyboard-overlay.size-medium .keyboard-key {
-      min-width: 20px;
-      height: 26px;
-      font-size: 10px;
-    }
-    
-    .keyboard-overlay.size-large {
-      max-height: 25vh;
+      min-width: 21px;
+      height: 27px;
+      font-size: 9px;
     }
     
     .keyboard-overlay.size-large .keyboard-key {
-      min-width: 24px;
-      height: 30px;
-      font-size: 11px;
+      min-width: 26px;
+      height: 34px;
+      font-size: 10px;
     }
     
     .keyboard-overlay.opacity-100 {
@@ -869,12 +891,15 @@
       .keyboard-overlay {
         padding: 6px;
         gap: 4px;
-        max-height: 45vh;
       }
       .keyboard-key {
         min-width: 26px;
         height: 32px;
         font-size: 11px;
+      }
+      
+      .keyboard-overlay.position-bottom {
+        bottom: 0;
       }
     }
 
@@ -890,20 +915,20 @@
     }
 
     .keyboard-key {
-      min-width: 20px;
-      height: 24px;
+      min-width: 16px;
+      height: 19px;
       background: #505050;
       color: white;
       border: none;
-      border-radius: 3px;
-      font-size: 9px;
+      border-radius: 2px;
+      font-size: 7px;
       font-weight: 500;
       display: flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
       transition: background 0.1s;
-      padding: 0 3px;
+      padding: 0 2px;
       flex-shrink: 0;
       pointer-events: auto;
     }
@@ -914,7 +939,7 @@
 
     .keyboard-key.special {
       background: #404040;
-      min-width: 32px;
+      min-width: 26px;
     }
 
     .keyboard-key.space {

@@ -543,7 +543,49 @@ function resetModifiers() {
   }
 }
 
+/**
+ * 重置所有输入状态（完整重置）
+ * 在连接断开或发生错误时调用
+ */
+function resetAllInputState() {
+  console.log('重置所有输入状态...')
+  
+  try {
+    // 释放所有修饰键
+    Object.keys(pressedModifiers).forEach(key => {
+      if (pressedModifiers[key]) {
+        const nutKey = key === 'Control' ? Key.LeftControl :
+                       key === 'Shift' ? Key.LeftShift :
+                       key === 'Alt' ? Key.LeftAlt :
+                       key === 'Meta' ? Key.LeftWin : null
+        if (nutKey) {
+          keyboard.releaseKey(nutKey).catch(e => console.error(`释放${key}键失败:`, e))
+        }
+        pressedModifiers[key] = false
+      }
+    })
+    
+    // 释放所有鼠标按钮
+    Object.keys(pressedButtons).forEach(button => {
+      if (pressedButtons[button]) {
+        const nutButton = button === 'left' ? Button.LEFT :
+                          button === 'right' ? Button.RIGHT :
+                          button === 'middle' ? Button.MIDDLE : null
+        if (nutButton) {
+          mouse.releaseButton(nutButton).catch(e => console.error(`释放${button}按钮失败:`, e))
+        }
+        pressedButtons[button] = false
+      }
+    })
+    
+    console.log('所有输入状态已重置')
+  } catch (e) {
+    console.error('重置输入状态失败:', e)
+  }
+}
+
 module.exports = {
   handleRemoteInput,
-  resetModifiers
+  resetModifiers,
+  resetAllInputState
 }
