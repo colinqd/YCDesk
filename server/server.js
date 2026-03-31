@@ -21,12 +21,131 @@ const devices = new Map();
 // 存储会话信息
 const sessions = new Map();
 
+// 服务器管理页面
 app.get('/', (req, res) => {
+  res.send(`
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YCDesk 信令服务器</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+      margin-bottom: 20px;
+    }
+    .status {
+      padding: 15px;
+      background: #e8f5e9;
+      border-radius: 4px;
+      margin-bottom: 20px;
+    }
+    .status-online {
+      color: #2e7d32;
+      font-weight: bold;
+    }
+    .info {
+      margin: 10px 0;
+    }
+    .info-label {
+      font-weight: bold;
+      color: #666;
+    }
+    .info-value {
+      color: #333;
+    }
+    .shutdown-btn {
+      background: #f44336;
+      color: white;
+      border: none;
+      padding: 12px 30px;
+      font-size: 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-top: 20px;
+    }
+    .shutdown-btn:hover {
+      background: #d32f2f;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>YCDesk 信令服务器</h1>
+    <div class="status">
+      <div class="info">
+        <span class="info-label">服务器状态：</span>
+        <span class="status-online">运行中</span>
+      </div>
+      <div class="info">
+        <span class="info-label">在线设备：</span>
+        <span class="info-value" id="deviceCount">0</span>
+      </div>
+      <div class="info">
+        <span class="info-label">运行端口：</span>
+        <span class="info-value">${process.env.PORT || 3000}</span>
+      </div>
+    </div>
+    <button class="shutdown-btn" onclick="shutdownServer()">关闭服务器</button>
+  </div>
+  <script>
+    // 定期更新设备数量
+    setInterval(async () => {
+      const response = await fetch('/api/status');
+      const data = await response.json();
+      document.getElementById('deviceCount').textContent = data.onlineDevices.length;
+    }, 2000);
+
+    async function shutdownServer() {
+      if (confirm('确定要关闭服务器吗？')) {
+        try {
+          const response = await fetch('/api/shutdown', { method: 'POST' });
+          const result = await response.json();
+          alert(result.message);
+        } catch (error) {
+          alert('服务器已关闭');
+        }
+      }
+    }
+  </script>
+</body>
+</html>
+  `);
+});
+
+// API: 获取服务器状态
+app.get('/api/status', (req, res) => {
   res.json({
-    message: 'YCDesk Signaling Server',
     status: 'running',
-    onlineDevices: Array.from(devices.keys())
+    onlineDevices: Array.from(devices.keys()),
+    port: process.env.PORT || 3000
   });
+});
+
+// API: 关闭服务器
+app.post('/api/shutdown', (req, res) => {
+  console.log('收到关闭服务器请求');
+  res.json({ message: '服务器正在关闭...' });
+  setTimeout(() => {
+    server.close(() => {
+      console.log('服务器已关闭');
+      process.exit(0);
+    });
+  }, 1000);
 });
 
 io.on('connection', (socket) => {

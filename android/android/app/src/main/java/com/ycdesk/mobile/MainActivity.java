@@ -4,6 +4,8 @@ import android.os.Bundle;
 import android.view.View;
 import android.view.WindowManager;
 import android.content.res.Configuration;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
@@ -13,6 +15,13 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(InputExecutorPlugin.class);
         registerPlugin(FloatingMousePlugin.class);
         super.onCreate(savedInstanceState);
+        
+        // 配置 WebView 允许混合内容
+        WebView webView = this.bridge.getWebView();
+        if (webView != null) {
+            WebSettings settings = webView.getSettings();
+            settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        }
     }
 
     @Override

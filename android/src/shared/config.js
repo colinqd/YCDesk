@@ -1,3 +1,11 @@
+const isDevelopment = (() => {
+  try {
+    return typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'development';
+  } catch (e) {
+    return false;
+  }
+})();
+
 const CONFIG = {
   stunServers: [
     'stun:stun.l.google.com:19302',
@@ -17,7 +25,7 @@ const CONFIG = {
   dataChannelMaxQueueSize: 100,
   logging: {
     main: {
-      logLevel: process.env.NODE_ENV === 'development' ? 'debug' : 'info',
+      logLevel: isDevelopment ? 'debug' : 'info',
       maxFileSize: 10 * 1024 * 1024,
       maxFiles: 10
     },
