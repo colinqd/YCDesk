@@ -129,12 +129,16 @@ function init(deviceIdParam, loggerParam) {
   }, 'get-remote-stream-info'))
 
   ipcMain.handle('send-to-remote-window', safeIpcHandler((event, channel, data) => {
+    console.log('[send-to-remote-window] 收到请求:', channel, '数据长度:', JSON.stringify(data).length)
     const remoteWindow = getRemoteWindow()
     if (remoteWindow) {
+      console.log('[send-to-remote-window] 远程窗口存在，发送消息到远程窗口')
+      console.log('[send-to-remote-window] 发送频道:', channel)
       remoteWindow.webContents.send(channel, data)
+      console.log('[send-to-remote-window] 消息已发送')
       return true
     }
-    console.warn('远程窗口不存在，无法发送消息')
+    console.warn('[send-to-remote-window] 远程窗口不存在，无法发送消息')
     return false
   }, 'send-to-remote-window'))
 
@@ -149,20 +153,70 @@ function init(deviceIdParam, loggerParam) {
   }, 'execute-in-remote-window'))
 
   ipcMain.handle('send-to-main-window', safeIpcHandler((event, channel, data) => {
+    console.log('[send-to-main-window] 收到请求:', channel)
     const mainWindow = getMainWindow()
     if (mainWindow) {
+      console.log('[send-to-main-window] 转发消息到主窗口:', channel)
       mainWindow.webContents.send(channel, data)
       return true
     }
-    console.warn('主窗口不存在，无法发送消息')
+    console.warn('[send-to-main-window] 主窗口不存在，无法发送消息')
     return false
   }, 'send-to-main-window'))
+
+  // 处理远程窗口发送的信令消息，转发到主窗口
+  console.log('[主进程] 注册 send-signaling-offer 监听器')
+  ipcMain.on('send-signaling-offer', (event, data) => {
+    console.log('[主进程] 收到远程窗口的 offer，转发到主窗口')
+    console.log('[主进程] offer 数据:', JSON.stringify(data).substring(0, 200))
+    const mainWindow = getMainWindow()
+    if (mainWindow) {
+      console.log('[主进程] 主窗口存在，发送消息')
+      mainWindow.webContents.send('send-signaling-offer', data)
+    } else {
+      console.warn('[主进程] 主窗口不存在，无法转发 offer')
+    }
+  })
+
+  console.log('[主进程] 注册 send-signaling-answer 监听器')
+  ipcMain.on('send-signaling-answer', (event, data) => {
+    console.log('[主进程] 收到远程窗口的 answer，转发到主窗口')
+    const mainWindow = getMainWindow()
+    if (mainWindow) {
+      mainWindow.webContents.send('send-signaling-answer', data)
+    } else {
+      console.warn('[主进程] 主窗口不存在，无法转发 answer')
+    }
+  })
+
+  console.log('[主进程] 注册 send-signaling-ice-candidate 监听器')
+  ipcMain.on('send-signaling-ice-candidate', (event, data) => {
+    console.log('[主进程] 收到远程窗口的 ICE candidate，转发到主窗口')
+    const mainWindow = getMainWindow()
+    if (mainWindow) {
+      mainWindow.webContents.send('send-signaling-ice-candidate', data)
+    } else {
+      console.warn('[主进程] 主窗口不存在，无法转发 ICE candidate')
+    }
+  })
 
   ipcMain.on('remote-input', (event, inputData) => {
     try {
       handleRemoteInput(event, inputData)
     } catch (error) {
       console.error('[IPC Error] remote-input:', error)
+    }
+  })
+
+  // 远程窗口准备就绪，转发到主窗口
+  ipcMain.on('remote-window-ready', (event) => {
+    console.log('[主进程] 收到远程窗口准备就绪信号')
+    const mainWindow = getMainWindow()
+    if (mainWindow) {
+      console.log('[主进程] 转发准备就绪信号到主窗口')
+      mainWindow.webContents.send('remote-window-ready', {})
+    } else {
+      console.warn('[主进程] 主窗口不存在，无法转发准备就绪信号')
     }
   })
 

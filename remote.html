@@ -107,8 +107,10 @@
       border-radius: 12px;
       box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
       overflow: hidden;
+      width: 1280px;
+      height: 720px;
       max-width: 100%;
-      max-height: 100%;
+      max-height: calc(100vh - 150px);
       position: relative;
     }
 
@@ -265,6 +267,10 @@
     let signalingSessionId = null;
     let signalingTargetDeviceId = null;
     let isSignalingController = false;
+    
+    // 直连模式变量
+    let directClientId = null;
+    let isDirectController = false;
 
     function log(message) {
       const timestamp = new Date().toLocaleTimeString();
@@ -509,9 +515,13 @@
     }
 
     function showVideo() {
+      log('showVideo() called - showing video element');
       document.getElementById('placeholder').style.display = 'none';
       document.getElementById('videoWrapper').style.display = 'block';
       document.getElementById('screenVideo').style.display = 'block';
+      log('Video element display: ' + document.getElementById('screenVideo').style.display);
+      log('Video wrapper display: ' + document.getElementById('videoWrapper').style.display);
+      log('Placeholder display: ' + document.getElementById('placeholder').style.display);
     }
 
     function updateFps() {
@@ -549,7 +559,7 @@
           if (connectionMode === 'signaling') {
             candidateData.sessionId = signalingSessionId;
             candidateData.targetDeviceId = signalingTargetDeviceId;
-            window.electronAPI.send('send-signaling-ice-candidate', candidateData);
+            window.electronAPI.sendSignalingMessage('send-signaling-ice-candidate', candidateData);
           } else {
             window.electronAPI.sendToMainWindow('webrtc-ice-candidate', candidateData);
           }
@@ -673,8 +683,9 @@
             const offer = await peerConnection.createOffer();
             await peerConnection.setLocalDescription(offer);
             
-            log('[信令模式-主控端] 发送offer到信令服务器');
-            window.electronAPI.send('send-signaling-offer', {
+            log('[信令模式 - 主控端] 发送 offer 到信令服务器');
+            log('[信令模式 - 主控端] offer 数据: sessionId=' + signalingSessionId + ', targetDeviceId=' + signalingTargetDeviceId);
+            window.electronAPI.sendSignalingMessage('send-signaling-offer', {
               sessionId: signalingSessionId,
               targetDeviceId: signalingTargetDeviceId,
               offer: {
@@ -682,6 +693,7 @@
                 sdp: offer.sdp
               }
             });
+            log('[信令模式 - 主控端] sendSignalingMessage 已调用');
           } catch (error) {
             log('创建offer失败: ' + error.message);
           }
@@ -716,28 +728,35 @@
 
     async function handleAnswer(answer) {
       if (!answer) {
-        log('错误: answer为空');
+        log('ERROR: answer is null');
         return;
       }
       
       try {
-        log('设置answer...');
+        log('Setting answer...');
+        log('Answer type: ' + answer.type + ', SDP length: ' + (answer.sdp ? answer.sdp.length : 0));
         await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-        log('answer设置成功');
+        log('Answer set successfully');
         
-        log('检查transceivers...');
+        log('Checking transceivers...');
         const transceivers = peerConnection.getTransceivers();
-        log('transceivers数量: ' + transceivers.length);
+        log('Transceivers count: ' + transceivers.length);
         transceivers.forEach((t, i) => {
-          log('Transceiver ' + i + ': mid=' + t.mid + ', direction=' + t.direction + ', currentDirection=' + t.currentDirection + ', receiver.track=' + (t.receiver.track ? t.receiver.track.kind : 'null'));
+          log('Transceiver ' + i + ': mid=' + t.mid + ', direction=' + t.direction + ', currentDirection=' + t.currentDirection);
+          if (t.receiver && t.receiver.track) {
+            log('  - receiver.track: id=' + t.receiver.track.id + ', kind=' + t.receiver.track.kind + ', enabled=' + t.receiver.track.enabled + ', readyState=' + t.receiver.track.readyState);
+          } else {
+            log('  - receiver.track: null');
+          }
         });
         
         await addPendingIceCandidates();
         
-        log('手动检查并显示视频...');
+        log('Manually checking and displaying video...');
         checkAndDisplayVideo();
       } catch (error) {
-        log('设置answer失败: ' + error.message);
+        log('ERROR setting answer: ' + error.message);
+        console.error('handleAnswer error:', error);
       }
     }
     
@@ -759,8 +778,8 @@
         await peerConnection.setLocalDescription(answer);
         log('[信令模式-被控端] 本地描述设置成功');
         
-        log('[信令模式-被控端] 发送answer到信令服务器');
-        window.electronAPI.send('send-signaling-answer', {
+        log('[信令模式 - 被控端] 发送 answer 到信令服务器');
+        window.electronAPI.sendSignalingMessage('send-signaling-answer', {
           sessionId: data.sessionId || signalingSessionId,
           targetDeviceId: data.fromDeviceId || signalingTargetDeviceId,
           answer: {
@@ -816,48 +835,56 @@
     }
 
     function checkAndDisplayVideo() {
+      log('checkAndDisplayVideo called');
       const transceivers = peerConnection.getTransceivers();
+      log('Total transceivers: ' + transceivers.length);
+      
       for (const t of transceivers) {
-        if (t.receiver && t.receiver.track && t.receiver.track.kind === 'video') {
-          log('找到视频track: ' + t.receiver.track.id);
-          const stream = new MediaStream([t.receiver.track]);
-          videoElement.srcObject = stream;
-          
-          videoElement.onloadedmetadata = () => {
-            log('视频流加载成功，尺寸: ' + videoElement.videoWidth + 'x' + videoElement.videoHeight);
-            showVideo();
-            updateStatus('已连接');
-            document.getElementById('resolution').textContent = 
-              `${videoElement.videoWidth}x${videoElement.videoHeight}`;
+        log('Checking transceiver: mid=' + t.mid);
+        if (t.receiver && t.receiver.track) {
+          log('  Found track: kind=' + t.receiver.track.kind + ', id=' + t.receiver.track.id + ', readyState=' + t.receiver.track.readyState);
+          if (t.receiver.track.kind === 'video') {
+            log('  This is a VIDEO track!');
+            const stream = new MediaStream([t.receiver.track]);
+            log('  Created MediaStream: ' + stream.id);
+            videoElement.srcObject = stream;
+            log('  Set videoElement.srcObject');
             
-            if (matrixTransformer) {
-              matrixTransformer.videoWidth = videoElement.videoWidth;
-              matrixTransformer.videoHeight = videoElement.videoHeight;
+            videoElement.onloadedmetadata = () => {
+              log('  VIDEO METADATA LOADED! Size: ' + videoElement.videoWidth + 'x' + videoElement.videoHeight);
+              showVideo();
+              updateStatus('Connected');
+              document.getElementById('resolution').textContent = 
+                `${videoElement.videoWidth}x${videoElement.videoHeight}`;
               
-              if (matrixTransformer.remoteScreenWidth === 1920 && matrixTransformer.remoteScreenHeight === 1080) {
-                log('使用视频尺寸更新 remoteScreenSize');
-                matrixTransformer.setRemoteScreenSize(videoElement.videoWidth, videoElement.videoHeight);
+              if (matrixTransformer) {
+                matrixTransformer.videoWidth = videoElement.videoWidth;
+                matrixTransformer.videoHeight = videoElement.videoHeight;
+                
+                if (matrixTransformer.remoteScreenWidth === 1920 && matrixTransformer.remoteScreenHeight === 1080) {
+                  log('  Updating remoteScreenSize');
+                  matrixTransformer.setRemoteScreenSize(videoElement.videoWidth, videoElement.videoHeight);
+                }
+                matrixTransformer.applyContainerSize(videoContainer, videoWrapper);
               }
-              matrixTransformer.applyContainerSize(videoContainer, videoWrapper);
-              log('视频加载后更新 container: ' + matrixTransformer.displayWidth + 'x' + matrixTransformer.displayHeight);
-            }
+              
+              requestAnimationFrame(onVideoFrame);
+              setupInputEvents();
+              startLatencyCheck();
+            };
             
-            requestAnimationFrame(onVideoFrame);
-            setupInputEvents();
-            startLatencyCheck();
-          };
-          
-          videoElement.onerror = (error) => {
-            log('视频错误: ' + error);
-            showPlaceholder('连接失败', '视频流加载失败');
-            updateStatus('连接失败');
-          };
-          
-          log('视频track已设置到video元素');
-          return;
+            videoElement.onerror = (error) => {
+              log('  VIDEO ERROR: ' + error);
+              showPlaceholder('Connection failed', 'Video stream failed');
+              updateStatus('Connection failed');
+            };
+            
+            log('  Video track set to video element, waiting for metadata...');
+            return;
+          }
         }
       }
-      log('未找到视频track');
+      log('No video track found in transceivers');
     }
 
     async function handleIceCandidate(candidate) {
@@ -899,21 +926,7 @@
       videoElement = document.getElementById('screenVideo');
       log('远程窗口初始化开始');
       
-      try {
-        const screenSize = await window.electronAPI.getScreenSize();
-        document.getElementById('resolution').textContent = `${screenSize.width}x${screenSize.height}`;
-        log('获取屏幕尺寸成功');
-      } catch (error) {
-        log('获取屏幕尺寸失败: ' + error.message);
-      }
-
-      setupMatrixTransformer();
-      
-      document.getElementById('videoWrapper').style.display = 'none';
-
-      updateStatus('正在连接...');
-      showPlaceholder('正在建立WebRTC连接...', '请稍候');
-
+      // 先设置 IPC 监听器，确保能收到消息
       log('设置IPC监听器...');
       
       window.electronAPI.on('webrtc-answer', async (data) => {
@@ -945,30 +958,73 @@
       });
       
       window.electronAPI.on('signaling-answer', async (data) => {
-        log('[信令模式] 收到answer');
-        await handleAnswer(data.answer);
+        console.log('=== REMOTE WINDOW: signaling-answer RECEIVED ===');
+        console.log('Data:', data);
+        alert('Received answer from controlled device!');
+        log('[Signaling] Received answer event');
+        if (data && data.answer) {
+          await handleAnswer(data.answer);
+        } else {
+          log('[Signaling] Answer data format error');
+        }
       });
       
       window.electronAPI.on('signaling-ice-candidate', async (data) => {
-        log('[信令模式] 收到ICE候选');
-        await handleIceCandidate(data.candidate);
+        console.log('=== REMOTE WINDOW: signaling-ice-candidate RECEIVED ===');
+        log('[Signaling] Received ICE candidate event');
+        if (data && data.candidate) {
+          await handleIceCandidate(data.candidate);
+        } else {
+          log('[Signaling] ICE candidate data format error');
+        }
       });
       
       window.electronAPI.on('signaling-disconnected', (data) => {
-        log('[信令模式] 信令服务器断开连接: ' + data.reason);
+        log('[信令模式] 信令服务器断开连接：' + data.reason);
         updateStatus('连接已断开');
         showPlaceholder('连接已断开', '信令服务器连接中断');
       });
       
-      log('IPC监听器设置完成');
+      window.electronAPI.on('direct-mode-start', async (data) => {
+        log('[直连模式] 收到启动信号：' + JSON.stringify(data));
+        connectionMode = 'direct';
+        directClientId = data.clientId;
+        isDirectController = data.mode === 'controller';
+        
+        updateStatus('直连模式连接中...');
+        showPlaceholder('直连模式正在建立连接...', '请稍候');
+        
+        await createPeerConnection();
+      });
+      
+      log('IPC 监听器设置完成');
+      
+      // 然后发送准备就绪信号
+      log('远程窗口准备就绪，请求启动信号...');
+      window.electronAPI.send('remote-window-ready', {});
+      
+      try {
+        const screenSize = await window.electronAPI.getScreenSize();
+        document.getElementById('resolution').textContent = `${screenSize.width}x${screenSize.height}`;
+        log('获取屏幕尺寸成功');
+      } catch (error) {
+        log('获取屏幕尺寸失败: ' + error.message);
+      }
 
-      log('检查是否为信令模式...');
+      setupMatrixTransformer();
+      
+      document.getElementById('videoWrapper').style.display = 'none';
+
+      updateStatus('正在连接...');
+      showPlaceholder('正在建立WebRTC连接...', '请稍候');
+
+      log('等待启动信号...');
       setTimeout(async () => {
         if (connectionMode === 'direct') {
-          log('默认以直连模式启动');
+          log('超时未收到启动信号，默认以直连模式启动');
           await createPeerConnection();
         }
-      }, 100);
+      }, 5000);
     }
 
     document.addEventListener('keydown', (e) => {

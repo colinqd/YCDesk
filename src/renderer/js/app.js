@@ -209,6 +209,34 @@ async function initController() {
     log('连接已关闭')
   })
 
+  window.electronAPI.on('remote-window-ready', async () => {
+    log('收到远程窗口准备就绪信号')
+    
+    // 检查信令模式是否有待发送的启动信号
+    if (signalingManager && signalingManager.pendingStartSignal) {
+      log('发送信令模式启动信号到远程窗口: ' + JSON.stringify(signalingManager.pendingStartSignal))
+      try {
+        const result = await window.electronAPI.sendToRemoteWindow('signaling-mode-start', signalingManager.pendingStartSignal)
+        log('sendToRemoteWindow 返回: ' + JSON.stringify(result))
+      } catch (error) {
+        log('sendToRemoteWindow 错误: ' + error.message)
+      }
+      signalingManager.pendingStartSignal = null
+    }
+    
+    // 检查直连模式是否有待发送的启动信号
+    if (directManager && directManager.pendingStartSignal) {
+      log('发送直连模式启动信号到远程窗口: ' + JSON.stringify(directManager.pendingStartSignal))
+      try {
+        const result = await window.electronAPI.sendToRemoteWindow('direct-mode-start', directManager.pendingStartSignal)
+        log('sendToRemoteWindow 返回: ' + JSON.stringify(result))
+      } catch (error) {
+        log('sendToRemoteWindow 错误: ' + error.message)
+      }
+      directManager.pendingStartSignal = null
+    }
+  })
+
   window.electronAPI.on('webrtc-offer', async (data) => {
     log('收到远程窗口的offer，转发给被控端')
     directManager.sendMessage({
@@ -332,7 +360,6 @@ function connectDevice() {
 
 function acceptConnection() {
   signalingManager.acceptConnection()
-  signalingManager.startControlledConnection()
 }
 
 function rejectConnection() {

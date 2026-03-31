@@ -12,10 +12,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sendToMainWindow: (channel, data) => ipcRenderer.invoke('send-to-main-window', channel, data),
   executeInRemoteWindow: (code) => ipcRenderer.invoke('execute-in-remote-window', code),
   
+  // 远程窗口发送信令消息到主窗口
+  sendSignalingMessage: (channel, data) => {
+    const validChannels = [
+      'send-signaling-offer', 'send-signaling-answer', 'send-signaling-ice-candidate'
+    ]
+    if (validChannels.includes(channel)) {
+      console.log('[Preload] sendSignalingMessage 发送消息:', channel, JSON.stringify(data).substring(0, 200))
+      ipcRenderer.send(channel, data)
+      console.log('[Preload] sendSignalingMessage 发送完成')
+    } else {
+      console.log('[Preload] sendSignalingMessage 无效通道:', channel)
+    }
+  },
+  
   send: (channel, data) => {
     const validChannels = [
       'toMain', 'fromMain', 'remote-input',
-      'send-signaling-offer', 'send-signaling-answer', 'send-signaling-ice-candidate'
+      'send-signaling-offer', 'send-signaling-answer', 'send-signaling-ice-candidate',
+      'remote-window-ready'
     ]
     if (validChannels.includes(channel)) {
       ipcRenderer.send(channel, data)
@@ -28,10 +43,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'direct-incoming-connection', 'direct-message', 'direct-connection-closed', 
       'webrtc-answer', 'webrtc-ice-candidate', 'webrtc-offer',
       'signaling-mode-start', 'signaling-offer', 'signaling-answer', 
-      'signaling-ice-candidate', 'signaling-disconnected'
+      'signaling-ice-candidate', 'signaling-disconnected',
+      'direct-mode-start',
+      'remote-window-ready',
+      'send-signaling-offer', 'send-signaling-answer', 'send-signaling-ice-candidate'
     ]
     if (validChannels.includes(channel)) {
-      ipcRenderer.on(channel, (event, ...args) => callback(...args))
+      ipcRenderer.on(channel, (event, ...args) => {
+        console.log('[Preload] Received IPC event:', channel)
+        callback(...args)
+      })
+    } else {
+      console.log('[Preload] Invalid channel:', channel)
     }
   },
   

@@ -204,7 +204,9 @@ io.on('connection', (socket) => {
       if (fromDevice) {
         io.to(fromDevice.socketId).emit('connection-result', {
           accepted,
-          sessionId
+          sessionId,
+          fromDeviceId: session.fromDeviceId,
+          toDeviceId: session.toDeviceId
         });
       }
       console.log('连接响应:', sessionId, '->', accepted ? 'accepted' : 'rejected');
