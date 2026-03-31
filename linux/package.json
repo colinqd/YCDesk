@@ -1,0 +1,54 @@
+{
+  "name": "ycdesk-linux",
+  "version": "1.0.0",
+  "description": "YCDesk Remote Desktop - Linux Version",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --linux",
+    "build:deb": "electron-builder --linux deb",
+    "build:rpm": "electron-builder --linux rpm",
+    "build:appimage": "electron-builder --linux AppImage",
+    "build:tar.gz": "electron-builder --linux tar.gz"
+  },
+  "author": "YCDesk Team",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.3.3",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.7.2",
+    "nut-js": "^4.2.0"
+  },
+  "build": {
+    "appId": "com.ycdesk.linux",
+    "productName": "YCDesk",
+    "directories": {
+      "output": "dist"
+    },
+    "linux": {
+      "target": [
+        "deb",
+        "AppImage",
+        "tar.gz"
+      ],
+      "category": "Network",
+      "icon": "assets/icon.png",
+      "maintainer": "YCDesk Team",
+      "desktop": {
+        "Name": "YCDesk",
+        "Comment": "Remote Desktop Control",
+        "Categories": "Network;RemoteAccess;"
+      }
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "index.html",
+      "remote.html",
+      "preload.js",
+      "server/**/*"
+    ]
+  }
+}

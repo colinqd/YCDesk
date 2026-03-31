@@ -1,0 +1,40 @@
+{
+  "name": "ycdesk-signaling-server",
+  "version": "1.0.0",
+  "description": "Signaling server for YCDesk remote desktop",
+  "main": "server.js",
+  "bin": "server.js",
+  "pkg": {
+    "scripts": "dist/**/*.js",
+    "assets": [
+      "node_modules/**/*"
+    ],
+    "targets": [
+      "node18-win-x64"
+    ],
+    "outputPath": "dist"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "build": "pkg . --output dist/server.exe",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "remote-desktop",
+    "webrtc",
+    "signaling-server"
+  ],
+  "author": "YCDesk Team",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2"
+  },
+  "devDependencies": {
+    "nexe": "^5.0.0-beta.4",
+    "nodemon": "^3.0.1",
+    "pkg": "^5.8.1"
+  }
+}
