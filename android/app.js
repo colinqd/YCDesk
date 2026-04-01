@@ -706,6 +706,9 @@ class GestureHandler {
             touch.clientY - touchData.startY
         );
         
+        log('handleSingleTouchEnd: duration=' + duration + ', distance=' + distance.toFixed(2) + 
+            ', isLongPress=' + this.isLongPress + ', isDragging=' + this.isDragging);
+        
         if (this.isLongPress) {
             this.sendMouseUp(touch.clientX, touch.clientY, 2);
             log('右键释放');
@@ -722,6 +725,10 @@ class GestureHandler {
                 log('单击');
             }
             this.lastTapTime = now;
+        } else {
+            // 对于移动距离较大或触摸时间较长的情况，也发送单击事件
+            this.sendMouseClick(touch.clientX, touch.clientY, 0);
+            log('单击 (distance=' + distance.toFixed(2) + ', duration=' + duration + ')');
         }
         
         this.isDragging = false;
