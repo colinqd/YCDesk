@@ -5,6 +5,7 @@ class DirectModeManager {
     this.isDirectController = false
     this.dataChannelManager = null
     this.pendingIceCandidates = []
+    this.pendingStartSignal = null
     this.myDeviceId = ''
     this.logFn = options.log || console.log
     this.uiManager = options.uiManager
@@ -140,6 +141,13 @@ class DirectModeManager {
   async startControllerConnection(clientId) {
     this.logFn('作为主控端建立直连，打开远程窗口')
     window.electronAPI.openRemoteWindow()
+    
+    // 保存启动信号，等待远程窗口准备好
+    this.pendingStartSignal = {
+      mode: 'controller',
+      clientId: clientId
+    }
+    this.logFn('保存启动信号，等待远程窗口准备就绪: ' + JSON.stringify(this.pendingStartSignal))
   }
 
   async startControlledConnection(clientId) {

@@ -34,6 +34,8 @@
   "build": {
     "appId": "com.ycdesk.desktop",
     "productName": "YCDesk",
+    "asar": true,
+    "compression": "maximum",
     "directories": {
       "output": "dist"
     },
@@ -41,17 +43,14 @@
       "**/*",
       "!**/*.md",
       "!**/*.log",
+      "!dist*/**",
+      "!android/**",
+      "!server/**",
       "!node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
       "!node_modules/.bin"
     ],
     "win": {
       "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        },
         {
           "target": "portable",
           "arch": [
@@ -59,13 +58,6 @@
           ]
         }
       ]
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "YCDesk"
     },
     "portable": {
       "artifactName": "YCDesk-Portable-${version}.exe"

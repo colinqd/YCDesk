@@ -2647,19 +2647,74 @@ function updateScreenSize(width, height, scaleFactor, workArea) {
 }
 
 async function handleOffer(data) {
+  log('[Android信令模式-被控端] 收到Offer，开始处理')
   incomingFromDeviceId = data.fromDeviceId || incomingFromDeviceId
   currentSessionId = data.sessionId
+  isAndroidControlled = true
+  isController = false
+  
+  try {
+    await InputExecutor.setControlledMode({ enabled: true })
+    log('[Android信令模式-被控端] InputExecutor被控模式已启用')
+  } catch (e) {
+    log('[Android信令模式-被控端] 设置InputExecutor模式失败: ' + e.message)
+  }
   
   await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer))
+  log('[Android信令模式-被控端] 远程描述设置成功')
   
+  log('[Android信令模式-被控端] 开始捕获屏幕...')
+  await startAndroidScreenCapture()
+  
+  log('[Android信令模式-被控端] 创建Answer...')
   const answer = await peerConnection.createAnswer()
   await peerConnection.setLocalDescription(answer)
+  log('[Android信令模式-被控端] 本地描述设置成功')
   
+  log('[Android信令模式-被控端] 发送Answer到信令服务器')
   socket.emit('answer', {
     sessionId: currentSessionId,
     answer: answer,
     toDeviceId: incomingFromDeviceId
   })
+  log('[Android信令模式-被控端] Answer已发送')
+}
+
+async function startAndroidScreenCapture() {
+  try {
+    log('[Android信令模式-被控端] 请求屏幕录制权限...')
+    const permResult = await ScreenCapture.requestPermission()
+    
+    if (!permResult.success) {
+      log('[Android信令模式-被控端] 屏幕录制权限被拒绝')
+      showToast('请授予屏幕录制权限')
+      return
+    }
+    
+    log('[Android信令模式-被控端] 权限已获取，开始屏幕捕获...')
+    const captureResult = await ScreenCapture.startCapture()
+    
+    if (captureResult.success) {
+      log('[Android信令模式-被控端] 屏幕捕获已启动')
+      
+      try {
+        const sizeResult = await ScreenCapture.getDisplaySize()
+        if (sizeResult.success) {
+          log('[Android信令模式-被控端] 屏幕尺寸: ' + sizeResult.width + 'x' + sizeResult.height)
+        }
+      } catch (e) {
+        log('[Android信令模式-被控端] 获取屏幕尺寸失败: ' + e.message)
+      }
+      
+      showToast('屏幕捕获已启动')
+    } else {
+      log('[Android信令模式-被控端] 屏幕捕获启动失败: ' + captureResult.error)
+      showToast('屏幕捕获失败')
+    }
+  } catch (error) {
+    log('[Android信令模式-被控端] 屏幕捕获异常: ' + error.message)
+    console.error('[Android信令模式-被控端] 屏幕捕获详细错误:', error)
+  }
 }
 
 async function handleAnswer(data) {

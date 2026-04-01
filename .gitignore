@@ -5,6 +5,9 @@ server/node_modules/
 # Electron
 out/
 dist/
+dist_debug/
+dist_fixed*/
+dist_optimized/
 
 # IDE
 .vscode/
