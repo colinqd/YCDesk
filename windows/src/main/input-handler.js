@@ -1,6 +1,6 @@
 const { screen } = require('electron')
 const { mouse, keyboard, Point, Button, Key } = require('@nut-tree/nut-js')
-const { validateInputCommand, parseInputCommand } = require('../shared/input-protocol')
+const { validateInputCommand, parseInputCommand } = require('../../shared/input-protocol')
 
 let lastMouseX = 0
 let lastMouseY = 0
