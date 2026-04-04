@@ -9,6 +9,37 @@ const InputExecutor = registerPlugin('InputExecutor');
 const FloatingMouse = registerPlugin('FloatingMouse');
 const ScreenCapture = registerPlugin('ScreenCapture');
 
+function normalizeServerUrl(url, preferSecure = null) {
+  if (!url) {
+    return url
+  }
+  
+  let normalized = url.trim()
+  
+  // 修复常见拼写错误
+  normalized = normalized.replace(/^wws:\/\//i, 'wss://')
+  normalized = normalized.replace(/^ws:\/\//i, 'ws://')
+  normalized = normalized.replace(/^http:\/\//i, 'http://')
+  normalized = normalized.replace(/^https:\/\//i, 'https://')
+  
+  // 如果用户已经指定了协议，则保留用户的选择
+  if (normalized.match(/^(wss|ws|http|https):\/\//i)) {
+    return normalized
+  }
+  
+  // 如果没有协议前缀，根据 preferSecure 参数决定默认协议
+  if (preferSecure === true) {
+    normalized = 'wss://' + normalized
+  } else if (preferSecure === false) {
+    normalized = 'ws://' + normalized
+  } else {
+    // 默认使用 wss://
+    normalized = 'wss://' + normalized
+  }
+  
+  return normalized
+}
+
 class MatrixTransformer {
     constructor() {
         this.scale = 1.0;
@@ -848,11 +879,15 @@ function generateDeviceId() {
 }
 
 function getServerUrl() {
-  return document.getElementById('serverUrl')?.value || 'http://10.0.2.2:3000'
+  const protocol = document.getElementById('controllerProtocolSelect')?.value || 'wss://'
+  const serverAddr = document.getElementById('serverUrl')?.value || '10.0.2.2:3000'
+  return protocol + serverAddr.replace(/^(wss|ws|http|https):\/\//i, '')
 }
 
 function getControlledServerUrl() {
-  return document.getElementById('controlledServerUrl')?.value || 'http://10.0.2.2:3000'
+  const protocol = document.getElementById('controlledProtocolSelect')?.value || 'wss://'
+  const serverAddr = document.getElementById('controlledServerUrl')?.value || '10.0.2.2:3000'
+  return protocol + serverAddr.replace(/^(wss|ws|http|https):\/\//i, '')
 }
 
 function getIceConfig() {
@@ -1208,12 +1243,21 @@ function connectToServer(serverUrl, role) {
     return
   }
   
+  // 自动修正 URL（如 wws:// -> wss://），保留用户输入的协议
+  const originalUrl = serverUrl
+  serverUrl = normalizeServerUrl(serverUrl)
+  if (originalUrl !== serverUrl) {
+    log('自动修正服务器地址: ' + originalUrl + ' -> ' + serverUrl)
+  }
+  
   savedServerUrl = serverUrl
   savedRole = role
   reconnectAttempts = 0
   
-  log('正在连接信令服务器: ' + serverUrl)
-  updateServerStatus('连接中...', 'connecting')
+  // 显示连接协议信息
+  const protocol = serverUrl.startsWith('wss://') || serverUrl.startsWith('https://') ? 'HTTPS/WSS (安全)' : 'HTTP/WS (非安全)'
+  log('正在连接信令服务器 [' + protocol + ']: ' + serverUrl)
+  updateServerStatus('连接中... (' + protocol + ')', 'connecting')
   setConnectionStatus(CONNECTION_STATUS.CONNECTING)
   
   try {
@@ -1247,6 +1291,8 @@ function connectToServer(serverUrl, role) {
 
     socket.on('connect_error', (error) => {
       log('✗ 连接错误: ' + (error.message || error))
+      log('提示: 如果使用 HTTPS/WSS，确保证书已正确安装')
+      log('提示: 如果不想使用证书，可以尝试用 http:// 或 ws:// 开头的地址')
       updateServerStatus('连接失败', 'error')
       setConnectionStatus(CONNECTION_STATUS.ERROR)
       showToast('连接服务器失败')

@@ -7,7 +7,7 @@ const isDevelopment = (() => {
 })();
 
 const CONFIG = {
-  defaultSignalingServer: 'http://localhost:3000',
+  defaultSignalingServer: 'ws://localhost:3000',
   stunServers: [
     'stun:stun.l.google.com:19302',
     'stun:stun1.l.google.com:19302',
@@ -140,8 +140,47 @@ function getVideoConstraints(customConstraints = {}) {
   }
 }
 
+function normalizeServerUrl(url, preferSecure = null) {
+  if (!url) {
+    return url
+  }
+  
+  let normalized = url.trim()
+  
+  // 修复常见拼写错误
+  normalized = normalized.replace(/^wws:\/\//i, 'wss://')
+  
+  // Socket.IO 应该使用 WebSocket 协议，自动转换
+  // https:// -> wss://
+  // http:// -> ws://
+  normalized = normalized.replace(/^https:\/\//i, 'wss://')
+  normalized = normalized.replace(/^http:\/\//i, 'ws://')
+  
+  // 确保 ws:// 和 wss:// 格式正确
+  normalized = normalized.replace(/^ws:\/\//i, 'ws://')
+  normalized = normalized.replace(/^wss:\/\//i, 'wss://')
+  
+  // 如果用户已经指定了协议，则保留用户的选择
+  if (normalized.match(/^(wss|ws):\/\//i)) {
+    return normalized
+  }
+  
+  // 如果没有协议前缀，根据 preferSecure 参数决定默认协议
+  if (preferSecure === true) {
+    normalized = 'wss://' + normalized
+  } else if (preferSecure === false) {
+    normalized = 'ws://' + normalized
+  } else {
+    // 默认使用 ws://（和修改前一致）
+    normalized = 'ws://' + normalized
+  }
+  
+  return normalized
+}
+
 CONFIG.getIceConfig = getIceConfig
 CONFIG.getVideoConstraints = getVideoConstraints
+CONFIG.normalizeServerUrl = normalizeServerUrl
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = CONFIG
@@ -149,4 +188,5 @@ if (typeof module !== 'undefined' && module.exports) {
   window.CONFIG = CONFIG
   window.getIceConfig = getIceConfig
   window.getVideoConstraints = getVideoConstraints
+  window.normalizeServerUrl = normalizeServerUrl
 }

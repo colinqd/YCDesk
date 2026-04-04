@@ -82,7 +82,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   windowMinimize: () => ipcRenderer.invoke('window-minimize'),
   windowMaximize: () => ipcRenderer.invoke('window-maximize'),
   windowClose: () => ipcRenderer.invoke('window-close'),
-  setTrayIcon: (visible) => ipcRenderer.invoke('set-tray-icon', visible)
+  setTrayIcon: (visible) => ipcRenderer.invoke('set-tray-icon', visible),
+  
+  toggleRemoteFullscreen: () => ipcRenderer.invoke('toggle-remote-fullscreen'),
+  isRemoteFullscreen: () => ipcRenderer.invoke('is-remote-fullscreen')
 })
 
 console.log('YCDesk Preload 脚本已加载')

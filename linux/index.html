@@ -6,8 +6,27 @@
   <title>YCDesk - 远程桌面控制</title>
   <link rel="stylesheet" href="src/renderer/css/styles.css">
   <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+  <style>
+    body {
+      background-color: #1e3a5f !important;
+    }
+    .debug-page-label {
+      position: fixed;
+      top: 5px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255, 0, 0, 0.8);
+      color: white;
+      padding: 2px 10px;
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: bold;
+      z-index: 99999;
+    }
+  </style>
 </head>
 <body>
+  <div class="debug-page-label">主窗口 (index.html)</div>
   <div class="container">
     <div class="header">
       <div class="header-content">
@@ -157,8 +176,8 @@
     </div>
   </div>
 
-  <script src="../shared/config.js"></script>
-  <script src="../shared/data-channel-manager.js"></script>
+  <script src="./shared/config.js"></script>
+  <script src="./shared/data-channel-manager.js"></script>
   <script src="src/renderer/js/ui-manager.js"></script>
   <script src="src/renderer/js/history-manager.js"></script>
   <script src="src/renderer/js/connection-manager.js"></script>

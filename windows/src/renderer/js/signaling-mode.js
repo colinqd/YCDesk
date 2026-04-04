@@ -23,9 +23,23 @@ class SignalingModeManager {
   }
 
   async connect(serverUrl, role) {
-    this.logFn('正在连接信令服务器: ' + serverUrl)
+    // 自动修正 URL（如 wws:// -> wss://），保留用户输入的协议
+    let normalizedUrl = serverUrl
+    if (window.CONFIG && window.CONFIG.normalizeServerUrl) {
+      const originalUrl = serverUrl
+      normalizedUrl = window.CONFIG.normalizeServerUrl(serverUrl)
+      if (originalUrl !== normalizedUrl) {
+        this.logFn('自动修正服务器地址: ' + originalUrl + ' -> ' + normalizedUrl)
+      }
+    } else {
+      normalizedUrl = serverUrl
+    }
+    
+    // 显示连接协议信息
+    const protocol = normalizedUrl.startsWith('wss://') || normalizedUrl.startsWith('https://') ? 'HTTPS/WSS (安全)' : 'HTTP/WS (非安全)'
+    this.logFn('正在连接信令服务器 [' + protocol + ']: ' + normalizedUrl)
     if (this.uiManager) {
-      this.uiManager.updateServerStatus('连接中...', 'connecting')
+      this.uiManager.updateServerStatus('连接中... (' + protocol + ')', 'connecting')
     }
 
     try {
@@ -33,17 +47,20 @@ class SignalingModeManager {
         this.socket.disconnect()
       }
 
-      this.socket = io(serverUrl, {
+      this.socket = io(normalizedUrl, {
         transports: ['websocket', 'polling'],
         reconnection: true,
         reconnectionAttempts: this.config.maxReconnectAttempts || 10,
         reconnectionDelay: this.config.reconnectDelay || 1000,
-        timeout: 10000
+        timeout: 10000,
+        rejectUnauthorized: false
       })
 
-      this._setupSocketListeners(role)
+      this._setupSocketListeners(role, normalizedUrl)
     } catch (error) {
       this.logFn('✗ 连接初始化错误: ' + error.message)
+      this.logFn('提示: 如果使用 HTTPS/WSS，确保证书已正确安装')
+      this.logFn('提示: 如果不想使用证书，可以尝试用 http:// 或 ws:// 开头的地址')
       if (this.uiManager) {
         this.uiManager.updateServerStatus('连接失败', 'error')
       }
@@ -139,7 +156,7 @@ class SignalingModeManager {
     this.logFn('已准备好接收WebRTC Offer')
   }
 
-  _setupSocketListeners(role) {
+  _setupSocketListeners(role, serverUrl) {
     this.socket.on('connect', () => {
       this.logFn('✓ 已连接到信令服务器，Socket ID: ' + this.socket.id)
       this.logFn('正在注册设备 ID: ' + this.myDeviceId)

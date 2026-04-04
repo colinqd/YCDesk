@@ -445,17 +445,21 @@ class SignalingModeManager {
       this.logFn('[信令模式] 可用屏幕源: ' + sources.length + ' 个')
 
       if (sources.length > 0) {
+        this.logFn('[信令模式] 选择第一个屏幕源: ' + sources[0].name + ', ID: ' + sources[0].id)
+        
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: false,
           video: {
             mandatory: {
               chromeMediaSource: 'desktop',
-              chromeMediaSourceId: sources[0].id,
-              maxWidth: this.config.screenCapture?.maxWidth || 1920,
-              maxHeight: this.config.screenCapture?.maxHeight || 1080,
-              maxFrameRate: this.config.screenCapture?.maxFrameRate || 30,
-              minFrameRate: this.config.screenCapture?.minFrameRate || 15
-            }
+              chromeMediaSourceId: sources[0].id
+            },
+            optional: [
+              { maxWidth: this.config.screenCapture?.maxWidth || 1920 },
+              { maxHeight: this.config.screenCapture?.maxHeight || 1080 },
+              { maxFrameRate: this.config.screenCapture?.maxFrameRate || 30 },
+              { minFrameRate: this.config.screenCapture?.minFrameRate || 15 }
+            ]
           }
         })
 
@@ -467,9 +471,11 @@ class SignalingModeManager {
           this.logFn('[信令模式] 已添加媒体轨道: ' + track.kind + ', label: ' + track.label)
         })
 
-        this.logFn('[信令模式] 屏幕捕获成功，分辨率: ' + 
-          stream.getVideoTracks()[0].getSettings().width + 'x' + 
-          stream.getVideoTracks()[0].getSettings().height)
+        const videoTrack = stream.getVideoTracks()[0]
+        if (videoTrack) {
+          const settings = videoTrack.getSettings()
+          this.logFn('[信令模式] 屏幕捕获成功，分辨率: ' + (settings.width || '?') + 'x' + (settings.height || '?'))
+        }
       } else {
         this.logFn('[信令模式] 没有找到可用的屏幕源')
       }

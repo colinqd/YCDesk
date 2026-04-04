@@ -18,8 +18,7 @@
     "electron-builder": "^24.13.3"
   },
   "dependencies": {
-    "socket.io-client": "^4.7.2",
-    "nut-js": "^4.2.0"
+    "socket.io-client": "^4.7.2"
   },
   "build": {
     "appId": "com.ycdesk.linux",
@@ -48,7 +47,8 @@
       "index.html",
       "remote.html",
       "preload.js",
-      "server/**/*"
+      "server/**/*",
+      "shared/**/*"
     ]
   }
 }

@@ -196,15 +196,15 @@
   </style>
 </head>
 <body>
-  <div class="toolbar">
-    <div class="toolbar-left">
+  <div class="toolbar" id="toolbar" style="-webkit-app-region: drag;">
+    <div class="toolbar-left" style="-webkit-app-region: no-drag;">
       <div class="logo">YCDesk</div>
       <div class="connection-status">
         <span class="status-dot"></span>
         <span id="statusText">连接中...</span>
       </div>
     </div>
-    <div class="toolbar-right">
+    <div class="toolbar-right" style="-webkit-app-region: no-drag;">
       <button class="toolbar-btn" onclick="toggleFullscreen()">全屏</button>
       <button class="toolbar-btn danger" onclick="disconnect()">断开</button>
     </div>
@@ -242,12 +242,13 @@
 
   <div id="debugLog" style="position: fixed; top: 60px; right: 10px; width: 350px; max-height: 300px; background: rgba(0,0,0,0.8); color: #0f0; font-family: monospace; font-size: 11px; padding: 10px; overflow-y: auto; border-radius: 5px; z-index: 9999;"></div>
 
-  <script src="../shared/data-channel-manager.js"></script>
-  <script src="../shared/components/matrix-transformer.js"></script>
+  <script src="./shared/data-channel-manager.js"></script>
+  <script src="./shared/components/matrix-transformer.js"></script>
   <script>
     let videoElement = null;
     let videoContainer = null;
     let videoWrapper = null;
+    let screenContainer = null;
     let matrixTransformer = null;
     let frameCount = 0;
     let lastTime = performance.now();
@@ -286,13 +287,32 @@
       }
     }
 
-    function toggleFullscreen() {
-      if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen();
-      } else {
-        document.exitFullscreen();
+    let isFullscreenMode = false;
+
+    async function toggleFullscreen() {
+      try {
+        const result = await window.electronAPI.toggleRemoteFullscreen();
+        if (result.success) {
+          isFullscreenMode = result.isFullscreen;
+          log('全屏模式: ' + (isFullscreenMode ? '已开启' : '已退出'));
+          setTimeout(updateDisplaySize, 100);
+        }
+      } catch (e) {
+        console.error('切换全屏失败:', e);
       }
     }
+
+    function updateDisplaySize() {
+      if (matrixTransformer && screenContainer) {
+        const rect = screenContainer.getBoundingClientRect();
+        matrixTransformer.setScreenSize(rect.width, rect.height);
+        log('屏幕尺寸更新: ' + rect.width + 'x' + rect.height);
+      }
+    }
+
+    window.addEventListener('resize', () => {
+      updateDisplaySize();
+    });
 
     async function resetInputModifiers() {
       try {
@@ -354,9 +374,9 @@
       matrixTransformer = new MatrixTransformer();
       videoContainer = document.getElementById('videoContainer');
       videoWrapper = document.getElementById('videoWrapper');
+      screenContainer = document.getElementById('remoteScreen');
       
-      const remoteScreen = document.getElementById('remoteScreen');
-      const rect = remoteScreen.getBoundingClientRect();
+      const rect = screenContainer.getBoundingClientRect();
       matrixTransformer.setScreenSize(rect.width, rect.height);
       
       log('MatrixTransformer 初始化完成，屏幕尺寸: ' + rect.width + 'x' + rect.height);
@@ -381,12 +401,13 @@
             return;
           }
           
-          const rect = videoContainer.getBoundingClientRect();
+          const rect = screenContainer.getBoundingClientRect();
           const containerX = e.clientX - rect.left;
           const containerY = e.clientY - rect.top;
           
           const remote = matrixTransformer.containerToRemote(containerX, containerY);
           if (remote) {
+            isMouseDownOnVideo = true;
             sendInputEvent({
               inputType: 'mousedown',
               button: e.button,
@@ -401,13 +422,13 @@
             const deltaX = e.clientX - lastMouseX;
             const deltaY = e.clientY - lastMouseY;
             matrixTransformer.updatePan(deltaX, deltaY);
-            matrixTransformer.applyTransform(videoContainer);
+            matrixTransformer.applyTransform(screenContainer);
             lastMouseX = e.clientX;
             lastMouseY = e.clientY;
             return;
           }
           
-          const rect = videoContainer.getBoundingClientRect();
+          const rect = screenContainer.getBoundingClientRect();
           const containerX = e.clientX - rect.left;
           const containerY = e.clientY - rect.top;
           
@@ -427,12 +448,22 @@
             return;
           }
           
-          const rect = videoContainer.getBoundingClientRect();
-          const containerX = e.clientX - rect.left;
-          const containerY = e.clientY - rect.top;
-          
-          const remote = matrixTransformer.containerToRemote(containerX, containerY);
-          if (remote) {
+          if (isMouseDownOnVideo) {
+            isMouseDownOnVideo = false;
+            
+            const rect = screenContainer.getBoundingClientRect();
+            const containerX = e.clientX - rect.left;
+            const containerY = e.clientY - rect.top;
+            
+            let remote = matrixTransformer.containerToRemote(containerX, containerY);
+            
+            if (!remote) {
+              remote = {
+                x: matrixTransformer.remoteScreenWidth / 2,
+                y: matrixTransformer.remoteScreenHeight / 2
+              };
+            }
+            
             sendInputEvent({
               inputType: 'mouseup',
               button: e.button,
@@ -446,14 +477,12 @@
           e.preventDefault();
           
           if (e.deltaY !== 0) {
-            const rect = videoContainer.getBoundingClientRect();
-            const containerX = e.clientX - rect.left;
-            const containerY = e.clientY - rect.top;
+            const rect = screenContainer.getBoundingClientRect();
             
             const scaleFactor = e.deltaY > 0 ? 0.9 : 1.1;
             const newScale = matrixTransformer.scale * scaleFactor;
-            matrixTransformer.updateScale(newScale, e.clientX, e.clientY);
-            matrixTransformer.applyTransform(videoContainer);
+            matrixTransformer.updateScale(newScale, e.clientX, e.clientY, rect);
+            matrixTransformer.applyTransform(screenContainer);
           } else {
             sendInputEvent({
               inputType: 'wheel',
@@ -465,6 +494,7 @@
 
         videoWrapperEl.addEventListener('mouseleave', () => {
           isDragging = false;
+          isMouseDownOnVideo = false;
         });
 
         videoWrapperEl.addEventListener('contextmenu', (e) => {
@@ -516,12 +546,48 @@
 
     function showVideo() {
       log('showVideo() called - showing video element');
-      document.getElementById('placeholder').style.display = 'none';
-      document.getElementById('videoWrapper').style.display = 'block';
-      document.getElementById('screenVideo').style.display = 'block';
-      log('Video element display: ' + document.getElementById('screenVideo').style.display);
-      log('Video wrapper display: ' + document.getElementById('videoWrapper').style.display);
-      log('Placeholder display: ' + document.getElementById('placeholder').style.display);
+      
+      // 确保 video wrapper 可见
+      const videoWrapper = document.getElementById('videoWrapper');
+      const screenVideo = document.getElementById('screenVideo');
+      const placeholder = document.getElementById('placeholder');
+      const videoContainer = document.getElementById('videoContainer');
+      
+      placeholder.style.display = 'none';
+      videoWrapper.style.display = 'block';
+      videoWrapper.style.position = 'absolute';
+      videoWrapper.style.top = '0';
+      videoWrapper.style.left = '0';
+      videoWrapper.style.width = '100%';
+      videoWrapper.style.height = '100%';
+      videoWrapper.style.overflow = 'hidden';
+      
+      screenVideo.style.display = 'block';
+      screenVideo.style.width = '100%';
+      screenVideo.style.height = '100%';
+      
+      // 设置 video-container 的初始尺寸
+      if (screenVideo.videoWidth && screenVideo.videoHeight) {
+        videoContainer.style.width = screenVideo.videoWidth + 'px';
+        videoContainer.style.height = screenVideo.videoHeight + 'px';
+        log('Set video-container size: ' + screenVideo.videoWidth + 'x' + screenVideo.videoHeight);
+      } else {
+        videoContainer.style.width = '100%';
+        videoContainer.style.height = '100%';
+        log('Set video-container size to 100%');
+      }
+      
+      log('Video element display: ' + screenVideo.style.display);
+      log('Video wrapper display: ' + videoWrapper.style.display);
+      log('Placeholder display: ' + placeholder.style.display);
+      
+      // 尝试触发 video 播放
+      if (screenVideo.srcObject) {
+        log('Video has srcObject, attempting to play');
+        screenVideo.play().catch(err => {
+          log('Video play failed: ' + err.message);
+        });
+      }
     }
 
     function updateFps() {
@@ -571,14 +637,73 @@
       };
       
       peerConnection.ontrack = (event) => {
-        log('收到远程媒体流，track数量: ' + event.tracks.length);
-        const stream = event.streams[0];
+        log('收到远程媒体流，event对象:', event);
+        log('收到远程媒体流，track数量: ' + (event.tracks ? event.tracks.length : 0));
+        log('收到远程媒体流，streams数量: ' + (event.streams ? event.streams.length : 0));
+        log('收到远程媒体流，track:', event.track);
+        
+        let stream;
+        if (event.streams && event.streams.length > 0) {
+          stream = event.streams[0];
+          log('从 streams[0] 获取流');
+        } else {
+          stream = new MediaStream();
+          stream.addTrack(event.track);
+          log('创建新的 MediaStream 并添加 track');
+        }
+        
         if (stream) {
           log('流ID: ' + stream.id);
-          videoElement.srcObject = stream;
+          log('流 tracks 数量: ' + stream.getTracks().length);
+          stream.getTracks().forEach((tr, i) => {
+            log('  Stream track ' + i + ': kind=' + tr.kind + ', id=' + tr.id + ', enabled=' + tr.enabled);
+          });
           
+          // 先显示视频元素和容器，再设置源
+          const placeholder = document.getElementById('placeholder');
+          const videoWrapper = document.getElementById('videoWrapper');
+          const screenVideo = document.getElementById('screenVideo');
+          const videoContainer = document.getElementById('videoContainer');
+          
+          placeholder.style.display = 'none';
+          videoWrapper.style.display = 'block';
+          videoWrapper.style.position = 'absolute';
+          videoWrapper.style.top = '0';
+          videoWrapper.style.left = '0';
+          videoWrapper.style.width = '100%';
+          videoWrapper.style.height = '100%';
+          videoWrapper.style.overflow = 'hidden';
+          
+          screenVideo.style.display = 'block';
+          screenVideo.style.width = '100%';
+          screenVideo.style.height = '100%';
+          screenVideo.style.objectFit = 'contain';
+          screenVideo.muted = true;
+          screenVideo.playsInline = true;
+          screenVideo.autoplay = true;
+          
+          // 设置 video-container 的默认尺寸
+          videoContainer.style.width = '100%';
+          videoContainer.style.height = '100%';
+          
+          log('Video elements made visible before setting srcObject (ontrack)');
+          
+          // 监听 track 事件
+          const track = event.track;
+          track.onmute = () => log('  Track muted (ontrack)');
+          track.onunmute = () => log('  Track unmuted (ontrack)');
+          track.onended = () => log('  Track ended (ontrack)');
+          
+          // 设置事件监听器
           videoElement.onloadedmetadata = () => {
-            log('视频流加载成功，尺寸: ' + videoElement.videoWidth + 'x' + videoElement.videoHeight);
+            log('视频流加载成功，尺寸: ' + videoElement.videoWidth + 'x' + videoElement.videoHeight + ', duration=' + videoElement.duration);
+            
+            // 设置 video-container 的尺寸与视频实际尺寸一致
+            const videoContainer = document.getElementById('videoContainer');
+            videoContainer.style.width = videoElement.videoWidth + 'px';
+            videoContainer.style.height = videoElement.videoHeight + 'px';
+            log('Set video-container size (onloadedmetadata): ' + videoElement.videoWidth + 'x' + videoElement.videoHeight);
+            
             showVideo();
             updateStatus('已连接');
             document.getElementById('resolution').textContent = 
@@ -601,16 +726,92 @@
             startLatencyCheck();
           };
           
+          videoElement.onloadeddata = () => log('  VIDEO DATA LOADED! (ontrack)');
+          videoElement.oncanplay = () => log('  VIDEO CAN PLAY! (ontrack)');
+          videoElement.onplay = () => log('  VIDEO PLAYING! (ontrack)');
+          videoElement.onplaying = () => log('  VIDEO PLAYING (onplaying)! (ontrack)');
+          
           videoElement.onerror = (error) => {
             console.error('视频错误:', error);
+            log('  VIDEO ERROR: ' + error + ', code=' + videoElement.error?.code + ', message=' + videoElement.error?.message);
             showPlaceholder('连接失败', '视频流加载失败');
             updateStatus('连接失败');
           };
+          
+          // 最后设置 srcObject
+          videoElement.srcObject = stream;
+          log('已设置 videoElement.srcObject');
+          
+          // 尝试立即播放
+          log('尝试立即播放视频');
+          videoElement.play().then(() => {
+            log('  Video play started successfully (ontrack)');
+          }).catch(err => {
+            log('Video play failed: ' + err.message);
+          });
+          
+          // 添加一个定时器来检查视频状态
+          let checkCount = 0;
+          const checkInterval = setInterval(() => {
+            checkCount++;
+            log('  Video check (ontrack) ' + checkCount + ': videoWidth=' + videoElement.videoWidth + ', videoHeight=' + videoElement.videoHeight + ', readyState=' + videoElement.readyState + ', paused=' + videoElement.paused + ', currentTime=' + videoElement.currentTime);
+            
+            if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
+              log('  Video has valid dimensions! (ontrack)');
+              clearInterval(checkInterval);
+              
+              // 手动触发处理
+              const videoContainer = document.getElementById('videoContainer');
+              videoContainer.style.width = videoElement.videoWidth + 'px';
+              videoContainer.style.height = videoElement.videoHeight + 'px';
+              
+              showVideo();
+              updateStatus('已连接');
+              document.getElementById('resolution').textContent = 
+                `${videoElement.videoWidth}x${videoElement.videoHeight}`;
+              
+              if (matrixTransformer) {
+                matrixTransformer.videoWidth = videoElement.videoWidth;
+                matrixTransformer.videoHeight = videoElement.videoHeight;
+                
+                if (matrixTransformer.remoteScreenWidth === 1920 && matrixTransformer.remoteScreenHeight === 1080) {
+                  log('  Updating remoteScreenSize (ontrack)');
+                  matrixTransformer.setRemoteScreenSize(videoElement.videoWidth, videoElement.videoHeight);
+                }
+                matrixTransformer.applyContainerSize(videoContainer, videoWrapper);
+              }
+              
+              requestAnimationFrame(onVideoFrame);
+              setupInputEvents();
+              startLatencyCheck();
+            }
+            
+            if (checkCount >= 30) {
+              log('  Video check timeout after 30 attempts (ontrack)');
+              clearInterval(checkInterval);
+            }
+          }, 200);
         }
       };
       
       peerConnection.onconnectionstatechange = () => {
         log('连接状态: ' + peerConnection.connectionState);
+        if (peerConnection.connectionState === 'connected') {
+          log('[Remote] WebRTC连接已建立');
+          const receivers = peerConnection.getReceivers();
+          log('[Remote] 接收者数量: ' + receivers.length);
+          receivers.forEach((receiver, i) => {
+            if (receiver.track) {
+              log('[Remote] 接收者 ' + i + ': ' + receiver.track.kind + ', 启用: ' + receiver.track.enabled);
+            }
+          });
+        } else if (peerConnection.connectionState === 'failed') {
+          log('[Remote] WebRTC连接失败');
+        } else if (peerConnection.connectionState === 'disconnected') {
+          log('[Remote] WebRTC连接断开');
+        } else if (peerConnection.connectionState === 'closed') {
+          log('[Remote] WebRTC连接关闭');
+        }
         if (peerConnection.connectionState === 'failed' || 
             peerConnection.connectionState === 'closed' ||
             peerConnection.connectionState === 'disconnected') {
@@ -714,12 +915,19 @@
           await peerConnection.setLocalDescription(offer);
           
           log('[直连模式] 发送offer到主窗口');
-          window.electronAPI.sendToMainWindow('webrtc-offer', {
-            offer: {
-              type: offer.type,
-              sdp: offer.sdp
-            }
-          });
+          log('[直连模式] offer 数据: ' + JSON.stringify({ offer: { type: offer.type, sdp: offer.sdp.substring(0, 100) } }));
+          try {
+            const result = await window.electronAPI.sendToMainWindow('webrtc-offer', {
+              offer: {
+                type: offer.type,
+                sdp: offer.sdp
+              }
+            });
+            log('[直连模式] sendToMainWindow 返回: ' + JSON.stringify(result));
+          } catch (error) {
+            log('[直连模式] sendToMainWindow 错误: ' + error.message);
+            console.error('[直连模式] sendToMainWindow 详细错误:', error);
+          }
         } catch (error) {
           log('创建offer失败: ' + error.message);
         }
@@ -840,18 +1048,64 @@
       log('Total transceivers: ' + transceivers.length);
       
       for (const t of transceivers) {
-        log('Checking transceiver: mid=' + t.mid);
+        log('Checking transceiver: mid=' + t.mid + ', direction=' + t.direction + ', currentDirection=' + t.currentDirection);
         if (t.receiver && t.receiver.track) {
-          log('  Found track: kind=' + t.receiver.track.kind + ', id=' + t.receiver.track.id + ', readyState=' + t.receiver.track.readyState);
-          if (t.receiver.track.kind === 'video') {
+          const track = t.receiver.track;
+          log('  Found track: kind=' + track.kind + ', id=' + track.id + ', readyState=' + track.readyState + ', enabled=' + track.enabled + ', muted=' + track.muted);
+          
+          if (track.kind === 'video') {
             log('  This is a VIDEO track!');
-            const stream = new MediaStream([t.receiver.track]);
-            log('  Created MediaStream: ' + stream.id);
-            videoElement.srcObject = stream;
-            log('  Set videoElement.srcObject');
             
+            // 先显示视频元素和容器，再设置源
+            const placeholder = document.getElementById('placeholder');
+            const videoWrapper = document.getElementById('videoWrapper');
+            const screenVideo = document.getElementById('screenVideo');
+            const videoContainer = document.getElementById('videoContainer');
+            
+            placeholder.style.display = 'none';
+            videoWrapper.style.display = 'block';
+            videoWrapper.style.position = 'absolute';
+            videoWrapper.style.top = '0';
+            videoWrapper.style.left = '0';
+            videoWrapper.style.width = '100%';
+            videoWrapper.style.height = '100%';
+            videoWrapper.style.overflow = 'hidden';
+            
+            screenVideo.style.display = 'block';
+            screenVideo.style.width = '100%';
+            screenVideo.style.height = '100%';
+            screenVideo.style.objectFit = 'contain';
+            screenVideo.muted = true;
+            screenVideo.playsInline = true;
+            screenVideo.autoplay = true;
+            
+            // 设置 video-container 的默认尺寸
+            videoContainer.style.width = '100%';
+            videoContainer.style.height = '100%';
+            
+            log('  Video elements made visible before setting srcObject');
+            
+            const stream = new MediaStream([track]);
+            log('  Created MediaStream: ' + stream.id + ', tracks: ' + stream.getTracks().length);
+            stream.getTracks().forEach((tr, i) => {
+              log('    Stream track ' + i + ': kind=' + tr.kind + ', id=' + tr.id + ', enabled=' + tr.enabled);
+            });
+            
+            // 监听 track 事件
+            track.onmute = () => log('  Track muted');
+            track.onunmute = () => log('  Track unmuted');
+            track.onended = () => log('  Track ended');
+            
+            // 设置 onloadedmetadata 事件监听器
             videoElement.onloadedmetadata = () => {
-              log('  VIDEO METADATA LOADED! Size: ' + videoElement.videoWidth + 'x' + videoElement.videoHeight);
+              log('  VIDEO METADATA LOADED! Size: ' + videoElement.videoWidth + 'x' + videoElement.videoHeight + ', duration=' + videoElement.duration);
+              
+              // 设置 video-container 的尺寸与视频实际尺寸一致
+              const videoContainer = document.getElementById('videoContainer');
+              videoContainer.style.width = videoElement.videoWidth + 'px';
+              videoContainer.style.height = videoElement.videoHeight + 'px';
+              log('  Set video-container size (checkAndDisplayVideo): ' + videoElement.videoWidth + 'x' + videoElement.videoHeight);
+              
               showVideo();
               updateStatus('Connected');
               document.getElementById('resolution').textContent = 
@@ -873,11 +1127,70 @@
               startLatencyCheck();
             };
             
+            videoElement.onloadeddata = () => log('  VIDEO DATA LOADED!');
+            videoElement.oncanplay = () => log('  VIDEO CAN PLAY!');
+            videoElement.onplay = () => log('  VIDEO PLAYING!');
+            videoElement.onplaying = () => log('  VIDEO PLAYING (onplaying)!');
+            
             videoElement.onerror = (error) => {
-              log('  VIDEO ERROR: ' + error);
+              log('  VIDEO ERROR: ' + error + ', code=' + videoElement.error?.code + ', message=' + videoElement.error?.message);
               showPlaceholder('Connection failed', 'Video stream failed');
               updateStatus('Connection failed');
             };
+            
+            // 最后设置 srcObject
+            videoElement.srcObject = stream;
+            log('  Set videoElement.srcObject');
+            
+            // 尝试立即播放
+            log('  Attempting to play video...');
+            videoElement.play().then(() => {
+              log('  Video play started successfully');
+            }).catch(err => {
+              log('  Video play failed: ' + err.message);
+            });
+            
+            // 添加一个定时器来检查视频状态
+            let checkCount = 0;
+            const checkInterval = setInterval(() => {
+              checkCount++;
+              log('  Video check ' + checkCount + ': videoWidth=' + videoElement.videoWidth + ', videoHeight=' + videoElement.videoHeight + ', readyState=' + videoElement.readyState + ', paused=' + videoElement.paused + ', currentTime=' + videoElement.currentTime);
+              
+              if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
+                log('  Video has valid dimensions!');
+                clearInterval(checkInterval);
+                
+                // 手动触发处理
+                const videoContainer = document.getElementById('videoContainer');
+                videoContainer.style.width = videoElement.videoWidth + 'px';
+                videoContainer.style.height = videoElement.videoHeight + 'px';
+                
+                showVideo();
+                updateStatus('Connected');
+                document.getElementById('resolution').textContent = 
+                  `${videoElement.videoWidth}x${videoElement.videoHeight}`;
+                
+                if (matrixTransformer) {
+                  matrixTransformer.videoWidth = videoElement.videoWidth;
+                  matrixTransformer.videoHeight = videoElement.videoHeight;
+                  
+                  if (matrixTransformer.remoteScreenWidth === 1920 && matrixTransformer.remoteScreenHeight === 1080) {
+                    log('  Updating remoteScreenSize');
+                    matrixTransformer.setRemoteScreenSize(videoElement.videoWidth, videoElement.videoHeight);
+                  }
+                  matrixTransformer.applyContainerSize(videoContainer, videoWrapper);
+                }
+                
+                requestAnimationFrame(onVideoFrame);
+                setupInputEvents();
+                startLatencyCheck();
+              }
+              
+              if (checkCount >= 30) {
+                log('  Video check timeout after 30 attempts');
+                clearInterval(checkInterval);
+              }
+            }, 200);
             
             log('  Video track set to video element, waiting for metadata...');
             return;
@@ -926,11 +1239,17 @@
       videoElement = document.getElementById('screenVideo');
       log('远程窗口初始化开始');
       
+      let peerConnectionStarted = false;
+      let timeoutId = null;
+      
       // 先设置 IPC 监听器，确保能收到消息
       log('设置IPC监听器...');
       
       window.electronAPI.on('webrtc-answer', async (data) => {
-        log('[直连模式] 收到answer事件: ' + JSON.stringify(data).substring(0, 100));
+        log('[Remote] [直连模式] 收到answer事件');
+        log('[Remote] answer数据: ' + JSON.stringify(data).substring(0, 200));
+        log('[Remote] peerConnection存在: ' + (peerConnection ? '是' : '否'));
+        log('[Remote] peerConnection当前状态: ' + (peerConnection ? peerConnection.connectionState : 'N/A'));
         await handleAnswer(data.answer);
       });
 
@@ -941,6 +1260,18 @@
       
       window.electronAPI.on('signaling-mode-start', async (data) => {
         log('[信令模式] 收到启动信号: ' + JSON.stringify(data));
+        
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        
+        if (peerConnectionStarted) {
+          log('[信令模式] PeerConnection 已经启动，忽略重复信号');
+          return;
+        }
+        
+        peerConnectionStarted = true;
         connectionMode = 'signaling';
         signalingSessionId = data.sessionId;
         signalingTargetDeviceId = data.targetDeviceId;
@@ -987,6 +1318,18 @@
       
       window.electronAPI.on('direct-mode-start', async (data) => {
         log('[直连模式] 收到启动信号：' + JSON.stringify(data));
+        
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        
+        if (peerConnectionStarted) {
+          log('[直连模式] PeerConnection 已经启动，忽略重复信号');
+          return;
+        }
+        
+        peerConnectionStarted = true;
         connectionMode = 'direct';
         directClientId = data.clientId;
         isDirectController = data.mode === 'controller';
@@ -1019,11 +1362,8 @@
       showPlaceholder('正在建立WebRTC连接...', '请稍候');
 
       log('等待启动信号...');
-      setTimeout(async () => {
-        if (connectionMode === 'direct') {
-          log('超时未收到启动信号，默认以直连模式启动');
-          await createPeerConnection();
-        }
+      timeoutId = setTimeout(async () => {
+        log('超时未收到启动信号，不执行任何操作');
       }, 5000);
     }
 

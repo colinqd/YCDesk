@@ -5,8 +5,10 @@ const { createMainWindow, createRemoteWindow } = require('./window-manager')
 const { init: initIpcHandlers, generateDeviceId } = require('./ipc-handlers')
 const { createLogger } = require('./logger')
 
+const isDevelopment = process.env.NODE_ENV === 'development'
+
 const logger = createLogger({
-  logLevel: process.env.NODE_ENV === 'development' ? 'debug' : 'info'
+  logLevel: isDevelopment ? 'debug' : 'info'
 })
 
 const instanceId = Math.random().toString(36).substr(2, 8)
@@ -18,6 +20,23 @@ app.setAppUserModelId(`com.ycdesk.desktop.${instanceId}`)
 
 app.commandLine.appendSwitch('disable-features', 'SingleProcess')
 app.commandLine.appendSwitch('disable-gpu-sandbox')
+
+// 允许自签名证书（仅开发环境）
+if (isDevelopment) {
+  app.commandLine.appendSwitch('ignore-certificate-errors')
+  app.commandLine.appendSwitch('allow-insecure-localhost')
+}
+
+// 处理证书错误
+app.on('certificate-error', (event, webContents, url, error, certificate, callback) => {
+  if (isDevelopment) {
+    logger.warn('忽略证书错误（开发环境）:', { url, error })
+    event.preventDefault()
+    callback(true)
+  } else {
+    callback(false)
+  }
+})
 
 app.whenReady().then(() => {
   logger.info('YCDesk 启动中...')
