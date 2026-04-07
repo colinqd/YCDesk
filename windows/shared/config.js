@@ -124,29 +124,11 @@ function getIceConfig(customConfig = {}) {
   }
 }
 
-function getVideoConstraints(customConstraints = {}) {
-  return {
-    audio: false,
-    video: {
-      mandatory: {
-        chromeMediaSource: 'desktop',
-        chromeMediaSourceId: customConstraints.sourceId,
-        maxWidth: customConstraints.maxWidth || CONFIG.screenCapture.maxWidth,
-        maxHeight: customConstraints.maxHeight || CONFIG.screenCapture.maxHeight,
-        maxFrameRate: customConstraints.maxFrameRate || CONFIG.screenCapture.maxFrameRate,
-        minFrameRate: customConstraints.minFrameRate || CONFIG.screenCapture.minFrameRate
-      }
-    }
-  }
-}
-
 CONFIG.getIceConfig = getIceConfig
-CONFIG.getVideoConstraints = getVideoConstraints
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = CONFIG
 } else {
   window.CONFIG = CONFIG
   window.getIceConfig = getIceConfig
-  window.getVideoConstraints = getVideoConstraints
 }

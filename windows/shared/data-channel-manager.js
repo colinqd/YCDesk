@@ -120,11 +120,12 @@ class DataChannelManager {
     }
 
     if (!this.isOpen()) {
-      this.logger.log('[DataChannel] 通道未打开，加入队列')
+      this.logger.log('[DataChannel] 通道未打开，加入队列，type=' + data.type)
       this.enqueue(message, requireAck)
       return false
     }
 
+    this.logger.log('[DataChannel] 发送消息，type=' + data.type)
     return this.sendRaw(message, requireAck)
   }
 

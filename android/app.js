@@ -1276,7 +1276,7 @@ function connectToServer(serverUrl, role) {
     socket.on('connect', () => {
       log('✓ 已连接到信令服务器，Socket ID: ' + socket.id)
       log('正在注册设备 ID: ' + myDeviceId)
-      socket.emit('register', myDeviceId)
+      socket.emit('register', { deviceId: myDeviceId })
       updateServerStatus('已连接', 'connected')
       setConnectionStatus(CONNECTION_STATUS.CONNECTED)
       reconnectAttempts = 0

@@ -86,8 +86,8 @@ class MatrixTransformer {
       offsetX = (this.displayWidth - renderWidth) / 2
     }
 
-    const x = containerX / this.scale - offsetX
-    const y = containerY / this.scale - offsetY
+    const x = (containerX - this.panX) / this.scale - offsetX
+    const y = (containerY - this.panY) / this.scale - offsetY
 
     if (x < 0 || x > renderWidth || y < 0 || y > renderHeight) {
       return null

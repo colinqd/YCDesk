@@ -7,32 +7,6 @@ function getIceConfig() {
   }
 }
 
-function setupDataChannel(channel, log) {
-  channel.onopen = () => {
-    log('数据通道已打开')
-  }
-
-  channel.onmessage = (event) => {
-    log('收到数据通道消息:', event.data)
-    try {
-      const data = JSON.parse(event.data)
-      if (data.type === 'input') {
-        window.electronAPI.send('remote-input', data)
-      }
-    } catch (e) {
-      console.error('解析数据失败:', e)
-    }
-  }
-
-  channel.onclose = () => {
-    log('数据通道已关闭')
-  }
-
-  channel.onerror = (error) => {
-    console.error('数据通道错误:', error)
-  }
-}
-
 async function startScreenCapture(peerConnection, log) {
   try {
     const sources = await window.electronAPI.getSources()
@@ -65,6 +39,5 @@ async function startScreenCapture(peerConnection, log) {
 
 module.exports = {
   getIceConfig,
-  setupDataChannel,
   startScreenCapture
 }

@@ -160,7 +160,7 @@ class SignalingModeManager {
     this.socket.on('connect', () => {
       this.logFn('✓ 已连接到信令服务器，Socket ID: ' + this.socket.id)
       this.logFn('正在注册设备 ID: ' + this.myDeviceId)
-      this.socket.emit('register', this.myDeviceId)
+      this.socket.emit('register', { deviceId: this.myDeviceId })
       if (this.uiManager) {
         this.uiManager.updateServerStatus('已连接', 'connected')
       }
@@ -202,6 +202,15 @@ class SignalingModeManager {
       this.currentSessionId = data.sessionId
       this.isController = false
       
+      this.pendingStartSignal = {
+        mode: 'controlled',
+        sessionId: data.sessionId,
+        targetDeviceId: data.fromDeviceId
+      }
+      this.logFn('保存启动信号，等待远程窗口准备就绪: ' + JSON.stringify(this.pendingStartSignal))
+      
+      window.electronAPI.openRemoteWindow()
+      
       if (typeof this.onIncomingConnection === 'function') {
         this.onIncomingConnection(data.fromDeviceId)
       }
@@ -224,8 +233,8 @@ class SignalingModeManager {
         this.logFn('作为主控端，转发到远程窗口')
         window.electronAPI.sendToRemoteWindow('signaling-offer', data)
       } else {
-        this.logFn('作为被控端，直接处理offer')
-        await this.handleOffer(data)
+        this.logFn('作为被控端，转发到远程窗口处理')
+        window.electronAPI.sendToRemoteWindow('signaling-offer', data)
       }
     })
 
@@ -246,8 +255,8 @@ class SignalingModeManager {
         this.logFn('作为主控端，转发到远程窗口')
         window.electronAPI.sendToRemoteWindow('signaling-ice-candidate', data)
       } else {
-        this.logFn('作为被控端，直接处理ICE candidate')
-        await this.handleIceCandidate(data.candidate)
+        this.logFn('作为被控端，转发到远程窗口处理')
+        window.electronAPI.sendToRemoteWindow('signaling-ice-candidate', data)
       }
     })
 

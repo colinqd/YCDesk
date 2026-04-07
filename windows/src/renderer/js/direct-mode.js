@@ -106,18 +106,13 @@ class DirectModeManager {
   }
 
   async handleMessage(clientId, message) {
-    this.logFn('收到消息: ' + message.type + ', 内容: ' + JSON.stringify(message).substring(0, 200))
-
     try {
       switch (message.type) {
         case 'offer':
-          this.logFn('offer内容: ' + (message.offer ? '存在' : '为空'))
           await this.handleOffer(clientId, message.offer)
           break
         case 'answer':
-          this.logFn('answer内容: ' + (message.answer ? '存在' : '为空'))
           if (this.isDirectController) {
-            this.logFn('转发answer到远程窗口')
             window.electronAPI.sendToRemoteWindow('webrtc-answer', { answer: message.answer })
           } else {
             await this.handleAnswer(clientId, message.answer)
@@ -125,7 +120,6 @@ class DirectModeManager {
           break
         case 'ice-candidate':
           if (this.isDirectController) {
-            this.logFn('转发ICE候选到远程窗口')
             window.electronAPI.sendToRemoteWindow('webrtc-ice-candidate', { candidate: message.candidate })
           } else {
             await this.handleIceCandidate(clientId, message.candidate)
@@ -133,7 +127,6 @@ class DirectModeManager {
           break
       }
     } catch (error) {
-      this.logFn('处理消息失败: ' + error.message)
       console.error('处理消息详细错误:', error)
     }
   }
@@ -170,12 +163,9 @@ class DirectModeManager {
 
     this.dataChannelManager.setOnMessage((data) => {
       if (data.type === 'input') {
-        this.logFn('收到输入命令: ' + data.inputType + ', x=' + data.x + ', y=' + data.y)
         window.electronAPI.send('remote-input', data)
       } else if (data.type === 'ping') {
         this.dataChannelManager.send({ type: 'pong', timestamp: data.timestamp })
-      } else if (data.type === 'screen-size') {
-        this.logFn('收到屏幕尺寸: ' + data.width + 'x' + data.height)
       }
     })
 
@@ -205,13 +195,28 @@ class DirectModeManager {
       this.logFn('ICE连接状态: ' + this.directPeerConnection.iceConnectionState)
     }
 
-    this.directPeerConnection.onconnectionstatechange = () => {
+    this.directPeerConnection.onconnectionstatechange = async () => {
       this.logFn('直连状态: ' + this.directPeerConnection.connectionState)
 
       if (this.directPeerConnection.connectionState === 'connected') {
         this.logFn('WebRTC连接已建立')
-      } else if (this.directPeerConnection.connectionState === 'failed') {
-        this.logFn('WebRTC连接失败')
+        if (!this.isDirectController) {
+          try {
+            await window.electronAPI.hideCursor()
+          } catch (e) {
+            console.error('隐藏光标失败:', e)
+          }
+        }
+      } else if (this.directPeerConnection.connectionState === 'failed' || 
+                 this.directPeerConnection.connectionState === 'disconnected' ||
+                 this.directPeerConnection.connectionState === 'closed') {
+        if (!this.isDirectController) {
+          try {
+            await window.electronAPI.showCursor()
+          } catch (e) {
+            console.error('显示光标失败:', e)
+          }
+        }
       }
     }
 

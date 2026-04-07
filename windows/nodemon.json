@@ -1,0 +1,7 @@
+{
+  "watch": ["src", "shared"],
+  "ext": "js,html,json",
+  "ignore": ["node_modules", "dist"],
+  "exec": "npm run dev",
+  "signal": "SIGINT"
+}

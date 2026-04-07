@@ -4,7 +4,7 @@
         <trust-anchors>
             <certificates src="system" />
             <!-- 信任打包的自签名证书（用于开发测试 -->
-            <certificates src="@raw/ycdesk_self_signed" />
+<!--            <certificates src="@raw/ycdesk_self_signed" />-->
         </trust-anchors>
     </base-config>
     <domain-config cleartextTrafficPermitted="true">

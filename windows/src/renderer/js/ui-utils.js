@@ -196,35 +196,6 @@ function formatDuration(ms) {
   }
 }
 
-function initKeyboardShortcuts() {
-  document.addEventListener('keydown', (e) => {
-    if (e.ctrlKey || e.metaKey) {
-      switch (e.key.toLowerCase()) {
-        case 'q':
-          e.preventDefault()
-          window.close()
-          break
-        case 'r':
-          e.preventDefault()
-          location.reload()
-          break
-        case 'f':
-          e.preventDefault()
-          const fullscreenBtn = document.querySelector('[onclick*="toggleFullscreen"]')
-          if (fullscreenBtn) fullscreenBtn.click()
-          break
-      }
-    }
-    
-    if (e.key === 'Escape') {
-      const modal = document.querySelector('.modal-overlay')
-      if (modal) {
-        modal.click()
-      }
-    }
-  })
-}
-
 module.exports = {
   log,
   setConnectionLogDiv,
@@ -240,6 +211,5 @@ module.exports = {
   showAlert,
   setButtonLoading,
   formatBytes,
-  formatDuration,
-  initKeyboardShortcuts
+  formatDuration
 }
