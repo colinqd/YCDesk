@@ -5,6 +5,8 @@ let robot = null
 let logger = null
 let initialized = false
 let cursorHidden = false
+let hiddenCursorX = 0
+let hiddenCursorY = 0
 
 function initLogger(logInstance) {
   logger = logInstance
@@ -33,13 +35,12 @@ function initRobot() {
     currentMouseY = pos.y
   } catch (e) {
     log('error', '无法加载 robotjs:', e.message)
+    robot = null
   }
 }
 
 let currentMouseX = 0
 let currentMouseY = 0
-let targetMouseX = 0
-let targetMouseY = 0
 let pressedModifiers = {
   Control: false,
   Shift: false,
@@ -61,20 +62,6 @@ const INPUT_RATE_LIMIT = {
   default: { interval: 0, lastTime: 0 }
 }
 
-const INTERPOLATION_CONFIG = {
-  ENABLED: true,
-  BASE_STEPS: 3,
-  MIN_STEPS: 1,
-  MAX_STEPS: 10,
-  INTERVAL_MS: 2,
-  SMOOTH_FACTOR: 0.5
-}
-
-let networkLatency = 0
-let interpolationQueue = []
-let interpolationTimer = null
-let isInterpolating = false
-
 function checkRateLimit(inputType) {
   const limit = INPUT_RATE_LIMIT[inputType] || INPUT_RATE_LIMIT.default
   if (limit.interval === 0) return true
@@ -88,123 +75,6 @@ function checkRateLimit(inputType) {
 }
 
 function updateNetworkLatency(latency) {
-  networkLatency = latency
-  INTERPOLATION_CONFIG.BASE_STEPS = Math.min(
-    INTERPOLATION_CONFIG.MAX_STEPS,
-    Math.max(INTERPOLATION_CONFIG.MIN_STEPS, Math.floor(latency / 20))
-  )
-  log('debug', '更新网络延迟', { latency, baseSteps: INTERPOLATION_CONFIG.BASE_STEPS })
-}
-
-function calculateInterpolationSteps(dx, dy) {
-  const distance = Math.sqrt(dx * dx + dy * dy)
-  let steps = INTERPOLATION_CONFIG.BASE_STEPS
-  
-  if (distance > 100) {
-    steps = Math.min(INTERPOLATION_CONFIG.MAX_STEPS, steps + 2)
-  } else if (distance < 20) {
-    steps = Math.max(INTERPOLATION_CONFIG.MIN_STEPS, steps - 1)
-  }
-  
-  return steps
-}
-
-function linearInterpolate(start, end, steps) {
-  const points = []
-  for (let i = 1; i <= steps; i++) {
-    const t = i / steps
-    points.push({
-      x: start.x + (end.x - start.x) * t,
-      y: start.y + (end.y - start.y) * t
-    })
-  }
-  return points
-}
-
-function smoothStep(t) {
-  return t * t * (3 - 2 * t)
-}
-
-function smoothInterpolate(start, end, steps) {
-  const points = []
-  for (let i = 1; i <= steps; i++) {
-    const t = smoothStep(i / steps)
-    points.push({
-      x: start.x + (end.x - start.x) * t,
-      y: start.y + (end.y - start.y) * t
-    })
-  }
-  return points
-}
-
-function addToInterpolationQueue(targetX, targetY) {
-  const startX = currentMouseX
-  const startY = currentMouseY
-  
-  const dx = targetX - startX
-  const dy = targetY - startY
-  
-  if (Math.abs(dx) < 1 && Math.abs(dy) < 1) {
-    return
-  }
-  
-  const steps = calculateInterpolationSteps(dx, dy)
-  const interpolationType = INTERPOLATION_CONFIG.SMOOTH_FACTOR > 0 ? 'smooth' : 'linear'
-  
-  const points = interpolationType === 'smooth' 
-    ? smoothInterpolate({ x: startX, y: startY }, { x: targetX, y: targetY }, steps)
-    : linearInterpolate({ x: startX, y: startY }, { x: targetX, y: targetY }, steps)
-  
-  interpolationQueue.push(...points)
-  
-  targetMouseX = targetX
-  targetMouseY = targetY
-  
-  if (!isInterpolating) {
-    startInterpolation()
-  }
-}
-
-function startInterpolation() {
-  if (interpolationTimer) return
-  
-  isInterpolating = true
-  interpolationTimer = setInterval(() => {
-    if (interpolationQueue.length === 0) {
-      stopInterpolation()
-      return
-    }
-    
-    const point = interpolationQueue.shift()
-    if (robot && point) {
-      try {
-        robot.moveMouse(Math.round(point.x), Math.round(point.y))
-        currentMouseX = point.x
-        currentMouseY = point.y
-      } catch (e) {
-        log('error', '插值移动错误', e.message)
-      }
-    }
-  }, INTERPOLATION_CONFIG.INTERVAL_MS)
-}
-
-function stopInterpolation() {
-  if (interpolationTimer) {
-    clearInterval(interpolationTimer)
-    interpolationTimer = null
-  }
-  isInterpolating = false
-}
-
-function flushInterpolationQueue() {
-  if (interpolationQueue.length > 0 && robot) {
-    const lastPoint = interpolationQueue[interpolationQueue.length - 1]
-    robot.moveMouse(Math.round(lastPoint.x), Math.round(lastPoint.y))
-    currentMouseX = lastPoint.x
-    currentMouseY = lastPoint.y
-  }
-  interpolationQueue = []
-  stopInterpolation()
 }
 
 const BUTTON_MAP = {
@@ -259,7 +129,6 @@ const KEY_CODE_MAP = {
 
 function handleRemoteInput(event, inputData) {
   if (!robot) {
-    log('error', 'robotjs 未加载，无法执行输入操作')
     return
   }
   
@@ -314,12 +183,10 @@ function handleRemoteInput(event, inputData) {
         break
 
       case INPUT_TYPES.MOUSE_DOWN:
-        flushInterpolationQueue()
         handleMouseDown(x, y, button, screenWidth, screenHeight)
         break
 
       case INPUT_TYPES.MOUSE_UP:
-        flushInterpolationQueue()
         handleMouseUp(x, y, button, screenWidth, screenHeight)
         break
 
@@ -332,22 +199,18 @@ function handleRemoteInput(event, inputData) {
         break
 
       case INPUT_TYPES.KEY_DOWN:
-        flushInterpolationQueue()
         handleKeyDown(code, key, ctrlKey, shiftKey, altKey, metaKey)
         break
 
       case INPUT_TYPES.KEY_UP:
-        flushInterpolationQueue()
         handleKeyUp(code, key, ctrlKey, shiftKey, altKey, metaKey)
         break
 
       case INPUT_TYPES.MOUSE_CLICK:
-        flushInterpolationQueue()
         handleClick(x, y, button, screenWidth, screenHeight)
         break
 
       case INPUT_TYPES.MOUSE_DBLCLICK:
-        flushInterpolationQueue()
         handleDoubleClick(x, y, button, screenWidth, screenHeight)
         break
 
@@ -375,36 +238,22 @@ function normalizeAndClamp(x, y, screenWidth, screenHeight) {
 function handleMouseMove(x, y, screenWidth, screenHeight) {
   if (x !== undefined && y !== undefined) {
     const pos = normalizeAndClamp(x, y, screenWidth, screenHeight)
-    
-    if (INTERPOLATION_CONFIG.ENABLED) {
-      addToInterpolationQueue(pos.x, pos.y)
-    } else {
-      currentMouseX = pos.x
-      currentMouseY = pos.y
-      robot.moveMouse(pos.x, pos.y)
-    }
+    currentMouseX = pos.x
+    currentMouseY = pos.y
+    robot.moveMouse(pos.x, pos.y)
   }
 }
 
 function handleMouseMoveDelta(dx, dy, screenWidth, screenHeight) {
   if (dx === undefined || dy === undefined) return
   
-  const pixelDx = Math.round(dx)
-  const pixelDy = Math.round(dy)
+  const targetX = currentMouseX + Math.round(dx)
+  const targetY = currentMouseY + Math.round(dy)
   
-  const targetX = currentMouseX + pixelDx
-  const targetY = currentMouseY + pixelDy
+  currentMouseX = Math.max(0, Math.min(screenWidth, targetX))
+  currentMouseY = Math.max(0, Math.min(screenHeight, targetY))
   
-  const clampedX = Math.max(0, Math.min(screenWidth, targetX))
-  const clampedY = Math.max(0, Math.min(screenHeight, targetY))
-  
-  if (INTERPOLATION_CONFIG.ENABLED) {
-    addToInterpolationQueue(clampedX, clampedY)
-  } else {
-    currentMouseX = clampedX
-    currentMouseY = clampedY
-    robot.moveMouse(Math.round(clampedX), Math.round(clampedY))
-  }
+  robot.moveMouse(currentMouseX, currentMouseY)
 }
 
 function handleMouseDown(x, y, button, screenWidth, screenHeight) {
@@ -436,7 +285,6 @@ function handleMouseUp(x, y, button, screenWidth, screenHeight) {
   if (pressedButtons[mouseButton]) {
     pressedButtons[mouseButton] = false
     robot.mouseToggle('up', mouseButton)
-    log('debug', '鼠标释放:', mouseButton)
   }
 }
 
@@ -449,7 +297,6 @@ function handleClick(x, y, button, screenWidth, screenHeight) {
   
   const mouseButton = getButtonName(button)
   robot.mouseClick(mouseButton)
-  log('debug', '鼠标点击:', mouseButton)
 }
 
 function handleDoubleClick(x, y, button, screenWidth, screenHeight) {
@@ -461,7 +308,6 @@ function handleDoubleClick(x, y, button, screenWidth, screenHeight) {
   
   const mouseButton = getButtonName(button)
   robot.mouseClick(mouseButton, true)
-  log('debug', '鼠标双击:', mouseButton)
 }
 
 function handleMouseWheel(deltaY, deltaX, x, y, screenWidth, screenHeight) {
@@ -485,13 +331,11 @@ function handleMouseWheelBatch(accumulatedDeltaY, accumulatedDeltaX, screenWidth
   if (accumulatedDeltaY) {
     const scrollAmount = Math.round(accumulatedDeltaY / 120)
     robot.scrollMouse(0, -scrollAmount)
-    log('debug', '滚轮批量滚动 Y:', scrollAmount)
   }
   
   if (accumulatedDeltaX) {
     const scrollAmountX = Math.round(accumulatedDeltaX / 120)
     robot.scrollMouse(-scrollAmountX, 0)
-    log('debug', '滚轮批量滚动 X:', scrollAmountX)
   }
 }
 
@@ -542,7 +386,6 @@ function handleKeyUp(code, key, ctrlKey, shiftKey, altKey, metaKey) {
       if (pressedKeys.has(code)) {
         pressedKeys.delete(code)
         robot.keyToggle(robotKey, 'up')
-        log('debug', '键盘释放:', code)
       }
     }
     
@@ -639,7 +482,6 @@ function resetModifiers() {
 
 function resetAllInputState() {
   log('info', '重置所有输入状态')
-  flushInterpolationQueue()
   resetModifiers()
 }
 
@@ -647,11 +489,20 @@ function hideCursor() {
   if (cursorHidden) return
   try {
     if (robot) {
+      const primaryDisplay = screen.getPrimaryDisplay()
+      const screenWidth = primaryDisplay.size.width
+      const screenHeight = primaryDisplay.size.height
+      
       const pos = robot.getMousePos()
+      hiddenCursorX = pos.x
+      hiddenCursorY = pos.y
       currentMouseX = pos.x
       currentMouseY = pos.y
-      log('info', '隐藏远程光标')
+      
+      robot.moveMouse(screenWidth - 1, screenHeight - 1)
+      
       cursorHidden = true
+      log('info', '隐藏远程光标（移动到右下角）')
     }
   } catch (e) {
     log('error', '隐藏光标失败:', e.message)
@@ -661,7 +512,12 @@ function hideCursor() {
 function showCursor() {
   if (!cursorHidden) return
   try {
-    log('info', '显示远程光标')
+    if (robot) {
+      robot.moveMouse(hiddenCursorX, hiddenCursorY)
+      currentMouseX = hiddenCursorX
+      currentMouseY = hiddenCursorY
+      log('info', '显示远程光标')
+    }
     cursorHidden = false
   } catch (e) {
     log('error', '显示光标失败:', e.message)
@@ -669,14 +525,10 @@ function showCursor() {
 }
 
 function cleanup() {
-  stopInterpolation()
   resetAllInputState()
   showCursor()
-  interpolationQueue = []
   currentMouseX = 0
   currentMouseY = 0
-  targetMouseX = 0
-  targetMouseY = 0
   pressedKeys = new Set()
   pressedButtons = { left: false, right: false, middle: false }
   pressedModifiers = { Control: false, Shift: false, Alt: false, Meta: false }
@@ -691,7 +543,7 @@ module.exports = {
   cleanup,
   initLogger,
   updateNetworkLatency,
-  flushInterpolationQueue,
+  flushInterpolationQueue: () => {},
   hideCursor,
   showCursor
 }

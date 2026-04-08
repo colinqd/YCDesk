@@ -15,9 +15,11 @@
  */
 const INPUT_TYPES = {
   MOUSE_MOVE: 'mousemove',      // 鼠标移动
+  MOUSE_MOVE_DELTA: 'mousemove_delta',  // 鼠标移动（增量）
   MOUSE_DOWN: 'mousedown',      // 鼠标按下
   MOUSE_UP: 'mouseup',          // 鼠标释放
   MOUSE_WHEEL: 'wheel',         // 鼠标滚轮
+  MOUSE_WHEEL_BATCH: 'wheel_batch', // 鼠标滚轮（批量）
   MOUSE_CLICK: 'click',         // 鼠标单击
   MOUSE_DBLCLICK: 'dblclick',   // 鼠标双击
   KEY_DOWN: 'keydown',          // 键盘按下
@@ -176,9 +178,13 @@ function parseInputCommand(command) {
     inputType: command.inputType,
     x: command.x,
     y: command.y,
+    dx: command.dx,
+    dy: command.dy,
     button: command.button,
     deltaY: command.deltaY,
     deltaX: command.deltaX,
+    accumulatedDeltaY: command.accumulatedDeltaY,
+    accumulatedDeltaX: command.accumulatedDeltaX,
     code: command.code,
     key: command.key,
     keyCode: command.keyCode,
@@ -293,6 +299,22 @@ function validateInputCommand(command) {
   
   if (command.deltaX !== undefined && typeof command.deltaX !== 'number') {
     errors.push('deltaX 必须是数字')
+  }
+  
+  if (command.dx !== undefined && typeof command.dx !== 'number') {
+    errors.push('dx 必须是数字')
+  }
+  
+  if (command.dy !== undefined && typeof command.dy !== 'number') {
+    errors.push('dy 必须是数字')
+  }
+  
+  if (command.accumulatedDeltaY !== undefined && typeof command.accumulatedDeltaY !== 'number') {
+    errors.push('accumulatedDeltaY 必须是数字')
+  }
+  
+  if (command.accumulatedDeltaX !== undefined && typeof command.accumulatedDeltaX !== 'number') {
+    errors.push('accumulatedDeltaX 必须是数字')
   }
   
   if (command.code !== undefined && typeof command.code !== 'string') {

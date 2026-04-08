@@ -17,7 +17,7 @@
 /**
  * 矩阵变换器类
  */
-export class MatrixTransformer {
+class MatrixTransformer {
     /**
      * 创建矩阵变换器实例
      * 
@@ -25,35 +25,39 @@ export class MatrixTransformer {
      * @param {Object} [options.logger] - 日志对象（可选）
      */
     constructor(options = {}) {
-        // 缩放和平移参数
         this.scale = 1.0
         this.panX = 0
         this.panY = 0
         
-        // 屏幕尺寸
         this.screenWidth = 0
         this.screenHeight = 0
         this.remoteScreenWidth = 1920
         this.remoteScreenHeight = 1080
         
-        // 显示区域
         this.displayX = 0
         this.displayY = 0
         this.displayWidth = 0
         this.displayHeight = 0
         
-        // 其他参数
+        this.originalWidth = 0
+        this.originalHeight = 0
+        this.originalLeft = 0
+        this.originalTop = 0
+        
         this.scaleFactor = 1
         this.workArea = null
         this.videoWidth = 0
         this.videoHeight = 0
         
-        // 矩阵缓存
+        this.centerX = 0
+        this.centerY = 0
+        this.elementWidth = 0
+        this.elementHeight = 0
+        
         this._matrix = null
         this._inverseMatrix = null
         this._matrixDirty = true
         
-        // 日志对象（可选）
         this.logger = options.logger || null
     }
     
@@ -68,6 +72,35 @@ export class MatrixTransformer {
         this.screenHeight = height
         this._matrixDirty = true
         this._updateDisplayRect()
+    }
+    
+    setElementSize(width, height) {
+        this.elementWidth = width
+        this.elementHeight = height
+        this._matrixDirty = true
+    }
+    
+    calculateCenterPosition() {
+        if (this.screenWidth === 0 || this.screenHeight === 0 || 
+            this.elementWidth === 0 || this.elementHeight === 0) {
+            return { x: 0, y: 0 }
+        }
+        
+        const centerX = (this.screenWidth - this.elementWidth) / 2
+        const centerY = (this.screenHeight - this.elementHeight) / 2
+        
+        this.centerX = centerX
+        this.centerY = centerY
+        
+        this._log('calculateCenterPosition', {
+            screenWidth: this.screenWidth,
+            screenHeight: this.screenHeight,
+            elementWidth: this.elementWidth,
+            elementHeight: this.elementHeight,
+            center: { x: centerX, y: centerY }
+        })
+        
+        return { x: centerX, y: centerY }
     }
     
     /**
@@ -354,25 +387,69 @@ export class MatrixTransformer {
      * 更新缩放比例
      * 
      * @param {number} newScale - 新的缩放比例
-     * @param {number} centerX - 中心点 X 坐标（Container 坐标）
-     * @param {number} centerY - 中心点 Y 坐标（Container 坐标）
+     * @param {number} mouseX - 鼠标 X 坐标
+     * @param {number} mouseY - 鼠标 Y 坐标
      */
-    updateScale(newScale, centerX, centerY) {
-        const displayX = centerX - this.displayX
-        const displayY = centerY - this.displayY
+    updateScale(newScale, mouseX, mouseY) {
+        this._log('updateScale 开始', {
+            newScale: newScale,
+            mouseX: mouseX,
+            mouseY: mouseY,
+            currentScale: this.scale,
+            elementWidth: this.elementWidth,
+            elementHeight: this.elementHeight,
+            centerX: this.centerX,
+            centerY: this.centerY,
+            panX: this.panX,
+            panY: this.panY
+        })
         
-        const unscaledX = (displayX - this.panX) / this.scale
-        const unscaledY = (displayY - this.panY) / this.scale
+        if (this.elementWidth === 0 || this.elementHeight === 0) {
+            this.scale = Math.max(0.5, Math.min(3.0, newScale))
+            this._matrixDirty = true
+            this._log('updateScale: 元素尺寸未设置，直接缩放', { scale: this.scale })
+            return
+        }
         
-        // 限制缩放范围
-        this.scale = Math.max(0.5, Math.min(3.0, newScale))
+        const oldScale = this.scale
+        const clampedScale = Math.max(0.5, Math.min(3.0, newScale))
         
-        // 计算新的平移量
-        this.panX = displayX - unscaledX * this.scale
-        this.panY = displayY - unscaledY * this.scale
+        if (clampedScale === oldScale) {
+            this._log('updateScale: 缩放值未变化', { oldScale, newScale: clampedScale })
+            return
+        }
+        
+        const currentX = this.centerX + this.panX
+        const currentY = this.centerY + this.panY
+        
+        const mouseOffsetX = mouseX - currentX
+        const mouseOffsetY = mouseY - currentY
+        
+        const scaleRatio = clampedScale / oldScale
+        
+        const newMouseOffsetX = mouseOffsetX * scaleRatio
+        const newMouseOffsetY = mouseOffsetY * scaleRatio
+        
+        const newX = mouseX - newMouseOffsetX
+        const newY = mouseY - newMouseOffsetY
+        
+        this.panX = newX - this.centerX
+        this.panY = newY - this.centerY
+        this.scale = clampedScale
         
         this._matrixDirty = true
         this.clampPan()
+        
+        this._log('updateScale 完成', {
+            oldScale,
+            newScale: this.scale,
+            panX: this.panX,
+            panY: this.panY,
+            newX,
+            newY,
+            currentX,
+            currentY
+        })
     }
     
     /**
@@ -389,23 +466,70 @@ export class MatrixTransformer {
     }
     
     /**
-     * 限制平移范围（可在子类中实现）
+     * 限制平移范围
      */
     clampPan() {
-        // 默认实现：标记矩阵需要更新
+        if (this.screenWidth === 0 || this.screenHeight === 0 || 
+            this.elementWidth === 0 || this.elementHeight === 0) {
+            this._matrixDirty = true
+            return
+        }
+        
+        const scaledWidth = this.elementWidth * this.scale
+        const scaledHeight = this.elementHeight * this.scale
+        
+        const minPanX = -this.centerX + 20
+        const maxPanX = this.screenWidth - this.centerX - scaledWidth - 20
+        const minPanY = -this.centerY + 20
+        const maxPanY = this.screenHeight - this.centerY - scaledHeight - 20
+        
+        this.panX = Math.max(Math.min(minPanX, maxPanX), Math.min(Math.max(minPanX, maxPanX), this.panX))
+        this.panY = Math.max(Math.min(minPanY, maxPanY), Math.min(Math.max(minPanY, maxPanY), this.panY))
+        
         this._matrixDirty = true
     }
     
     /**
-     * 应用 CSS 变换到元素
+     * 应用 CSS transform 变换到元素（缩放和平移）
+     * 拖动后使用绝对定位，不再居中
      * 
      * @param {HTMLElement} element - 目标元素
      */
     applyTransform(element) {
         if (!element) return
         
-        element.style.transform = `translate(${this.panX}px, ${this.panY}px) scale(${this.scale})`
+        if (this.elementWidth === 0 || this.elementHeight === 0) {
+            const rect = element.getBoundingClientRect()
+            this.elementWidth = rect.width
+            this.elementHeight = rect.height
+        }
+        
+        if (this.centerX === 0 && this.centerY === 0) {
+            this.calculateCenterPosition()
+        }
+        
+        const currentX = this.centerX + this.panX
+        const currentY = this.centerY + this.panY
+        
+        element.style.left = currentX + 'px'
+        element.style.top = currentY + 'px'
+        element.style.transform = `scale(${this.scale})`
         element.style.transformOrigin = '0 0'
+        
+        this._log('applyTransform', {
+            center: { x: this.centerX, y: this.centerY },
+            pan: { x: this.panX, y: this.panY },
+            position: { x: currentX, y: currentY },
+            scale: this.scale
+        })
+    }
+    
+    resetView() {
+        this.scale = 1.0
+        this.panX = 0
+        this.panY = 0
+        this._matrixDirty = true
+        this.calculateCenterPosition()
     }
     
     /**

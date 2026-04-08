@@ -245,6 +245,14 @@ async function initController() {
     })
   })
 
+  window.electronAPI.on('webrtc-answer', async (data) => {
+    log('收到远程窗口的answer，转发给被控端')
+    directManager.sendMessage({
+      type: 'answer',
+      answer: data.answer
+    })
+  })
+
   window.electronAPI.on('webrtc-ice-candidate', async (data) => {
     log('收到远程窗口的ICE候选，转发给被控端')
     directManager.sendMessage({

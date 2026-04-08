@@ -85,7 +85,8 @@ function createRemoteWindow() {
     title: 'YCDesk - 远程控制中',
     icon: path.join(__dirname, '../../assets/icon.png'),
     show: false,
-    backgroundColor: '#1a1a2e'
+    backgroundColor: '#1a1a2e',
+    fullscreen: true
   })
 
   remoteWindow.loadFile('remote.html')

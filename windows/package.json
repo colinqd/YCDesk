@@ -23,25 +23,26 @@
     "windows"
   ],
   "devDependencies": {
-    "electron": "^28.0.0",
-    "electron-builder": "^24.9.1",
+    "chokidar": "^3.6.0",
     "cross-env": "^7.0.3",
-    "nodemon": "^3.0.0",
-    "chokidar": "^3.6.0"
+    "electron": "^28.3.3",
+    "electron-builder": "^24.9.1",
+    "nodemon": "^3.0.0"
   },
   "dependencies": {
+    "robotjs": "0.6.0",
     "socket.io-client": "^4.6.0",
     "winston": "^3.11.0",
-    "winston-daily-rotate-file": "^4.7.1",
-    "robotjs": "^0.6.0"
+    "winston-daily-rotate-file": "^4.7.1"
   },
   "build": {
     "appId": "com.ycdesk.desktop",
     "productName": "YCDesk",
-    "asar": true,
+    "asar": false,
     "compression": "maximum",
+    "npmRebuild": false,
     "directories": {
-      "output": "dist"
+      "output": "dist-v2"
     },
     "files": [
       "**/*",
