@@ -139,6 +139,7 @@ class MatrixTransformer {
             remoteScreenHeight: this.remoteScreenHeight
         })
         
+        // 检查屏幕尺寸是否为 0
         if (this.screenWidth === 0 || this.screenHeight === 0) {
             this.displayX = 0
             this.displayY = 0
@@ -148,6 +149,7 @@ class MatrixTransformer {
             return
         }
         
+        // 检查远程屏幕尺寸是否为 0
         if (this.remoteScreenWidth === 0 || this.remoteScreenHeight === 0) {
             this.displayX = 0
             this.displayY = 0
@@ -157,15 +159,19 @@ class MatrixTransformer {
             return
         }
         
+        // 计算宽高比
         const screenAspect = this.screenWidth / this.screenHeight
         const remoteAspect = this.remoteScreenWidth / this.remoteScreenHeight
         
+        // 根据宽高比计算显示区域（保持比例）
         if (remoteAspect > screenAspect) {
+            // 远程屏幕更宽，以宽度为基准
             this.displayWidth = this.screenWidth
             this.displayHeight = this.screenWidth / remoteAspect
             this.displayX = 0
             this.displayY = (this.screenHeight - this.displayHeight) / 2
         } else {
+            // 远程屏幕更高，以高度为基准
             this.displayHeight = this.screenHeight
             this.displayWidth = this.screenHeight * remoteAspect
             this.displayX = (this.screenWidth - this.displayWidth) / 2
@@ -188,6 +194,7 @@ class MatrixTransformer {
     _updateMatrices() {
         if (!this._matrixDirty) return
         
+        // 构建变换矩阵
         this._matrix = {
             a: this.scale,
             b: 0,
@@ -197,6 +204,7 @@ class MatrixTransformer {
             f: this.panY
         }
         
+        // 构建逆变换矩阵
         const invScale = 1.0 / this.scale
         this._inverseMatrix = {
             a: invScale,
@@ -212,6 +220,10 @@ class MatrixTransformer {
     
     /**
      * Container 坐标转 Display 坐标
+     * 
+     * @param {number} containerX - Container X 坐标
+     * @param {number} containerY - Container Y 坐标
+     * @returns {Object} Display 坐标 {x, y}
      */
     containerToDisplay(containerX, containerY) {
         return {
@@ -222,6 +234,10 @@ class MatrixTransformer {
     
     /**
      * Display 坐标转 Container 坐标
+     * 
+     * @param {number} displayX - Display X 坐标
+     * @param {number} displayY - Display Y 坐标
+     * @returns {Object} Container 坐标 {x, y}
      */
     displayToContainer(displayX, displayY) {
         return {
@@ -232,6 +248,10 @@ class MatrixTransformer {
     
     /**
      * Display 坐标转 Remote 坐标
+     * 
+     * @param {number} displayX - Display X 坐标
+     * @param {number} displayY - Display Y 坐标
+     * @returns {Object|null} Remote 坐标 {x, y}，失败返回 null
      */
     displayToRemote(displayX, displayY) {
         if (this.displayWidth === 0 || this.displayHeight === 0) {
@@ -246,30 +266,42 @@ class MatrixTransformer {
     
     /**
      * Container 坐标转 Remote 坐标（主要方法）
+     * 
+     * @param {number} containerX - Container X 坐标
+     * @param {number} containerY - Container Y 坐标
+     * @returns {Object|null} Remote 坐标 {x, y}，失败返回 null
      */
     containerToRemote(containerX, containerY) {
         if (this.displayWidth === 0 || this.displayHeight === 0) {
             return null
         }
         
+        // 转换为 Display 坐标
         const display = this.containerToDisplay(containerX, containerY)
         
+        // 检查是否超出显示区域
         if (display.x < 0 || display.x > this.displayWidth ||
             display.y < 0 || display.y > this.displayHeight) {
             return null
         }
         
+        // 应用缩放和平移变换
         const centerX = this.displayWidth / 2
         const centerY = this.displayHeight / 2
         
         const transformedX = centerX + (display.x - centerX - this.panX) / this.scale
         const transformedY = centerY + (display.y - centerY - this.panY) / this.scale
         
+        // 转换为 Remote 坐标
         return this.displayToRemote(transformedX, transformedY)
     }
     
     /**
      * View 坐标转 Video 坐标
+     * 
+     * @param {number} viewX - View X 坐标
+     * @param {number} viewY - View Y 坐标
+     * @returns {Object} Video 坐标 {x, y}
      */
     viewToVideo(viewX, viewY) {
         this._updateMatrices()
@@ -282,6 +314,10 @@ class MatrixTransformer {
     
     /**
      * Video 坐标转 View 坐标
+     * 
+     * @param {number} videoX - Video X 坐标
+     * @param {number} videoY - Video Y 坐标
+     * @returns {Object} View 坐标 {x, y}
      */
     videoToView(videoX, videoY) {
         this._updateMatrices()
@@ -294,6 +330,10 @@ class MatrixTransformer {
     
     /**
      * Video 坐标转 Remote 坐标
+     * 
+     * @param {number} videoX - Video X 坐标
+     * @param {number} videoY - Video Y 坐标
+     * @returns {Object} Remote 坐标 {x, y}
      */
     videoToRemote(videoX, videoY) {
         if (this.videoWidth === 0 || this.videoHeight === 0) {
@@ -307,6 +347,10 @@ class MatrixTransformer {
     
     /**
      * Remote 坐标转 Video 坐标
+     * 
+     * @param {number} remoteX - Remote X 坐标
+     * @param {number} remoteY - Remote Y 坐标
+     * @returns {Object} Video 坐标 {x, y}
      */
     remoteToVideo(remoteX, remoteY) {
         return {
@@ -317,6 +361,10 @@ class MatrixTransformer {
     
     /**
      * View 坐标转 Remote 坐标
+     * 
+     * @param {number} viewX - View X 坐标
+     * @param {number} viewY - View Y 坐标
+     * @returns {Object} Remote 坐标 {x, y}
      */
     viewToRemote(viewX, viewY) {
         const video = this.viewToVideo(viewX, viewY)
@@ -325,6 +373,10 @@ class MatrixTransformer {
     
     /**
      * Remote 坐标转 View 坐标
+     * 
+     * @param {number} remoteX - Remote X 坐标
+     * @param {number} remoteY - Remote Y 坐标
+     * @returns {Object} View 坐标 {x, y}
      */
     remoteToView(remoteX, remoteY) {
         const video = this.remoteToVideo(remoteX, remoteY)
@@ -335,8 +387,8 @@ class MatrixTransformer {
      * 更新缩放比例
      * 
      * @param {number} newScale - 新的缩放比例
-     * @param {number} mouseX - 鼠标 X 坐标（父容器坐标系）
-     * @param {number} mouseY - 鼠标 Y 坐标（父容器坐标系）
+     * @param {number} mouseX - 鼠标 X 坐标
+     * @param {number} mouseY - 鼠标 Y 坐标
      */
     updateScale(newScale, mouseX, mouseY) {
         this._log('updateScale 开始', {
@@ -402,6 +454,9 @@ class MatrixTransformer {
     
     /**
      * 更新平移量
+     * 
+     * @param {number} deltaX - X 方向平移量
+     * @param {number} deltaY - Y 方向平移量
      */
     updatePan(deltaX, deltaY) {
         this.panX += deltaX
@@ -436,6 +491,9 @@ class MatrixTransformer {
     
     /**
      * 应用 CSS transform 变换到元素（缩放和平移）
+     * 拖动后使用绝对定位，不再居中
+     * 
+     * @param {HTMLElement} element - 目标元素
      */
     applyTransform(element) {
         if (!element) return
@@ -476,6 +534,9 @@ class MatrixTransformer {
     
     /**
      * 应用容器尺寸
+     * 
+     * @param {HTMLElement} containerElement - 容器元素
+     * @param {HTMLElement} [wrapperElement] - 包装元素（可选）
      */
     applyContainerSize(containerElement, wrapperElement) {
         this._log('applyContainerSize', {
@@ -535,6 +596,8 @@ class MatrixTransformer {
     
     /**
      * 获取当前状态（用于调试）
+     * 
+     * @returns {Object} 状态对象
      */
     getState() {
         return {
@@ -556,6 +619,8 @@ class MatrixTransformer {
      * 日志输出（内部使用）
      * 
      * @private
+     * @param {string} prefix - 前缀
+     * @param {string|Object} message - 消息
      */
     _log(prefix, message) {
         if (this.logger) {
@@ -566,6 +631,14 @@ class MatrixTransformer {
             }
         }
     }
+}
+
+// 导出 DOM 辅助类（从单独文件）
+try {
+    const { MatrixTransformerDOM } = require('./matrix-transformer-dom.js')
+    module.exports.MatrixTransformerDOM = MatrixTransformerDOM
+} catch (e) {
+    // 如果文件不存在，跳过导出
 }
 
 // 兼容 Node.js 和浏览器

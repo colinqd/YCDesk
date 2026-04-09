@@ -1,284 +1,253 @@
 class SignalingConnectionManager extends BaseConnectionManager {
     constructor(options = {}) {
         super(options)
-        this.websocket = null
         this.sessionId = null
         this.deviceId = null
         this.targetDeviceId = null
         this.isController = false
-        this.messageIdCounter = 0
-        this.pendingRequests = new Map()
-        this.reconnectAttempts = 0
-        this.maxReconnectAttempts = 5
-        this.reconnectDelay = 1000
     }
 
     async establishSignaling(config) {
-        this.log('信令模式: 连接WebSocket服务器')
-        
-        return new Promise((resolve, reject) => {
-            try {
-                this.websocket = new WebSocket(config.signalingUrl)
-                
-                this.websocket.onopen = () => {
-                    this.log('WebSocket连接成功')
-                    this.reconnectAttempts = 0
-                    resolve()
-                }
-                
-                this.websocket.onerror = (error) => {
-                    this.error('WebSocket连接错误:', error)
-                    reject(new Error('WebSocket连接失败'))
-                }
-                
-                this.websocket.onclose = (event) => {
-                    this.log(`WebSocket连接关闭: code=${event.code}, reason=${event.reason}`)
-                    this.handleWebSocketClose(event)
-                }
-                
-                this.websocket.onmessage = (event) => {
-                    this.handleWebSocketMessage(JSON.parse(event.data))
-                }
-                
-            } catch (error) {
-                reject(error)
-            }
-        })
+        this.log('信令模式: 使用IPC信令通道')
+        return Promise.resolve()
     }
 
     async authenticate(credentials) {
         this.log('信令模式: 身份验证')
-        
-        return this.sendRequest('authenticate', {
-            token: credentials.token,
-            deviceId: credentials.deviceId
-        }).then(response => {
-            if (response.success) {
-                this.sessionId = response.sessionId
-                this.deviceId = credentials.deviceId
-                this.log(`身份验证成功, sessionId=${this.sessionId}`)
-                return response
-            } else {
-                throw new Error(response.error || '身份验证失败')
-            }
-        })
+        this.deviceId = credentials.deviceId
+        this.sessionId = credentials.sessionId
+        return Promise.resolve({ success: true, sessionId: this.sessionId })
     }
 
     async negotiateCapabilities() {
         this.log('信令模式: 能力协商')
-        
-        return this.sendRequest('negotiate-capabilities', {
-            capabilities: {
-                video: true,
-                audio: false,
-                clipboard: true,
-                fileTransfer: false
-            }
-        }).then(response => {
-            this.log('能力协商完成')
-            return response.capabilities
+        return Promise.resolve({
+            video: true,
+            audio: false,
+            clipboard: true
         })
     }
 
     sendSignalingMessage(message) {
-        if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) {
-            this.log('WebSocket未连接，消息加入队列')
-            return
-        }
-        
-        const payload = {
-            ...message,
-            sessionId: this.sessionId,
-            deviceId: this.deviceId,
-            targetDeviceId: this.targetDeviceId,
-            timestamp: Date.now()
-        }
-        
-        this.websocket.send(JSON.stringify(payload))
-    }
-
-    sendRequest(type, data, timeout = 10000) {
-        return new Promise((resolve, reject) => {
-            const requestId = ++this.messageIdCounter
-            
-            const timer = setTimeout(() => {
-                this.pendingRequests.delete(requestId)
-                reject(new Error(`请求超时: ${type}`))
-            }, timeout)
-            
-            this.pendingRequests.set(requestId, { resolve, reject, timer })
-            
-            const payload = {
-                type,
-                requestId,
-                ...data,
-                sessionId: this.sessionId,
-                deviceId: this.deviceId
-            }
-            
-            this.websocket.send(JSON.stringify(payload))
-        })
-    }
-
-    handleWebSocketMessage(data) {
-        if (data.requestId && this.pendingRequests.has(data.requestId)) {
-            const pending = this.pendingRequests.get(data.requestId)
-            clearTimeout(pending.timer)
-            this.pendingRequests.delete(data.requestId)
-            
-            if (data.error) {
-                pending.reject(new Error(data.error))
-            } else {
-                pending.resolve(data)
-            }
-            return
-        }
-        
-        switch (data.type) {
-            case 'webrtc-answer':
-                this.handleAnswer(data.answer)
-                break
-                
-            case 'webrtc-ice-candidate':
-                this.handleIceCandidate(data.candidate)
-                break
-                
+        switch (message.type) {
             case 'webrtc-offer':
-                this.handleSignalingOffer(data)
+                window.electronAPI.send('send-signaling-offer', {
+                    sessionId: this.sessionId,
+                    offer: message.offer,
+                    targetDeviceId: this.targetDeviceId
+                })
                 break
-                
-            case 'connection-request':
-                this.handleConnectionRequest(data)
+            case 'webrtc-answer':
+                window.electronAPI.send('send-signaling-answer', {
+                    sessionId: this.sessionId,
+                    answer: message.answer,
+                    targetDeviceId: this.targetDeviceId
+                })
                 break
-                
-            case 'connection-established':
-                this.onP2PEstablished()
+            case 'ice-candidate':
+                window.electronAPI.send('send-signaling-ice-candidate', {
+                    sessionId: this.sessionId,
+                    candidate: message.candidate,
+                    targetDeviceId: this.targetDeviceId
+                })
                 break
-                
-            case 'device-disconnected':
-                this.handleDeviceDisconnected(data)
-                break
-                
-            case 'error':
-                this.error('服务器错误:', data.message)
-                this.emit('signaling-error', data)
-                break
-                
-            default:
-                this.log(`未知消息类型: ${data.type}`)
         }
     }
 
-    handleWebSocketClose(event) {
-        if (this.stateMachine.isConnected()) {
-            this.log('P2P连接已建立，WebSocket关闭不影响')
-            return
-        }
+    async connect(config) {
+        this.config = config
+        this.stateMachine.transition(ConnectionState.CONNECTING)
         
-        if (this.reconnectAttempts < this.maxReconnectAttempts) {
-            this.reconnectAttempts++
-            this.log(`尝试重连 (${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
+        try {
+            this.log('第一阶段：控制流（串行）开始')
             
-            setTimeout(() => {
-                this.establishSignaling({ signalingUrl: this.config.signalingUrl })
-                    .then(() => this.authenticate({ token: this.config.credentials.token, deviceId: this.deviceId }))
-                    .then(() => this.emit('reconnected'))
-                    .catch(error => this.error('重连失败:', error))
-            }, this.reconnectDelay * this.reconnectAttempts)
-        } else {
-            this.emit('connection-failed', { reason: 'WebSocket连接失败' })
+            await this.establishSignaling(config)
+            this.stateMachine.transition(ConnectionState.AUTHENTICATING)
+            
+            await this.authenticate(config.credentials || {})
+            this.stateMachine.transition(ConnectionState.NEGOTIATING)
+            
+            const capabilities = await this.negotiateCapabilities()
+            this.stateMachine.transition(ConnectionState.CREATING_CHANNEL)
+            
+            this.log('第二阶段：核心通道（优先）开始')
+            
+            await this.createPeerConnection(capabilities)
+            
+            if (this.isController) {
+                await this.connectAsController()
+            } else {
+                await this.connectAsControlled()
+            }
+            
+            return { success: true }
+            
+        } catch (error) {
+            this.error('连接失败:', error)
+            this.stateMachine.transition(ConnectionState.ERROR, { error: error.message })
+            throw error
         }
+    }
+
+    async connectAsController() {
+        this.log('主控端连接流程开始')
+        
+        await this.createDataChannel()
+        
+        const offer = await this.peerConnection.createOffer()
+        await this.peerConnection.setLocalDescription(offer)
+        
+        this.sendSignalingMessage({
+            type: 'webrtc-offer',
+            offer: { type: offer.type, sdp: offer.sdp }
+        })
+        
+        this.log('已发送初始offer，等待answer...')
+        
+        await this.waitForDataChannelOpen()
+        this.stateMachine.transition(ConnectionState.RESOLUTION_NEGOTIATING)
+        
+        const displaySize = await this.negotiateResolution()
+        this.adjustVideoContainer(displaySize)
+        
+        this.stateMachine.transition(ConnectionState.WAITING_VIDEO)
+        
+        await this.waitForRemoteOffer()
+        
+        this.stateMachine.transition(ConnectionState.DISPLAYING_FIRST_FRAME)
+        this.log('首帧显示成功')
+        
+        this.stateMachine.transition(ConnectionState.LOADING_AUXILIARY)
+        this.loadAuxiliaryChannelsParallel()
+        
+        this.stateMachine.transition(ConnectionState.CONNECTED)
+        this.log('连接建立完成')
+    }
+
+    async connectAsControlled() {
+        this.log('被控端连接流程开始')
+        
+        await this.waitForRemoteOffer()
+        
+        this.stateMachine.transition(ConnectionState.RESOLUTION_NEGOTIATING)
+        
+        this.dataChannelManager.setOnMessage((data) => {
+            this.handleControlledDataChannelMessage(data)
+        })
+        
+        await this.waitForResolutionRequest()
+        
+        await this.startScreenCapture()
+        
+        const renegotiationOffer = await this.peerConnection.createOffer()
+        await this.peerConnection.setLocalDescription(renegotiationOffer)
+        
+        this.sendSignalingMessage({
+            type: 'webrtc-offer',
+            offer: { type: renegotiationOffer.type, sdp: renegotiationOffer.sdp }
+        })
+        
+        this.stateMachine.transition(ConnectionState.CONNECTED)
+        this.log('被控端连接建立完成')
+    }
+
+    waitForRemoteOffer() {
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error('等待远程offer超时'))
+            }, this.connectionTimeout)
+            
+            this.on('signaling-offer-received', () => {
+                clearTimeout(timeout)
+                resolve()
+            })
+        })
     }
 
     async handleSignalingOffer(data) {
         this.log('信令模式: 收到offer')
-        this.targetDeviceId = data.fromDeviceId
+        this.targetDeviceId = data.fromDeviceId || data.targetDeviceId
         
         try {
             await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer))
             await this.addPendingIceCandidates()
-            
-            if (!this.isController) {
-                await this.startScreenCapture()
-            }
             
             const answer = await this.peerConnection.createAnswer()
             await this.peerConnection.setLocalDescription(answer)
             
             this.sendSignalingMessage({
                 type: 'webrtc-answer',
-                answer: {
-                    type: answer.type,
-                    sdp: answer.sdp
-                },
-                targetDeviceId: data.fromDeviceId
+                answer: { type: answer.type, sdp: answer.sdp },
+                targetDeviceId: this.targetDeviceId
             })
             
             this.log('信令模式: answer已发送')
+            this.emit('signaling-offer-received')
+            
         } catch (error) {
             this.error('处理offer失败:', error)
         }
     }
 
-    handleConnectionRequest(data) {
-        this.log(`收到连接请求: from=${data.fromDeviceId}`)
-        this.emit('connection-request', data)
-    }
-
-    acceptConnection(targetDeviceId) {
-        this.targetDeviceId = targetDeviceId
-        this.sendSignalingMessage({
-            type: 'accept-connection',
-            targetDeviceId
-        })
-    }
-
-    rejectConnection(targetDeviceId, reason) {
-        this.sendSignalingMessage({
-            type: 'reject-connection',
-            targetDeviceId,
-            reason
-        })
-    }
-
-    requestConnection(targetDeviceId) {
-        this.targetDeviceId = targetDeviceId
-        this.isController = true
-        
-        return this.sendRequest('request-connection', {
-            targetDeviceId
-        })
-    }
-
-    onP2PEstablished() {
-        this.log('P2P连接已建立')
-        
-        this.emit('p2p-established')
-    }
-
-    handleDeviceDisconnected(data) {
-        this.log(`设备断开连接: ${data.deviceId}`)
-        
-        if (data.deviceId === this.targetDeviceId) {
-            this.emit('peer-disconnected', data)
+    handleControlledDataChannelMessage(data) {
+        if (data.type === 'resolution-request') {
+            this.handleResolutionRequest(data)
+        } else if (data.type === 'input') {
+            if (window.electronAPI) {
+                window.electronAPI.send('remote-input', data)
+            }
+        } else if (data.type === 'ping') {
+            this.dataChannelManager.send({ type: 'pong', timestamp: data.timestamp })
+        } else if (data.type === 'hide-cursor') {
+            if (data.hide) {
+                window.electronAPI.hideCursor()
+            } else {
+                window.electronAPI.showCursor()
+            }
         }
+    }
+
+    async waitForResolutionRequest() {
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error('等待分辨率请求超时'))
+            }, this.resolutionTimeout)
+            
+            this.on('resolution-request-received', () => {
+                clearTimeout(timeout)
+                resolve()
+            })
+        })
+    }
+
+    handleResolutionRequest(data) {
+        this.log(`收到分辨率请求: ${data.width}x${data.height}`)
+        
+        this.targetResolution = {
+            width: data.width,
+            height: data.height
+        }
+        
+        this.emit('resolution-request-received')
     }
 
     async startScreenCapture() {
         this.log('信令模式: 开始屏幕捕获')
         
         try {
+            const targetRes = this.targetResolution || { width: 1920, height: 1080 }
+            
             const sources = await window.electronAPI.getSources()
             
-            if (sources.length > 0) {
+            if (sources && sources.length > 0) {
                 const stream = await navigator.mediaDevices.getUserMedia({
                     audio: false,
                     video: {
                         mandatory: {
                             chromeMediaSource: 'desktop',
                             chromeMediaSourceId: sources[0].id,
-                            maxWidth: 1920,
-                            maxHeight: 1080,
+                            maxWidth: targetRes.width,
+                            maxHeight: targetRes.height,
                             maxFrameRate: 30
                         }
                     }
@@ -288,7 +257,15 @@ class SignalingConnectionManager extends BaseConnectionManager {
                     this.peerConnection.addTrack(track, stream)
                 })
                 
-                this.log('屏幕捕获成功')
+                this.log(`屏幕捕获成功，分辨率: ${targetRes.width}x${targetRes.height}`)
+                
+                if (this.dataChannelManager && this.dataChannelManager.isOpen()) {
+                    this.dataChannelManager.send({
+                        type: 'resolution-response',
+                        width: targetRes.width,
+                        height: targetRes.height
+                    })
+                }
             }
         } catch (error) {
             this.error('屏幕捕获失败:', error)
@@ -296,20 +273,7 @@ class SignalingConnectionManager extends BaseConnectionManager {
         }
     }
 
-    async connect(config) {
-        this.log('信令模式: 开始连接')
-        return super.connect(config)
-    }
-
     disconnect() {
-        if (this.websocket) {
-            this.websocket.close()
-            this.websocket = null
-        }
-        
-        this.pendingRequests.forEach(({ timer }) => clearTimeout(timer))
-        this.pendingRequests.clear()
-        
         return super.disconnect()
     }
 }
