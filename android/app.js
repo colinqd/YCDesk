@@ -833,6 +833,8 @@ let connectionLogDiv = null
 let currentRole = null
 let isConnected = false
 let pendingIceCandidates = []
+let isWaitingRenegotiation = false
+let isDirectControllerMode = false
 
 const CONNECTION_STATUS = {
   DISCONNECTED: 'disconnected',
@@ -1520,7 +1522,11 @@ async function handleDirectMessage(message) {
   try {
     switch (message.type) {
       case 'offer':
-        await handleDirectOffer(message.offer)
+        if (isWaitingRenegotiation && directPeerConnection) {
+          await handleRenegotiationOffer(message.offer)
+        } else {
+          await handleDirectOffer(message.offer)
+        }
         break
       case 'answer':
         await handleDirectAnswer(message.answer)
@@ -1538,6 +1544,15 @@ async function handleDirectMessage(message) {
 
 async function startDirectControllerConnection() {
   log('作为主控端建立直连WebRTC连接')
+  
+  isDirectControllerMode = true
+  isWaitingRenegotiation = false
+  
+  // 提前初始化matrixTransformer，确保在收到视频流时可用
+  if (!matrixTransformer) {
+    matrixTransformer = new MatrixTransformer()
+    log('提前初始化matrixTransformer完成')
+  }
   
   directPeerConnection = new RTCPeerConnection({ iceServers: [] })
   
@@ -1562,7 +1577,27 @@ async function startDirectControllerConnection() {
       log('流ID: ' + stream.id + ', tracks数量: ' + stream.getTracks().length)
       const remoteVideo = document.getElementById('remoteVideo')
       remoteVideo.srcObject = stream
-      remoteVideo.play().catch(e => log('播放视频失败: ' + e.message))
+      
+      remoteVideo.muted = true
+      remoteVideo.playsInline = true
+      
+      remoteVideo.play().then(() => {
+        log('视频自动播放成功')
+      }).catch(e => {
+        log('视频自动播放失败（需要用户交互）: ' + e.message)
+        const tryPlayOnInteraction = () => {
+          remoteVideo.play().then(() => {
+            log('用户交互后视频播放成功')
+          }).catch(playErr => {
+            log('用户交互后视频播放仍失败: ' + playErr.message)
+          })
+          document.removeEventListener('touchstart', tryPlayOnInteraction)
+          document.removeEventListener('click', tryPlayOnInteraction)
+        }
+        document.addEventListener('touchstart', tryPlayOnInteraction, { once: true })
+        document.addEventListener('click', tryPlayOnInteraction, { once: true })
+      })
+      
       log('视频流已设置到video元素')
       
       remoteVideo.onloadedmetadata = () => {
@@ -1578,6 +1613,13 @@ async function startDirectControllerConnection() {
           }
         }
       }
+      
+      remoteVideo.oncanplay = () => {
+        log('视频可以播放')
+        remoteVideo.play().catch(e => {
+          log('视频oncanplay时播放失败: ' + e.message)
+        })
+      }
     }
   }
   
@@ -1585,9 +1627,11 @@ async function startDirectControllerConnection() {
     log('WebRTC连接状态: ' + directPeerConnection.connectionState)
     if (directPeerConnection.connectionState === 'connected') {
       isConnected = true
-      showToast('连接成功')
+      log('WebRTC连接已建立，等待数据通道打开...')
     } else if (directPeerConnection.connectionState === 'failed') {
       isConnected = false
+      isDirectControllerMode = false
+      isWaitingRenegotiation = false
       showToast('连接失败')
     }
   }
@@ -1597,10 +1641,6 @@ async function startDirectControllerConnection() {
     dataChannel = event.channel
     setupDataChannel()
   }
-  
-  directPeerConnection.addTransceiver('video', { direction: 'recvonly' })
-  directPeerConnection.addTransceiver('audio', { direction: 'recvonly' })
-  log('已添加视频和音频接收器')
   
   log('创建数据通道')
   dataChannel = directPeerConnection.createDataChannel('control')
@@ -1704,6 +1744,41 @@ async function handleDirectIceCandidate(candidate) {
     log('ICE候选添加成功')
   } catch (error) {
     log('添加ICE候选失败: ' + error.message)
+  }
+}
+
+async function handleRenegotiationOffer(offer) {
+  if (!offer || !directPeerConnection) {
+    log('renegotiation offer无效')
+    return
+  }
+  
+  log('收到renegotiation offer（含视频），开始处理...')
+  isWaitingRenegotiation = false
+  
+  try {
+    await directPeerConnection.setRemoteDescription(new RTCSessionDescription(offer))
+    log('renegotiation远程描述设置成功')
+    
+    const answer = await directPeerConnection.createAnswer()
+    await directPeerConnection.setLocalDescription(answer)
+    log('renegotiation answer创建成功')
+    
+    sendDirectMessage(currentDirectClientId, {
+      type: 'answer',
+      answer: {
+        type: answer.type,
+        sdp: answer.sdp
+      }
+    })
+    
+    log('renegotiation answer已发送，等待视频流...')
+    showToast('正在加载远程屏幕...')
+    
+    showRemoteScreen()
+  } catch (error) {
+    log('处理renegotiation offer失败: ' + error.message)
+    console.error('renegotiation详细错误:', error)
   }
 }
 
@@ -1820,6 +1895,12 @@ async function startControlledConnection() {
 }
 
 async function createPeerConnection() {
+  // 提前初始化matrixTransformer，确保在收到视频流时可用
+  if (!matrixTransformer) {
+    matrixTransformer = new MatrixTransformer()
+    log('提前初始化matrixTransformer完成')
+  }
+  
   peerConnection = new RTCPeerConnection(getIceConfig())
 
   peerConnection.onicecandidate = (event) => {
@@ -1839,7 +1920,30 @@ async function createPeerConnection() {
       log('流ID: ' + stream.id + ', tracks数量: ' + stream.getTracks().length)
       const remoteVideo = document.getElementById('remoteVideo')
       remoteVideo.srcObject = stream
-      remoteVideo.play().catch(e => log('播放视频失败: ' + e.message))
+      
+      // 确保视频静音以符合自动播放策略
+      remoteVideo.muted = true
+      remoteVideo.playsInline = true
+      
+      // 尝试播放视频，失败时记录并继续
+      remoteVideo.play().then(() => {
+        log('视频自动播放成功')
+      }).catch(e => {
+        log('视频自动播放失败（需要用户交互）: ' + e.message)
+        // 添加用户交互后尝试播放
+        const tryPlayOnInteraction = () => {
+          remoteVideo.play().then(() => {
+            log('用户交互后视频播放成功')
+          }).catch(playErr => {
+            log('用户交互后视频播放仍失败: ' + playErr.message)
+          })
+          document.removeEventListener('touchstart', tryPlayOnInteraction)
+          document.removeEventListener('click', tryPlayOnInteraction)
+        }
+        document.addEventListener('touchstart', tryPlayOnInteraction, { once: true })
+        document.addEventListener('click', tryPlayOnInteraction, { once: true })
+      })
+      
       log('视频流已设置到video元素')
       
       remoteVideo.onloadedmetadata = () => {
@@ -1854,6 +1958,14 @@ async function createPeerConnection() {
             log('视频加载后更新 container: ' + matrixTransformer.displayWidth + 'x' + matrixTransformer.displayHeight)
           }
         }
+      }
+      
+      // 当视频准备好时，再次尝试播放
+      remoteVideo.oncanplay = () => {
+        log('视频可以播放')
+        remoteVideo.play().catch(e => {
+          log('视频oncanplay时播放失败: ' + e.message)
+        })
       }
     }
   }
@@ -1890,19 +2002,88 @@ async function createPeerConnection() {
 function setupDataChannel() {
   dataChannel.onopen = () => {
     log('数据通道已打开')
-    showToast('连接成功！正在加载远程屏幕...')
     
-    setTimeout(() => {
-      showRemoteScreen()
-    }, 500)
+    if (isDirectControllerMode) {
+      showToast('正在协商分辨率...')
+      
+      const dpr = window.devicePixelRatio || 1
+      
+      const remoteScreen = document.getElementById('remoteScreen')
+      let localCssWidth = window.innerWidth
+      let localCssHeight = window.innerHeight
+      if (remoteScreen && remoteScreen.clientWidth > 0) {
+        localCssWidth = remoteScreen.clientWidth
+        localCssHeight = remoteScreen.clientHeight
+      }
+      
+      const localPhysicalWidth = Math.round(localCssWidth * dpr)
+      const localPhysicalHeight = Math.round(localCssHeight * dpr)
+      
+      log('本地窗口: CSS=' + localCssWidth + 'x' + localCssHeight + ', 物理=' + localPhysicalWidth + 'x' + localPhysicalHeight + ', DPR=' + dpr)
+      
+      const sendResolutionRequest = () => {
+        if (!dataChannel || dataChannel.readyState !== 'open') {
+          log('数据通道已关闭，无法发送分辨率请求')
+          return
+        }
+        
+        try {
+          dataChannel.send(JSON.stringify({
+            type: 'resolution-request',
+            width: localPhysicalWidth,
+            height: localPhysicalHeight,
+            devicePixelRatio: 1
+          }))
+          log('分辨率请求已发送: ' + localPhysicalWidth + 'x' + localPhysicalHeight)
+        } catch (e) {
+          log('发送分辨率请求失败: ' + e.message)
+        }
+      }
+      
+      isWaitingRenegotiation = true
+      
+      setTimeout(() => {
+        log('主控端：发送分辨率请求...')
+        sendResolutionRequest()
+        
+        let retryCount = 0
+        const retryInterval = setInterval(() => {
+          if (!isWaitingRenegotiation) {
+            clearInterval(retryInterval)
+            return
+          }
+          retryCount++
+          if (retryCount > 5) {
+            clearInterval(retryInterval)
+            log('分辨率请求重试次数已用完')
+            return
+          }
+          log('重发分辨率请求 (' + retryCount + '/5)')
+          sendResolutionRequest()
+        }, 3000)
+      }, 1000)
+    } else {
+      showToast('连接成功！正在加载远程屏幕...')
+      setTimeout(() => {
+        showRemoteScreen()
+      }, 500)
+    }
   }
 
   dataChannel.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data)
-      log('收到数据通道消息: ' + JSON.stringify(data).substring(0, 100))
+      log('收到数据通道消息: ' + JSON.stringify(data).substring(0, 200))
       
-      if (data.type === 'screen-size') {
+      if (data.type === 'resolution-response') {
+        log('收到分辨率响应: ' + data.width + 'x' + data.height)
+        if (matrixTransformer) {
+          matrixTransformer.setRemoteScreenSize(data.width, data.height)
+          if (data.originalWidth && data.originalHeight) {
+            log('原始屏幕尺寸: ' + data.originalWidth + 'x' + data.originalHeight)
+          }
+        }
+      } else if (data.type === 'screen-size') {
         log('收到屏幕尺寸: ' + data.width + 'x' + data.height + ', scaleFactor=' + data.scaleFactor)
         updateScreenSize(data.width, data.height, data.scaleFactor, data.workArea)
       } else if (data.type === 'input') {
@@ -1917,6 +2098,8 @@ function setupDataChannel() {
 
   dataChannel.onclose = () => {
     log('数据通道已关闭')
+    isWaitingRenegotiation = false
+    isDirectControllerMode = false
     hideRemoteScreen()
   }
 
@@ -2491,155 +2674,164 @@ function setupRemoteScreenInteraction() {
         return;
     }
     
-    const screenRect = remoteScreen.getBoundingClientRect();
-    log('屏幕尺寸: ' + screenRect.width + 'x' + screenRect.height);
-    
-    matrixTransformer = new MatrixTransformer();
-    matrixTransformer.setScreenSize(screenRect.width, screenRect.height);
-    
-    videoContainer.style.width = screenRect.width + 'px';
-    videoContainer.style.height = screenRect.height + 'px';
-    videoContainer.style.left = '0px';
-    videoContainer.style.top = '0px';
-    
-    if (videoWrapper) {
-        videoWrapper.style.width = '100%';
-        videoWrapper.style.height = '100%';
-        videoWrapper.style.left = '0px';
-        videoWrapper.style.top = '0px';
+    // 确保matrixTransformer已初始化
+    if (!matrixTransformer) {
+        matrixTransformer = new MatrixTransformer();
     }
     
-    log('初始化 videoContainer 填满屏幕: ' + screenRect.width + 'x' + screenRect.height);
+    // 使用requestAnimationFrame确保DOM完全渲染后再获取尺寸
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            const screenRect = remoteScreen.getBoundingClientRect();
+            log('屏幕尺寸: ' + screenRect.width + 'x' + screenRect.height);
+            
+            matrixTransformer.setScreenSize(screenRect.width, screenRect.height);
     
-    inputDispatcher = new InputDispatcher(matrixTransformer);
-    
-    gestureHandler = new GestureHandler(
-        matrixTransformer,
-        inputDispatcher,
-        null
-    );
-    
-    const isTouchOnUI = (x, y) => {
-        const controlOverlay = document.getElementById('controlOverlay');
-        const controlToggle = document.getElementById('controlToggle');
-        const statsOverlay = document.getElementById('statsOverlay');
-        const keyboardOverlay = document.getElementById('keyboardOverlay');
-        
-        const uiElements = [controlOverlay, controlToggle, statsOverlay, keyboardOverlay];
-        
-        for (const element of uiElements) {
-            if (element && element.style.display !== 'none') {
-                const rect = element.getBoundingClientRect();
-                if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
-                    log('触摸在 UI 元素上: ' + element.id);
-                    return true;
-                }
+            videoContainer.style.width = screenRect.width + 'px';
+            videoContainer.style.height = screenRect.height + 'px';
+            videoContainer.style.left = '0px';
+            videoContainer.style.top = '0px';
+            
+            if (videoWrapper) {
+                videoWrapper.style.width = '100%';
+                videoWrapper.style.height = '100%';
+                videoWrapper.style.left = '0px';
+                videoWrapper.style.top = '0px';
             }
-        }
-        
-        return false;
-    };
-    
-    window.isTouchOnUI = isTouchOnUI;
-    
-    let isMiddleButtonDown = false;
-    
-    remoteScreen.addEventListener('mousedown', (e) => {
-        if (e.button === 1) {
-            isMiddleButtonDown = true;
-            e.preventDefault();
-        }
-    });
-    
-    remoteScreen.addEventListener('mouseup', (e) => {
-        if (e.button === 1) {
-            isMiddleButtonDown = false;
-            e.preventDefault();
-        }
-    });
-    
-    remoteScreen.addEventListener('touchstart', (e) => {
-        const touch = e.touches[0];
-        if (isTouchOnUI(touch.clientX, touch.clientY)) {
-            return;
-        }
-        e.preventDefault();
-        gestureHandler.handleTouchStart(e);
-    }, { passive: false });
-    
-    remoteScreen.addEventListener('touchmove', (e) => {
-        const touch = e.touches[0];
-        if (isTouchOnUI(touch.clientX, touch.clientY)) {
-            return;
-        }
-        e.preventDefault();
-        gestureHandler.handleTouchMove(e);
-    }, { passive: false });
-    
-    remoteScreen.addEventListener('touchend', (e) => {
-        const touch = e.changedTouches[0];
-        if (isTouchOnUI(touch.clientX, touch.clientY)) {
-            return;
-        }
-        gestureHandler.handleTouchEnd(e);
-    }, { passive: false });
-    
-    remoteScreen.addEventListener('touchcancel', (e) => {
-        gestureHandler.handleTouchEnd(e);
-    }, { passive: false });
-    
-    remoteScreen.addEventListener('wheel', (e) => {
-        if (isTouchOnUI(e.clientX, e.clientY)) {
-            return;
-        }
-        
-        e.preventDefault();
-        
-        const deltaX = e.deltaX || 0;
-        const deltaY = e.deltaY || 0;
-        
-        if (e.ctrlKey || isMiddleButtonDown) {
-            const scaleDelta = deltaY > 0 ? 0.9 : 1.1;
-            const newScale = matrixTransformer.scale * scaleDelta;
-            matrixTransformer.updateScale(newScale, e.clientX, e.clientY);
-            const videoContainer = document.getElementById('videoContainer');
-            if (videoContainer) {
-                matrixTransformer.applyTransform(videoContainer);
-            }
-            log('缩放: scale=' + newScale.toFixed(2) + ', center=(' + e.clientX + ', ' + e.clientY + ')');
-        } else {
-            inputDispatcher.dispatchTouchInput(
-                e.clientX,
-                e.clientY,
-                'wheel',
-                0,
-                deltaY
+            
+            log('初始化 videoContainer 填满屏幕: ' + screenRect.width + 'x' + screenRect.height);
+            
+            inputDispatcher = new InputDispatcher(matrixTransformer);
+            
+            gestureHandler = new GestureHandler(
+                matrixTransformer,
+                inputDispatcher,
+                null
             );
-        }
-    }, { passive: false });
-    
-    remoteScreen.addEventListener('contextmenu', (e) => {
-        if (isTouchOnUI(e.clientX, e.clientY)) {
-            return;
-        }
-        e.preventDefault();
-        return false;
+            
+            const isTouchOnUI = (x, y) => {
+                const controlOverlay = document.getElementById('controlOverlay');
+                const controlToggle = document.getElementById('controlToggle');
+                const statsOverlay = document.getElementById('statsOverlay');
+                const keyboardOverlay = document.getElementById('keyboardOverlay');
+                
+                const uiElements = [controlOverlay, controlToggle, statsOverlay, keyboardOverlay];
+                
+                for (const element of uiElements) {
+                    if (element && element.style.display !== 'none') {
+                        const rect = element.getBoundingClientRect();
+                        if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+                            log('触摸在 UI 元素上: ' + element.id);
+                            return true;
+                        }
+                    }
+                }
+                
+                return false;
+            };
+            
+            window.isTouchOnUI = isTouchOnUI;
+            
+            let isMiddleButtonDown = false;
+            
+            remoteScreen.addEventListener('mousedown', (e) => {
+                if (e.button === 1) {
+                    isMiddleButtonDown = true;
+                    e.preventDefault();
+                }
+            });
+            
+            remoteScreen.addEventListener('mouseup', (e) => {
+                if (e.button === 1) {
+                    isMiddleButtonDown = false;
+                    e.preventDefault();
+                }
+            });
+            
+            remoteScreen.addEventListener('touchstart', (e) => {
+                const touch = e.touches[0];
+                if (isTouchOnUI(touch.clientX, touch.clientY)) {
+                    return;
+                }
+                e.preventDefault();
+                gestureHandler.handleTouchStart(e);
+            }, { passive: false });
+            
+            remoteScreen.addEventListener('touchmove', (e) => {
+                const touch = e.touches[0];
+                if (isTouchOnUI(touch.clientX, touch.clientY)) {
+                    return;
+                }
+                e.preventDefault();
+                gestureHandler.handleTouchMove(e);
+            }, { passive: false });
+            
+            remoteScreen.addEventListener('touchend', (e) => {
+                const touch = e.changedTouches[0];
+                if (isTouchOnUI(touch.clientX, touch.clientY)) {
+                    return;
+                }
+                gestureHandler.handleTouchEnd(e);
+            }, { passive: false });
+            
+            remoteScreen.addEventListener('touchcancel', (e) => {
+                gestureHandler.handleTouchEnd(e);
+            }, { passive: false });
+            
+            remoteScreen.addEventListener('wheel', (e) => {
+                if (isTouchOnUI(e.clientX, e.clientY)) {
+                    return;
+                }
+                
+                e.preventDefault();
+                
+                const deltaX = e.deltaX || 0;
+                const deltaY = e.deltaY || 0;
+                
+                if (e.ctrlKey || isMiddleButtonDown) {
+                    const scaleDelta = deltaY > 0 ? 0.9 : 1.1;
+                    const newScale = matrixTransformer.scale * scaleDelta;
+                    matrixTransformer.updateScale(newScale, e.clientX, e.clientY);
+                    const videoContainer = document.getElementById('videoContainer');
+                    if (videoContainer) {
+                        matrixTransformer.applyTransform(videoContainer);
+                    }
+                    log('缩放: scale=' + newScale.toFixed(2) + ', center=(' + e.clientX + ', ' + e.clientY + ')');
+                } else {
+                    inputDispatcher.dispatchTouchInput(
+                        e.clientX,
+                        e.clientY,
+                        'wheel',
+                        0,
+                        deltaY
+                    );
+                }
+            }, { passive: false });
+            
+            remoteScreen.addEventListener('contextmenu', (e) => {
+                if (isTouchOnUI(e.clientX, e.clientY)) {
+                    return;
+                }
+                e.preventDefault();
+                return false;
+            });
+            
+            remoteScreen.addEventListener('selectstart', (e) => {
+                if (isTouchOnUI(e.clientX, e.clientY)) {
+                    return;
+                }
+                e.preventDefault();
+                return false;
+            });
+            
+            const remoteVideo = document.getElementById('remoteVideo');
+            if (remoteVideo) {
+                log('remoteVideo 元素已找到');
+            }
+            
+            log('远程屏幕交互已初始化 - 事件绑定在 remoteScreen 层，已添加 UI 检测');
+        });
     });
-    
-    remoteScreen.addEventListener('selectstart', (e) => {
-        if (isTouchOnUI(e.clientX, e.clientY)) {
-            return;
-        }
-        e.preventDefault();
-        return false;
-    });
-    
-    const remoteVideo = document.getElementById('remoteVideo');
-    if (remoteVideo) {
-        log('remoteVideo 元素已找到');
-    }
-    
-    log('远程屏幕交互已初始化 - 事件绑定在 remoteScreen 层，已添加 UI 检测');
 }
 
 function updateScreenSize(width, height, scaleFactor, workArea) {
@@ -2832,6 +3024,8 @@ function hideRemoteScreen() {
   document.getElementById('remoteScreen').classList.remove('active')
   const remoteVideo = document.getElementById('remoteVideo')
   remoteVideo.srcObject = null
+  isDirectControllerMode = false
+  isWaitingRenegotiation = false
   stopStatsMonitoring()
 }
 

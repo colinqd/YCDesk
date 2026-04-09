@@ -35,7 +35,11 @@ class DataChannelManager {
 
     this.dataChannel = channel
     this.addEventListeners()
-    this.flushQueue()
+    
+    // 如果新通道已经是 open 状态，直接刷新队列
+    if (channel.readyState === 'open') {
+      this.flushQueue()
+    }
   }
 
   addEventListeners() {
@@ -118,14 +122,12 @@ class DataChannelManager {
       id: requireAck ? ++this.messageIdCounter : undefined,
       timestamp: Date.now()
     }
-
+    
     if (!this.isOpen()) {
-      this.logger.log('[DataChannel] 通道未打开，加入队列，type=' + data.type)
       this.enqueue(message, requireAck)
       return false
     }
 
-    this.logger.log('[DataChannel] 发送消息，type=' + data.type)
     return this.sendRaw(message, requireAck)
   }
 
@@ -134,7 +136,6 @@ class DataChannelManager {
       const json = JSON.stringify(message)
       
       if (this.dataChannel.bufferedAmount > 1024 * 1024) {
-        this.logger.warn('[DataChannel] 缓冲区过大，加入队列')
         this.enqueue(message, requireAck)
         return false
       }
@@ -147,7 +148,6 @@ class DataChannelManager {
       
       return true
     } catch (e) {
-      this.logger.error('[DataChannel] 发送失败:', e)
       this.enqueue(message, requireAck)
       return false
     }
@@ -182,8 +182,6 @@ class DataChannelManager {
       return
     }
 
-    this.logger.log('[DataChannel] 重发消息:', message.id, '重试次数:', retryCount + 1)
-    
     this.pendingMessages.delete(message.id)
     this.sendRaw(message, true)
   }
@@ -200,8 +198,6 @@ class DataChannelManager {
     if (!this.isOpen() || this.messageQueue.length === 0) {
       return
     }
-
-    this.logger.log('[DataChannel] 刷新队列，剩余:', this.messageQueue.length)
     
     while (this.messageQueue.length > 0 && this.isOpen()) {
       const { message, requireAck } = this.messageQueue[0]

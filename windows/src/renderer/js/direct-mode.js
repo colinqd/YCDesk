@@ -11,6 +11,8 @@ class DirectModeManager {
     this.uiManager = options.uiManager
     this.config = options.config || {}
     this.onMessage = options.onMessage || null
+    this.auxiliaryChannels = new Map()
+    this.currentStream = null
   }
 
   setDeviceId(deviceId) {
@@ -196,6 +198,8 @@ class DirectModeManager {
         } else {
           window.electronAPI.showCursor()
         }
+      } else if (data.type === 'resolution-change') {
+        this.handleResolutionChange(data)
       }
     })
 
@@ -242,8 +246,15 @@ class DirectModeManager {
     }
 
     this.directPeerConnection.ondatachannel = (event) => {
-      this.logFn('收到数据通道')
-      this.dataChannelManager.setDataChannel(event.channel)
+      const channel = event.channel
+      this.logFn('收到数据通道: ' + channel.label)
+      
+      if (channel.label === 'control') {
+        this.dataChannelManager.setDataChannel(channel)
+      } else if (channel.label.startsWith('aux-')) {
+        const channelType = channel.label.replace('aux-', '')
+        this.setupAuxiliaryChannel(channelType, channel)
+      }
     }
   }
 
@@ -430,14 +441,15 @@ class DirectModeManager {
 
   async startScreenCapture(targetWidth, targetHeight) {
     try {
+      this.stopScreenCapture()
+      
       const sources = await window.electronAPI.getSources()
-      this.logFn('可用屏幕源: ' + sources.length + ' 个')
 
       if (sources.length > 0) {
         const maxWidth = targetWidth || this.config.screenCapture?.maxWidth || 1920
         const maxHeight = targetHeight || this.config.screenCapture?.maxHeight || 1080
         
-        const stream = await navigator.mediaDevices.getUserMedia({
+        this.currentStream = await navigator.mediaDevices.getUserMedia({
           audio: false,
           video: {
             mandatory: {
@@ -450,12 +462,10 @@ class DirectModeManager {
           }
         })
 
-        const tracks = stream.getVideoTracks()
-        this.logFn('获取到 ' + tracks.length + ' 个媒体轨道')
+        const tracks = this.currentStream.getVideoTracks()
 
         tracks.forEach(track => {
-          this.directPeerConnection.addTrack(track, stream)
-          this.logFn('已添加媒体轨道: ' + track.kind + ', label: ' + track.label)
+          this.directPeerConnection.addTrack(track, this.currentStream)
         })
 
         const settings = tracks[0].getSettings()
@@ -472,34 +482,124 @@ class DirectModeManager {
       }
     } catch (error) {
       this.logFn('屏幕捕获失败: ' + error.message)
-      console.error('屏幕捕获详细错误:', error)
       return { width: 1920, height: 1080 }
     }
   }
 
+  async handleResolutionChange(data) {
+    this.logFn('收到分辨率变更请求: ' + data.width + 'x' + data.height)
+    
+    try {
+      this.stopScreenCapture()
+      
+      const actualResolution = await this.startScreenCapture(data.width, data.height)
+      
+      const renegotiateOffer = await this.directPeerConnection.createOffer()
+      await this.directPeerConnection.setLocalDescription(renegotiateOffer)
+      
+      this.sendMessage({
+        type: 'offer',
+        offer: { type: renegotiateOffer.type, sdp: renegotiateOffer.sdp }
+      })
+      
+      this.dataChannelManager.send({
+        type: 'resolution-response',
+        width: actualResolution.width,
+        height: actualResolution.height
+      })
+      
+      this.logFn('分辨率变更完成: ' + actualResolution.width + 'x' + actualResolution.height)
+    } catch (error) {
+      this.logFn('分辨率变更失败: ' + error.message)
+    }
+  }
+
+  stopScreenCapture() {
+    if (this.currentStream) {
+      this.currentStream.getTracks().forEach(track => {
+        track.stop()
+      })
+      this.currentStream = null
+    }
+    
+    if (this.directPeerConnection) {
+      const senders = this.directPeerConnection.getSenders()
+      senders.forEach(sender => {
+        if (sender.track) {
+          try { this.directPeerConnection.removeTrack(sender) } catch (e) {}
+        }
+      })
+    }
+  }
+
+  setupAuxiliaryChannel(channelType, channel) {
+    this.logFn('设置辅助通道: ' + channelType)
+    this.auxiliaryChannels.set(channelType, channel)
+    
+    channel.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        this.handleAuxiliaryMessage(channelType, data)
+      } catch (e) {
+        this.logFn('辅助通道消息解析错误: ' + e.message)
+      }
+    }
+    
+    channel.onclose = () => {
+      this.logFn('辅助通道关闭: ' + channelType)
+      this.auxiliaryChannels.delete(channelType)
+    }
+  }
+  
+  handleAuxiliaryMessage(channelType, data) {
+    if (channelType === 'clipboard') {
+      if (data.action === 'sync' && data.content) {
+        navigator.clipboard.writeText(data.content).then(() => {
+          this.logFn('剪贴板内容已同步到本地')
+        }).catch(err => {
+          this.logFn('剪贴板同步失败: ' + err.message)
+        })
+      } else if (data.action === 'request') {
+        navigator.clipboard.readText().then(content => {
+          const channel = this.auxiliaryChannels.get('clipboard')
+          if (channel && channel.readyState === 'open') {
+            channel.send(JSON.stringify({
+              action: 'sync',
+              content: content || '',
+              timestamp: Date.now()
+            }))
+          }
+        }).catch(err => {
+          this.logFn('读取剪贴板失败: ' + err.message)
+        })
+      }
+    }
+  }
+  
   reset() {
     this.currentDirectClientId = null
     this.isDirectController = false
     this.pendingIceCandidates = []
+    
+    this.stopScreenCapture()
+    
+    this.auxiliaryChannels.forEach((channel) => {
+      try { channel.close() } catch (e) {}
+    })
+    this.auxiliaryChannels.clear()
 
     if (this.dataChannelManager) {
       try {
         this.dataChannelManager.close()
-      } catch (e) {
-        this.logFn('关闭数据通道管理器时出错:', e)
-      }
+      } catch (e) {}
       this.dataChannelManager = null
     }
 
     if (this.directPeerConnection) {
       try {
         this.directPeerConnection.close()
-      } catch (e) {
-        this.logFn('关闭直连 PeerConnection 时出错:', e)
-      }
+      } catch (e) {}
       this.directPeerConnection = null
     }
-    
-    this.logFn('直连模式管理器已重置')
   }
 }

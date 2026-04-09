@@ -5,8 +5,7 @@ let robot = null
 let logger = null
 let initialized = false
 let cursorHidden = false
-let hiddenCursorX = 0
-let hiddenCursorY = 0
+let cursorHideCount = 0
 
 function initLogger(logInstance) {
   logger = logInstance
@@ -139,13 +138,11 @@ function handleRemoteInput(event, inputData) {
   try {
     const validation = validateInputCommand(inputData)
     if (!validation.valid) {
-      log('error', '输入验证失败:', validation.errors)
       return
     }
     
     const input = parseInputCommand(inputData)
     if (!input) {
-      log('error', '输入解析失败')
       return
     }
     
@@ -488,39 +485,52 @@ function resetAllInputState() {
 function hideCursor() {
   if (cursorHidden) return
   try {
+    const { execSync } = require('child_process')
+    const path = require('path')
+    const os = require('os')
+    const scriptPath = path.join(os.tmpdir(), 'ycdesk_hide_cursor.ps1')
+    const fs = require('fs')
+    fs.writeFileSync(scriptPath, `
+Add-Type @'
+[DllImport("user32.dll")] public static extern int ShowCursor(bool bShow);
+'@ -Name Win32 -Namespace API
+[API.Win32]::ShowCursor($false)
+`)
+    execSync('powershell -ExecutionPolicy Bypass -File "' + scriptPath + '"', { windowsHide: true, timeout: 5000 })
+    cursorHideCount++
+    cursorHidden = true
+  } catch (e) {
     if (robot) {
       const primaryDisplay = screen.getPrimaryDisplay()
-      const screenWidth = primaryDisplay.size.width
-      const screenHeight = primaryDisplay.size.height
-      
-      const pos = robot.getMousePos()
-      hiddenCursorX = pos.x
-      hiddenCursorY = pos.y
-      currentMouseX = pos.x
-      currentMouseY = pos.y
-      
-      robot.moveMouse(screenWidth - 1, screenHeight - 1)
-      
+      robot.moveMouse(primaryDisplay.size.width - 1, primaryDisplay.size.height - 1)
+      cursorHideCount++
       cursorHidden = true
-      log('info', '隐藏远程光标（移动到右下角）')
     }
-  } catch (e) {
-    log('error', '隐藏光标失败:', e.message)
   }
 }
 
 function showCursor() {
   if (!cursorHidden) return
   try {
-    if (robot) {
-      robot.moveMouse(hiddenCursorX, hiddenCursorY)
-      currentMouseX = hiddenCursorX
-      currentMouseY = hiddenCursorY
-      log('info', '显示远程光标')
+    const { execSync } = require('child_process')
+    const path = require('path')
+    const os = require('os')
+    const scriptPath = path.join(os.tmpdir(), 'ycdesk_show_cursor.ps1')
+    const fs = require('fs')
+    fs.writeFileSync(scriptPath, `
+Add-Type @'
+[DllImport("user32.dll")] public static extern int ShowCursor(bool bShow);
+'@ -Name Win32 -Namespace API
+[API.Win32]::ShowCursor($true)
+`)
+    for (let i = 0; i < cursorHideCount; i++) {
+      execSync('powershell -ExecutionPolicy Bypass -File "' + scriptPath + '"', { windowsHide: true, timeout: 5000 })
     }
+    cursorHideCount = 0
     cursorHidden = false
   } catch (e) {
-    log('error', '显示光标失败:', e.message)
+    cursorHideCount = 0
+    cursorHidden = false
   }
 }
 

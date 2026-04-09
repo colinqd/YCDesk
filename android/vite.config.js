@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite'
+import path from 'path'
 
 export default defineConfig({
   server: {
@@ -8,5 +9,10 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true
+  },
+  resolve: {
+    alias: {
+      '@shared': path.resolve(__dirname, './shared')
+    }
   }
 })

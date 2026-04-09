@@ -361,13 +361,10 @@ class BaseConnectionManager {
             this.videoElement.srcObject = stream
             this.videoElement.muted = true
             this.videoElement.playsInline = true
+            this.videoElement.autoplay = true
             
-            if (this.videoElement.readyState >= 1) {
+            this.videoElement.onloadedmetadata = () => {
                 this.onVideoMetadataLoaded()
-            } else {
-                this.videoElement.onloadedmetadata = () => {
-                    this.onVideoMetadataLoaded()
-                }
             }
         }
     }
@@ -376,9 +373,8 @@ class BaseConnectionManager {
         if (this.videoElement) {
             this.log(`视频元数据加载完成: ${this.videoElement.videoWidth}x${this.videoElement.videoHeight}`)
             
-            if (this.matrixTransformer) {
-                this.matrixTransformer.setRemoteScreenSize(this.videoElement.videoWidth, this.videoElement.videoHeight)
-            }
+            this.videoElement.style.width = this.videoElement.videoWidth + 'px'
+            this.videoElement.style.height = this.videoElement.videoHeight + 'px'
             
             this.emit('video-metadata', {
                 width: this.videoElement.videoWidth,
@@ -395,22 +391,20 @@ class BaseConnectionManager {
                 reject(new Error('等待首帧超时'))
             }, this.firstFrameTimeout)
             
-            if (this.videoElement && this.videoElement.srcObject) {
-                if (this.videoElement.readyState >= 2) {
-                    clearTimeout(timeout)
-                    resolve()
-                    return
-                }
-                
-                this.videoElement.onloadeddata = () => {
-                    clearTimeout(timeout)
-                    resolve()
-                }
-                
-                this.videoElement.play().catch(reject)
-            } else {
+            const handler = () => {
                 clearTimeout(timeout)
-                reject(new Error('视频元素未就绪'))
+                this.off('video-ready', handler)
+                resolve()
+            }
+            
+            this.on('video-ready', handler)
+            
+            if (this.videoElement && this.videoElement.srcObject) {
+                this.videoElement.play()
+                    .then(() => {
+                        this.emit('video-ready')
+                    })
+                    .catch(reject)
             }
         })
     }
@@ -528,11 +522,17 @@ class BaseConnectionManager {
     }
 
     sendInput(eventData) {
+        this.log('sendInput 被调用: ' + JSON.stringify(eventData))
         if (this.dataChannelManager && this.dataChannelManager.isOpen()) {
-            this.dataChannelManager.send({
+            this.log('数据通道已打开，发送输入')
+            const message = {
                 type: 'input',
                 ...eventData
-            }, false)
+            }
+            this.log('发送消息: ' + JSON.stringify(message))
+            this.dataChannelManager.send(message, false)
+        } else {
+            this.log('数据通道未打开，无法发送输入')
         }
     }
 

@@ -228,10 +228,42 @@
       color: #0f0;
       font-family: monospace;
       font-size: 11px;
-      padding: 10px;
       overflow-y: auto;
       border-radius: 5px;
       z-index: 9999;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    #debugLogContent {
+      flex: 1;
+      padding: 10px;
+      overflow-y: auto;
+      user-select: text;
+    }
+    
+    #debugLogToolbar {
+      display: flex;
+      gap: 5px;
+      padding: 8px 10px;
+      border-top: 1px solid #333;
+      background: rgba(0,0,0,0.5);
+    }
+    
+    .log-btn {
+      background: #333;
+      border: 1px solid #555;
+      color: #ccc;
+      padding: 4px 10px;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 11px;
+      transition: all 0.2s;
+    }
+    
+    .log-btn:hover {
+      background: #444;
+      border-color: #666;
     }
   </style>
 </head>
@@ -245,6 +277,14 @@
       </div>
     </div>
     <div class="toolbar-right">
+      <select id="resolutionSelect" style="background: #333; color: #ccc; border: 1px solid #555; border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer;">
+        <option value="auto">自动分辨率</option>
+        <option value="1920x1080">1920x1080</option>
+        <option value="1600x900">1600x900</option>
+        <option value="1280x720">1280x720</option>
+        <option value="1024x768">1024x768</option>
+        <option value="800x600">800x600</option>
+      </select>
       <label style="color: #aaa; font-size: 13px; display: flex; align-items: center; gap: 5px; cursor: pointer;">
         <input type="checkbox" id="hideRemoteCursor" checked style="cursor: pointer;">
         隐藏远程鼠标
@@ -288,17 +328,24 @@
     </div>
   </div>
 
-  <div id="debugLog"></div>
+  <div id="debugLog">
+    <div id="debugLogContent"></div>
+    <div id="debugLogToolbar">
+      <button class="log-btn" onclick="copyAllLogs()">全部复制</button>
+      <button class="log-btn" onclick="copySelectedLogs()">选择复制</button>
+      <button class="log-btn" onclick="clearLogs()">清空</button>
+    </div>
+  </div>
 
-  <script src="../shared/data-channel-manager.js"></script>
-  <script src="../shared/components/matrix-transformer.js"></script>
-  <script src="../shared/connection-state-machine.js"></script>
-  <script src="../shared/resolution-negotiator.js"></script>
-  <script src="../shared/auxiliary-channel-manager.js"></script>
-  <script src="../shared/fallback-handler.js"></script>
-  <script src="../shared/connection-manager-base.js"></script>
-  <script src="../shared/direct-connection-manager.js"></script>
-  <script src="../shared/signaling-connection-manager.js"></script>
+  <script src="shared/data-channel-manager.js"></script>
+  <script src="shared/components/matrix-transformer.js"></script>
+  <script src="shared/connection-state-machine.js"></script>
+  <script src="shared/resolution-negotiator.js"></script>
+  <script src="shared/auxiliary-channel-manager.js"></script>
+  <script src="shared/fallback-handler.js"></script>
+  <script src="shared/connection-manager-base.js"></script>
+  <script src="shared/direct-connection-manager.js"></script>
+  <script src="shared/signaling-connection-manager.js"></script>
   <script>
     window.onerror = function(msg, url, line, col, error) {
       log('[全局错误] ' + msg + ' (' + url + ':' + line + ')');
@@ -317,6 +364,7 @@
     let connectionManager = null;
     let auxiliaryChannelManager = null;
     let fallbackHandler = null;
+    let inputEventsSetup = false;
     let frameCount = 0;
     let lastTime = performance.now();
     let isDragging = false;
@@ -332,12 +380,55 @@
       const logMessage = `[${timestamp}] ${message}`;
       console.log(logMessage);
       
-      const debugLog = document.getElementById('debugLog');
-      if (debugLog) {
+      const debugLogContent = document.getElementById('debugLogContent');
+      if (debugLogContent) {
         const div = document.createElement('div');
         div.textContent = logMessage;
-        debugLog.appendChild(div);
-        debugLog.scrollTop = debugLog.scrollHeight;
+        debugLogContent.appendChild(div);
+        debugLogContent.scrollTop = debugLogContent.scrollHeight;
+      }
+    }
+
+    function copyAllLogs() {
+      const debugLogContent = document.getElementById('debugLogContent');
+      if (debugLogContent) {
+        const text = Array.from(debugLogContent.children)
+          .map(el => el.textContent)
+          .join('\n');
+        navigator.clipboard.writeText(text).then(() => {
+          alert('已复制全部日志');
+        }).catch(err => {
+          console.error('复制失败:', err);
+        });
+      }
+      
+      if (connectionManager && connectionManager.dataChannelManager && 
+          connectionManager.dataChannelManager.isOpen()) {
+        const hideCursorCheckbox = document.getElementById('hideRemoteCursor');
+        if (hideCursorCheckbox && hideCursorCheckbox.checked) {
+          connectionManager.dataChannelManager.send({ type: 'hide-cursor', hide: true });
+        }
+      }
+    }
+
+    function copySelectedLogs() {
+      const selection = window.getSelection();
+      const selectedText = selection.toString();
+      if (selectedText) {
+        navigator.clipboard.writeText(selectedText).then(() => {
+          alert('已复制选中内容');
+        }).catch(err => {
+          console.error('复制失败:', err);
+        });
+      } else {
+        alert('请先选择要复制的内容');
+      }
+    }
+
+    function clearLogs() {
+      const debugLogContent = document.getElementById('debugLogContent');
+      if (debugLogContent) {
+        debugLogContent.innerHTML = '';
       }
     }
 
@@ -417,8 +508,6 @@
     }
 
     function showVideo() {
-      log('showVideo() called');
-      
       document.getElementById('placeholder').style.display = 'none';
       videoElement.style.display = 'block';
       
@@ -438,6 +527,10 @@
         videoElement.play().catch(err => {
           log('Video play failed: ' + err.message);
         });
+      }
+      
+      if (videoWrapper) {
+        videoWrapper.focus();
       }
     }
 
@@ -470,28 +563,21 @@
         matrixTransformer.setElementSize(elementRect.width, elementRect.height);
         
         const center = matrixTransformer.calculateCenterPosition();
-        log('MatrixTransformer 初始化完成');
-        log('视口尺寸: ' + viewportWidth + 'x' + viewportHeight);
-        log('元素尺寸: ' + elementRect.width + 'x' + elementRect.height);
-        log('居中位置: (' + center.x + ', ' + center.y + ')');
         
         matrixTransformer.applyTransform(remoteScreenEl);
         
       } catch (error) {
-        log('!!! setupMatrixTransformer 出错: ' + error.message);
+        log('setupMatrixTransformer 出错: ' + error.message);
       }
     }
 
     function setupPanZoomEvents() {
-      log('设置拖动和缩放事件');
-      
       remoteScreenEl.addEventListener('mousedown', (e) => {
         if (e.button === 1) {
           isDragging = true;
           lastMouseX = e.clientX;
           lastMouseY = e.clientY;
           e.preventDefault();
-          log('开始拖动');
         }
       });
 
@@ -509,7 +595,6 @@
       remoteScreenEl.addEventListener('mouseup', (e) => {
         if (e.button === 1) {
           isDragging = false;
-          log('结束拖动');
         }
       });
 
@@ -532,15 +617,15 @@
           
           matrixTransformer.updateScale(newScale, relX, relY);
           matrixTransformer.applyTransform(remoteScreenEl);
-          
-          log('缩放: scale=' + matrixTransformer.scale.toFixed(2));
         }
       }, { passive: false });
-      
-      log('拖动和缩放事件设置完成');
     }
 
     function setupInputEvents() {
+      if (inputEventsSetup) return;
+      inputEventsSetup = true;
+      log('setupInputEvents 初始化');
+      
       const MOUSE_MOVE_CONFIG = {
         MIN_INTERVAL_MS: 8,
         MIN_DISTANCE_PX: 2,
@@ -649,12 +734,14 @@
           isMouseDownOnVideo = true;
           lastMoveX = ratioX;
           lastMoveY = ratioY;
-          connectionManager.sendInput({
+          
+          const inputData = {
             inputType: 'mousedown',
             button: e.button,
             x: Math.max(0, Math.min(1, ratioX)),
             y: Math.max(0, Math.min(1, ratioY))
-          });
+          };
+          connectionManager.sendInput(inputData);
         }
       });
 
@@ -788,13 +875,13 @@
 
       videoWrapper.addEventListener('keydown', (e) => {
         if (shouldBlockShortcut(e)) {
-          log('阻止系统快捷键: ' + getShortcutKey(e));
           e.preventDefault();
           return;
         }
         
         e.preventDefault();
-        connectionManager.sendInput({
+        
+        const inputData = {
           inputType: 'keydown',
           key: e.key,
           code: e.code,
@@ -803,7 +890,8 @@
           shiftKey: e.shiftKey,
           altKey: e.altKey,
           metaKey: e.metaKey
-        });
+        };
+        connectionManager.sendInput(inputData);
       });
 
       videoWrapper.addEventListener('keyup', (e) => {
@@ -813,7 +901,8 @@
         }
         
         e.preventDefault();
-        connectionManager.sendInput({
+        
+        const inputData = {
           inputType: 'keyup',
           key: e.key,
           code: e.code,
@@ -822,11 +911,26 @@
           shiftKey: e.shiftKey,
           altKey: e.altKey,
           metaKey: e.metaKey
-        });
+        };
+        connectionManager.sendInput(inputData);
       });
 
       videoWrapper.setAttribute('tabindex', '0');
       videoWrapper.focus();
+      
+      // 确保 videoWrapper 持续保持焦点
+      videoWrapper.addEventListener('blur', () => {
+        setTimeout(() => {
+          if (videoWrapper) {
+            videoWrapper.focus();
+          }
+        }, 10);
+      });
+      
+      // 点击时确保焦点在 videoWrapper
+      videoWrapper.addEventListener('click', () => {
+        videoWrapper.focus();
+      });
       
       hideRemoteCursorCheckbox = document.getElementById('hideRemoteCursor');
       if (hideRemoteCursorCheckbox) {
@@ -834,12 +938,27 @@
           if (connectionManager && connectionManager.dataChannelManager && 
               connectionManager.dataChannelManager.isOpen()) {
             connectionManager.dataChannelManager.send({ type: 'hide-cursor', hide: e.target.checked });
-            log('发送隐藏鼠标指令: ' + e.target.checked);
           }
         });
       }
-
-      log('输入事件监听已设置');
+      
+      const resolutionSelect = document.getElementById('resolutionSelect');
+      if (resolutionSelect) {
+        resolutionSelect.addEventListener('change', (e) => {
+          const value = e.target.value;
+          if (value === 'auto' || !connectionManager || !connectionManager.dataChannelManager || 
+              !connectionManager.dataChannelManager.isOpen()) {
+            return;
+          }
+          const [w, h] = value.split('x').map(Number);
+          connectionManager.dataChannelManager.send({
+            type: 'resolution-change',
+            width: w,
+            height: h
+          });
+          log('请求分辨率变更: ' + w + 'x' + h);
+        });
+      }
     }
 
     function setupTouchEvents() {
@@ -873,7 +992,6 @@
           touchStartY = center.y;
           touchStartPanX = matrixTransformer.panX;
           touchStartPanY = matrixTransformer.panY;
-          log('双指触摸开始');
         } else if (e.touches.length === 1) {
           touchStartX = e.touches[0].clientX;
           touchStartY = e.touches[0].clientY;
@@ -906,14 +1024,6 @@
           matrixTransformer.applyTransform(remoteScreenEl);
         }
       }, { passive: false });
-      
-      remoteScreenEl.addEventListener('touchend', (e) => {
-        if (e.touches.length < 2) {
-          log('触摸结束');
-        }
-      });
-      
-      log('触摸事件已设置');
     }
 
     function setupPerformanceMonitor() {
@@ -960,7 +1070,6 @@
       }, 1000);
       
       updateStats();
-      log('性能监控已启动');
     }
 
     async function init() {
@@ -978,22 +1087,45 @@
       
       window.electronAPI.on('signaling-mode-start', async (data) => {
         connectionMode = 'signaling';
-        log('信令模式启动');
         
         connectionManager = new SignalingConnectionManager();
+        connectionManager.isController = (data.role === 'controller');
+        connectionManager.targetDeviceId = data.targetDeviceId;
         setupConnectionManagerEvents();
         
         connectionManager.setVideoElements(videoElement, videoContainer, videoWrapper, remoteScreenEl);
         connectionManager.setMatrixTransformer(matrixTransformer);
         
+        window.electronAPI.on('signaling-offer', (offerData) => {
+          if (connectionManager) {
+            connectionManager.handleSignalingOffer(offerData);
+          }
+        });
+        
+        window.electronAPI.on('signaling-answer', (answerData) => {
+          if (connectionManager) {
+            connectionManager.handleAnswer(answerData.answer);
+          }
+        });
+        
+        window.electronAPI.on('signaling-ice-candidate', (candidateData) => {
+          if (connectionManager) {
+            connectionManager.handleIceCandidate(candidateData.candidate);
+          }
+        });
+        
         try {
           await connectionManager.connect({
-            signalingUrl: data.signalingUrl,
             credentials: {
-              token: data.token,
-              deviceId: data.deviceId
+              deviceId: data.deviceId,
+              sessionId: data.sessionId
             }
           });
+          
+          if (!inputEventsSetup && connectionManager.isController) {
+            log('兜底调用 setupInputEvents');
+            setupInputEvents();
+          }
         } catch (error) {
           log('信令模式连接失败: ' + error.message);
           updateStatus('连接失败', 'error');
@@ -1004,28 +1136,24 @@
         if (connectionManager) return;
         
         connectionMode = 'direct';
-        log('直连模式启动');
-        log('收到数据: ' + JSON.stringify(data));
         
         try {
           connectionManager = new DirectConnectionManager();
-          log('DirectConnectionManager 创建成功');
           
           connectionManager.setModeData(data);
-          log('setModeData 完成');
           
           setupConnectionManagerEvents();
-          log('setupConnectionManagerEvents 完成');
           
           connectionManager.setVideoElements(videoElement, videoContainer, videoWrapper, remoteScreenEl);
-          log('setVideoElements 完成');
           
           connectionManager.setMatrixTransformer(matrixTransformer);
-          log('setMatrixTransformer 完成');
           
-          log('开始调用 connectionManager.connect()...');
           await connectionManager.connect({});
-          log('connectionManager.connect() 完成');
+          
+          if (!inputEventsSetup) {
+            log('兜底调用 setupInputEvents');
+            setupInputEvents();
+          }
         } catch (error) {
           log('直连模式连接失败: ' + error.message);
           console.error('连接错误详情:', error);
@@ -1061,7 +1189,7 @@
       });
       
       connectionManager.on('video-metadata', (data) => {
-        log(`视频元数据: ${data.width}x${data.height}`);
+        log('video-metadata 事件触发');
         showVideo();
         updateStatus('已连接');
         requestAnimationFrame(onVideoFrame);
@@ -1070,21 +1198,16 @@
       });
       
       connectionManager.on('video-ready', () => {
-        log('视频准备就绪');
       });
       
       connectionManager.on('data-channel-open', () => {
-        log('数据通道已打开');
-        
         initAuxiliaryChannels();
       });
       
       connectionManager.on('auxiliary-channel-ready', (data) => {
-        log(`辅助通道 ${data.name} 就绪`);
       });
       
       connectionManager.on('auxiliary-channel-error', (data) => {
-        log(`辅助通道 ${data.name} 错误: ${data.error.message}`);
       });
       
       connectionManager.stateMachine.addListener((newState, oldState, data) => {
@@ -1116,8 +1239,6 @@
     }
     
     function initAuxiliaryChannels() {
-      log('初始化辅助通道管理器');
-      
       auxiliaryChannelManager = new AuxiliaryChannelManager({ logger: { log: log, error: console.error } });
       auxiliaryChannelManager.setPeerConnection(connectionManager.peerConnection);
       auxiliaryChannelManager.setDataChannelManager(connectionManager.dataChannelManager);
@@ -1126,12 +1247,10 @@
       fallbackHandler.setAuxiliaryChannelManager(auxiliaryChannelManager);
       
       auxiliaryChannelManager.on('channel-ready', (data) => {
-        log(`辅助通道就绪: ${data.type}`);
         updateAuxiliaryStatus(data.type, 'ready');
       });
       
       auxiliaryChannelManager.on('channel-closed', (data) => {
-        log(`辅助通道关闭: ${data.type}`);
         updateAuxiliaryStatus(data.type, 'closed');
       });
       
@@ -1144,32 +1263,22 @@
       });
       
       fallbackHandler.on('fallback-executed', (data) => {
-        log(`降级策略执行: ${data.channelType} -> ${data.strategy}`);
         updateAuxiliaryStatus(data.channelType, 'fallback');
       });
       
       fallbackHandler.on('retry-success', (data) => {
-        log(`辅助通道重试成功: ${data.channelType}`);
         updateAuxiliaryStatus(data.channelType, 'ready');
-      });
-      
-      fallbackHandler.on('retry-failed', (data) => {
-        log(`辅助通道重试失败: ${data.channelType}`);
       });
     }
     
     function loadAuxiliaryChannelsAsync() {
       if (!auxiliaryChannelManager) {
-        log('辅助通道管理器未初始化');
         return;
       }
-      
-      log('开始并行加载辅助通道');
       
       auxiliaryChannelManager.loadAllParallel([
         AuxiliaryChannelType.CLIPBOARD
       ]).then(result => {
-        log(`辅助通道加载完成: 成功=${result.success}, 失败=${result.failed}`);
       });
     }
     
@@ -1183,11 +1292,8 @@
     }
     
     function handleClipboardSync(content) {
-      log('收到剪贴板同步');
-      
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(content).then(() => {
-          log('剪贴板内容已同步到本地');
         }).catch(err => {
           log('剪贴板同步失败: ' + err.message);
         });
@@ -1195,7 +1301,6 @@
     }
     
     function showUserNotification(notification) {
-      log(`[通知] ${notification.message}`);
       
       const notificationEl = document.createElement('div');
       notificationEl.className = `notification notification-${notification.severity}`;
@@ -1235,7 +1340,6 @@
         if (matrixTransformer) {
           matrixTransformer.resetView();
           matrixTransformer.applyTransform(remoteScreenEl);
-          log('视图已重置');
         }
       }
       
@@ -1244,7 +1348,6 @@
         if (matrixTransformer) {
           matrixTransformer.resetView();
           matrixTransformer.applyTransform(remoteScreenEl);
-          log('视图已重置');
         }
       }
       
