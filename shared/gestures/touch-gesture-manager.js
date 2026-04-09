@@ -1,3 +1,5 @@
+import { GestureConfig, GestureState, SingleTouchPhase, DualTouchPhase } from './gesture-config.js'
+
 class TouchGestureManager {
     constructor(options = {}) {
         this.config = Object.assign({}, GestureConfig, options.config || {})
@@ -266,7 +268,7 @@ class TouchGestureManager {
             const scaleDelta = currentDistance / this._initialPinchDistance
             const newScale = Math.max(
                 this.config.SCALE_MIN,
-                Math.min(this.config.SCALE_MAX, this.initialScale * scaleDelta)
+                Math.min(this.config.SCALE_MAX, this._initialScale * scaleDelta)
             )
 
             if (this.transformer) {

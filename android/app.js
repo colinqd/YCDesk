@@ -3,28 +3,12 @@ import { Device } from '@capacitor/device';
 import { Network } from '@capacitor/network';
 import { io } from 'socket.io-client';
 import { registerPlugin } from '@capacitor/core';
+import TouchGestureManager from './shared/gestures/touch-gesture-manager.js';
 
 const TCPSocket = registerPlugin('TCPSocket');
 const InputExecutor = registerPlugin('InputExecutor');
 const FloatingMouse = registerPlugin('FloatingMouse');
 const ScreenCapture = registerPlugin('ScreenCapture');
-
-async function loadGestureModules() {
-    try {
-        const configModule = await import('./shared/gestures/gesture-config.js');
-        const GestureManagerModule = await import('./shared/gestures/touch-gesture-manager.js');
-        window.GestureConfig = configModule.GestureConfig;
-        window.GestureState = configModule.GestureState;
-        window.SingleTouchPhase = configModule.SingleTouchPhase;
-        window.DualTouchPhase = configModule.DualTouchPhase;
-        window.TouchGestureManager = GestureManagerModule.default;
-        console.log('手势模块加载成功');
-    } catch (e) {
-        console.log('手势模块加载失败，将使用内置 GestureHandler:', e.message);
-    }
-}
-
-loadGestureModules();
 
 function normalizeServerUrl(url, preferSecure = null) {
   if (!url) {
@@ -513,11 +497,9 @@ class InputDispatcher {
 }
 
 function createGestureHandler(transformer, inputDispatcher) {
-    const GestureClass = (typeof TouchGestureManager !== 'undefined') ? TouchGestureManager : null;
-    
-    if (GestureClass) {
+    if (TouchGestureManager) {
         log('使用 TouchGestureManager 手势模块');
-        return new GestureClass({
+        return new TouchGestureManager({
             transformer: transformer,
             sendInput: (x, y, type, button, delta) => {
                 if (inputDispatcher) {
