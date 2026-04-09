@@ -23,20 +23,24 @@ class SignalingModeManager {
   }
 
   async connect(serverUrl, role) {
+    // 自动添加协议前缀
+    let normalizedUrl = serverUrl.trim()
+    if (!normalizedUrl.startsWith('ws://') && !normalizedUrl.startsWith('wss://')) {
+      normalizedUrl = 'ws://' + normalizedUrl
+      this.logFn('自动添加协议前缀: ' + serverUrl + ' -> ' + normalizedUrl)
+    }
+    
     // 自动修正 URL（如 wws:// -> wss://），保留用户输入的协议
-    let normalizedUrl = serverUrl
     if (window.CONFIG && window.CONFIG.normalizeServerUrl) {
-      const originalUrl = serverUrl
-      normalizedUrl = window.CONFIG.normalizeServerUrl(serverUrl)
+      const originalUrl = normalizedUrl
+      normalizedUrl = window.CONFIG.normalizeServerUrl(normalizedUrl)
       if (originalUrl !== normalizedUrl) {
         this.logFn('自动修正服务器地址: ' + originalUrl + ' -> ' + normalizedUrl)
       }
-    } else {
-      normalizedUrl = serverUrl
     }
     
     // 显示连接协议信息
-    const protocol = normalizedUrl.startsWith('wss://') || normalizedUrl.startsWith('https://') ? 'HTTPS/WSS (安全)' : 'HTTP/WS (非安全)'
+    const protocol = normalizedUrl.startsWith('wss://') ? 'WSS (安全)' : 'WS (非安全)'
     this.logFn('正在连接信令服务器 [' + protocol + ']: ' + normalizedUrl)
     if (this.uiManager) {
       this.uiManager.updateServerStatus('连接中... (' + protocol + ')', 'connecting')
@@ -44,23 +48,18 @@ class SignalingModeManager {
 
     try {
       if (this.socket) {
-        this.socket.disconnect()
+        this.socket.close()
       }
 
-      this.socket = io(normalizedUrl, {
-        transports: ['websocket', 'polling'],
-        reconnection: true,
-        reconnectionAttempts: this.config.maxReconnectAttempts || 10,
-        reconnectionDelay: this.config.reconnectDelay || 1000,
-        timeout: 10000,
-        rejectUnauthorized: false
-      })
+      // 使用原生WebSocket替代Socket.IO
+      this.socket = new WebSocket(normalizedUrl)
+      this.socketReady = false
 
-      this._setupSocketListeners(role, normalizedUrl)
+      this._setupWebSocketListeners(role, normalizedUrl)
     } catch (error) {
       this.logFn('✗ 连接初始化错误: ' + error.message)
-      this.logFn('提示: 如果使用 HTTPS/WSS，确保证书已正确安装')
-      this.logFn('提示: 如果不想使用证书，可以尝试用 http:// 或 ws:// 开头的地址')
+      this.logFn('提示: 如果使用 WSS，确保证书已正确安装')
+      this.logFn('提示: 如果不想使用证书，可以尝试用 ws:// 开头的地址')
       if (this.uiManager) {
         this.uiManager.updateServerStatus('连接失败', 'error')
       }
@@ -70,7 +69,7 @@ class SignalingModeManager {
 
   disconnect() {
     if (this.socket) {
-      this.socket.disconnect()
+      this.socket.close()
       this.socket = null
       this.logFn('已手动断开服务器连接')
       if (this.uiManager) {
@@ -94,13 +93,13 @@ class SignalingModeManager {
       alert('不能连接自己')
       return false
     }
-    if (!this.socket || !this.socket.connected) {
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
       alert('未连接到信令服务器，请先连接服务器')
       return false
     }
 
     this.incomingFromDeviceId = targetDeviceId
-    this.socket.emit('connect-request', {
+    this._send('connect-request', {
       fromDeviceId: this.myDeviceId,
       toDeviceId: targetDeviceId
     })
@@ -111,7 +110,7 @@ class SignalingModeManager {
 
   acceptConnection() {
     if (!this.socket) return
-    this.socket.emit('connection-response', {
+    this._send('connection-response', {
       sessionId: this.currentSessionId,
       accepted: true,
       fromDeviceId: this.incomingFromDeviceId,
@@ -127,12 +126,19 @@ class SignalingModeManager {
 
   rejectConnection() {
     if (!this.socket) return
-    this.socket.emit('connection-response', {
+    this._send('connection-response', {
       sessionId: this.currentSessionId,
       accepted: false,
       fromDeviceId: this.incomingFromDeviceId,
       toDeviceId: this.myDeviceId
     })
+  }
+
+  _send(type, data) {
+    if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+      const message = { type, ...data }
+      this.socket.send(JSON.stringify(message))
+    }
   }
 
   async startControllerConnection() {
@@ -156,18 +162,18 @@ class SignalingModeManager {
     this.logFn('已准备好接收WebRTC Offer')
   }
 
-  _setupSocketListeners(role, serverUrl) {
-    this.socket.on('connect', () => {
-      this.logFn('✓ 已连接到信令服务器，Socket ID: ' + this.socket.id)
+  _setupWebSocketListeners(role, serverUrl) {
+    this.socket.onopen = () => {
+      this.logFn('✓ 已连接到信令服务器')
       this.logFn('正在注册设备 ID: ' + this.myDeviceId)
-      this.socket.emit('register', { deviceId: this.myDeviceId })
+      this._send('register', { deviceId: this.myDeviceId })
       if (this.uiManager) {
         this.uiManager.updateServerStatus('已连接', 'connected')
       }
-    })
+    }
 
-    this.socket.on('disconnect', (reason) => {
-      this.logFn('与信令服务器断开连接，原因: ' + reason)
+    this.socket.onclose = (event) => {
+      this.logFn('与信令服务器断开连接，代码: ' + event.code)
       if (this.uiManager) {
         this.uiManager.updateServerStatus('已断开', 'disconnected')
       }
@@ -175,95 +181,103 @@ class SignalingModeManager {
         this.onDisconnected()
       }
       
-      window.electronAPI.sendToRemoteWindow('signaling-disconnected', { reason })
-    })
+      window.electronAPI.sendToRemoteWindow('signaling-disconnected', { code: event.code })
+    }
 
-    this.socket.on('connect_error', (error) => {
-      this.logFn('✗ 连接错误: ' + (error.message || error))
+    this.socket.onerror = (error) => {
+      this.logFn('✗ 连接错误: ' + (error.message || '未知错误'))
       if (this.uiManager) {
         this.uiManager.updateServerStatus('连接失败', 'error')
       }
-    })
+    }
 
-    this.socket.on('reconnect_attempt', (attemptNumber) => {
-      this.logFn('正在尝试重连... (第 ' + attemptNumber + ' 次)')
-    })
-
-    this.socket.on('reconnect_failed', () => {
-      this.logFn('✗ 重连失败，请检查服务器地址和网络连接')
-      if (this.uiManager) {
-        this.uiManager.updateServerStatus('重连失败', 'error')
+    this.socket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        this._handleMessage(data)
+      } catch (e) {
+        this.logFn('解析消息失败: ' + e.message)
       }
-    })
+    }
+    
+    this._setupRemoteWindowListeners()
+  }
 
-    this.socket.on('incoming-connection', (data) => {
-      this.logFn('收到连接请求: ' + JSON.stringify(data))
-      this.incomingFromDeviceId = data.fromDeviceId
-      this.currentSessionId = data.sessionId
-      this.isController = false
-      
-      this.pendingStartSignal = {
-        mode: 'controlled',
-        sessionId: data.sessionId,
-        targetDeviceId: data.fromDeviceId
-      }
-      this.logFn('保存启动信号，等待远程窗口准备就绪: ' + JSON.stringify(this.pendingStartSignal))
-      
-      window.electronAPI.openRemoteWindow()
-      
-      if (typeof this.onIncomingConnection === 'function') {
-        this.onIncomingConnection(data.fromDeviceId)
-      }
-    })
-
-    this.socket.on('connection-result', async (data) => {
-      this.logFn('连接结果: ' + JSON.stringify(data))
-      if (data.accepted) {
+  _handleMessage(data) {
+    const type = data.type
+    
+    switch (type) {
+      case 'incoming-connection':
+        this.logFn('收到连接请求: ' + JSON.stringify(data))
+        this.incomingFromDeviceId = data.fromDeviceId
         this.currentSessionId = data.sessionId
-        this.incomingFromDeviceId = data.toDeviceId
-        await this.startControllerConnection()
-      } else {
-        alert('对方拒绝了连接请求')
-      }
-    })
+        this.isController = false
+        
+        this.pendingStartSignal = {
+          mode: 'controlled',
+          sessionId: data.sessionId,
+          targetDeviceId: data.fromDeviceId
+        }
+        this.logFn('保存启动信号，等待远程窗口准备就绪: ' + JSON.stringify(this.pendingStartSignal))
+        
+        window.electronAPI.openRemoteWindow()
+        
+        if (typeof this.onIncomingConnection === 'function') {
+          this.onIncomingConnection(data.fromDeviceId)
+        }
+        break
+        
+      case 'connection-result':
+        this.logFn('连接结果: ' + JSON.stringify(data))
+        if (data.accepted) {
+          this.currentSessionId = data.sessionId
+          this.incomingFromDeviceId = data.toDeviceId
+          this.startControllerConnection()
+        } else {
+          alert('对方拒绝了连接请求')
+        }
+        break
+        
+      case 'offer':
+        this.logFn('收到 offer')
+        if (this.isController) {
+          this.logFn('作为主控端，转发到远程窗口')
+          window.electronAPI.sendToRemoteWindow('signaling-offer', data)
+        } else {
+          this.logFn('作为被控端，转发到远程窗口处理')
+          window.electronAPI.sendToRemoteWindow('signaling-offer', data)
+        }
+        break
+        
+      case 'answer':
+        this.logFn('收到 answer')
+        if (this.isController) {
+          this.logFn('作为主控端，转发到远程窗口')
+          window.electronAPI.sendToRemoteWindow('signaling-answer', data)
+        } else if (this.peerConnection) {
+          this.logFn('作为被控端，直接处理answer')
+          this.handleAnswer(data.answer)
+        }
+        break
+        
+      case 'ice-candidate':
+        this.logFn('收到 ICE candidate')
+        if (this.isController) {
+          this.logFn('作为主控端，转发到远程窗口')
+          window.electronAPI.sendToRemoteWindow('signaling-ice-candidate', data)
+        } else {
+          this.logFn('作为被控端，转发到远程窗口处理')
+          window.electronAPI.sendToRemoteWindow('signaling-ice-candidate', data)
+        }
+        break
+    }
+  }
 
-    this.socket.on('offer', async (data) => {
-      this.logFn('收到 offer')
-      if (this.isController) {
-        this.logFn('作为主控端，转发到远程窗口')
-        window.electronAPI.sendToRemoteWindow('signaling-offer', data)
-      } else {
-        this.logFn('作为被控端，转发到远程窗口处理')
-        window.electronAPI.sendToRemoteWindow('signaling-offer', data)
-      }
-    })
-
-    this.socket.on('answer', async (data) => {
-      this.logFn('收到 answer')
-      if (this.isController) {
-        this.logFn('作为主控端，转发到远程窗口')
-        window.electronAPI.sendToRemoteWindow('signaling-answer', data)
-      } else if (this.peerConnection) {
-        this.logFn('作为被控端，直接处理answer')
-        await this.handleAnswer(data.answer)
-      }
-    })
-
-    this.socket.on('ice-candidate', async (data) => {
-      this.logFn('收到 ICE candidate')
-      if (this.isController) {
-        this.logFn('作为主控端，转发到远程窗口')
-        window.electronAPI.sendToRemoteWindow('signaling-ice-candidate', data)
-      } else {
-        this.logFn('作为被控端，转发到远程窗口处理')
-        window.electronAPI.sendToRemoteWindow('signaling-ice-candidate', data)
-      }
-    })
-
+  _setupRemoteWindowListeners() {
     window.electronAPI.on('send-signaling-offer', (data) => {
       this.logFn('从远程窗口收到 offer，发送到信令服务器')
       if (this.socket) {
-        this.socket.emit('offer', {
+        this._send('offer', {
           sessionId: data.sessionId || this.currentSessionId,
           offer: data.offer,
           toDeviceId: data.targetDeviceId || this.incomingFromDeviceId
@@ -274,7 +288,7 @@ class SignalingModeManager {
     window.electronAPI.on('send-signaling-answer', (data) => {
       this.logFn('从远程窗口收到 answer，发送到信令服务器')
       if (this.socket) {
-        this.socket.emit('answer', {
+        this._send('answer', {
           sessionId: data.sessionId || this.currentSessionId,
           answer: data.answer,
           toDeviceId: data.targetDeviceId || this.incomingFromDeviceId
@@ -285,7 +299,7 @@ class SignalingModeManager {
     window.electronAPI.on('send-signaling-ice-candidate', (data) => {
       this.logFn('从远程窗口收到 ICE candidate，发送到信令服务器')
       if (this.socket) {
-        this.socket.emit('ice-candidate', {
+        this._send('ice-candidate', {
           sessionId: data.sessionId || this.currentSessionId,
           candidate: data.candidate,
           toDeviceId: data.targetDeviceId || this.incomingFromDeviceId
@@ -338,7 +352,7 @@ class SignalingModeManager {
           toDeviceId: this.incomingFromDeviceId
         }
         if (this.socket) {
-          this.socket.emit('ice-candidate', candidateData)
+          this._send('ice-candidate', candidateData)
         }
       }
     }
@@ -393,7 +407,7 @@ class SignalingModeManager {
       this.logFn('[信令模式] 本地描述设置成功')
 
       if (this.socket) {
-        this.socket.emit('answer', {
+        this._send('answer', {
           sessionId: data.sessionId || this.currentSessionId,
           answer: {
             type: answer.type,

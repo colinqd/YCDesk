@@ -95,6 +95,13 @@ function createRemoteWindow() {
     remoteWindow.show()
   })
 
+  remoteWindow.webContents.on('zoom-changed', (event, zoomDirection) => {
+    event.preventDefault()
+  })
+
+  remoteWindow.webContents.setZoomLevel(0)
+  remoteWindow.webContents.setVisualZoomLevelLimits(1, 1)
+
   if (process.argv.includes('--dev') || process.env.NODE_ENV === 'development') {
     remoteWindow.webContents.openDevTools({ mode: 'detach' })
   }

@@ -189,6 +189,7 @@ class DirectModeManager {
 
     this.dataChannelManager.setOnMessage((data) => {
       if (data.type === 'input') {
+        this.logFn('收到输入，转发到主进程: ' + JSON.stringify(data))
         window.electronAPI.send('remote-input', data)
       } else if (data.type === 'ping') {
         this.dataChannelManager.send({ type: 'pong', timestamp: data.timestamp })
@@ -198,8 +199,6 @@ class DirectModeManager {
         } else {
           window.electronAPI.showCursor()
         }
-      } else if (data.type === 'resolution-change') {
-        this.handleResolutionChange(data)
       }
     })
 
@@ -444,6 +443,7 @@ class DirectModeManager {
       this.stopScreenCapture()
       
       const sources = await window.electronAPI.getSources()
+      this.logFn('可用屏幕源: ' + sources.length + ' 个')
 
       if (sources.length > 0) {
         const maxWidth = targetWidth || this.config.screenCapture?.maxWidth || 1920
@@ -463,9 +463,11 @@ class DirectModeManager {
         })
 
         const tracks = this.currentStream.getVideoTracks()
+        this.logFn('获取到 ' + tracks.length + ' 个媒体轨道')
 
         tracks.forEach(track => {
           this.directPeerConnection.addTrack(track, this.currentStream)
+          this.logFn('已添加媒体轨道: ' + track.kind + ', label: ' + track.label)
         })
 
         const settings = tracks[0].getSettings()
@@ -482,35 +484,8 @@ class DirectModeManager {
       }
     } catch (error) {
       this.logFn('屏幕捕获失败: ' + error.message)
+      console.error('屏幕捕获详细错误:', error)
       return { width: 1920, height: 1080 }
-    }
-  }
-
-  async handleResolutionChange(data) {
-    this.logFn('收到分辨率变更请求: ' + data.width + 'x' + data.height)
-    
-    try {
-      this.stopScreenCapture()
-      
-      const actualResolution = await this.startScreenCapture(data.width, data.height)
-      
-      const renegotiateOffer = await this.directPeerConnection.createOffer()
-      await this.directPeerConnection.setLocalDescription(renegotiateOffer)
-      
-      this.sendMessage({
-        type: 'offer',
-        offer: { type: renegotiateOffer.type, sdp: renegotiateOffer.sdp }
-      })
-      
-      this.dataChannelManager.send({
-        type: 'resolution-response',
-        width: actualResolution.width,
-        height: actualResolution.height
-      })
-      
-      this.logFn('分辨率变更完成: ' + actualResolution.width + 'x' + actualResolution.height)
-    } catch (error) {
-      this.logFn('分辨率变更失败: ' + error.message)
     }
   }
 
@@ -591,15 +566,21 @@ class DirectModeManager {
     if (this.dataChannelManager) {
       try {
         this.dataChannelManager.close()
-      } catch (e) {}
+      } catch (e) {
+        this.logFn('关闭数据通道管理器时出错:', e)
+      }
       this.dataChannelManager = null
     }
 
     if (this.directPeerConnection) {
       try {
         this.directPeerConnection.close()
-      } catch (e) {}
+      } catch (e) {
+        this.logFn('关闭直连 PeerConnection 时出错:', e)
+      }
       this.directPeerConnection = null
     }
+    
+    this.logFn('直连模式管理器已重置')
   }
 }

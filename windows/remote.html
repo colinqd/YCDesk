@@ -608,14 +608,10 @@
           
           if (!matrixTransformer) return;
           
-          const rect = remoteScreenEl.getBoundingClientRect();
-          const relX = e.clientX - rect.left;
-          const relY = e.clientY - rect.top;
-          
           const scaleFactor = e.deltaY > 0 ? 0.9 : 1.1;
           const newScale = matrixTransformer.scale * scaleFactor;
           
-          matrixTransformer.updateScale(newScale, relX, relY);
+          matrixTransformer.updateScale(newScale, e.clientX, e.clientY);
           matrixTransformer.applyTransform(remoteScreenEl);
         }
       }, { passive: false });
@@ -829,7 +825,10 @@
       });
 
       videoWrapper.addEventListener('wheel', (e) => {
-        if (e.ctrlKey || e.metaKey) return;
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          return;
+        }
         
         e.preventDefault();
         
