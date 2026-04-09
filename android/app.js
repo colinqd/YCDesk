@@ -9,6 +9,23 @@ const InputExecutor = registerPlugin('InputExecutor');
 const FloatingMouse = registerPlugin('FloatingMouse');
 const ScreenCapture = registerPlugin('ScreenCapture');
 
+async function loadGestureModules() {
+    try {
+        const configModule = await import('./shared/gestures/gesture-config.js');
+        const GestureManagerModule = await import('./shared/gestures/touch-gesture-manager.js');
+        window.GestureConfig = configModule.GestureConfig;
+        window.GestureState = configModule.GestureState;
+        window.SingleTouchPhase = configModule.SingleTouchPhase;
+        window.DualTouchPhase = configModule.DualTouchPhase;
+        window.TouchGestureManager = GestureManagerModule.default;
+        console.log('手势模块加载成功');
+    } catch (e) {
+        console.log('手势模块加载失败，将使用内置 GestureHandler:', e.message);
+    }
+}
+
+loadGestureModules();
+
 function normalizeServerUrl(url, preferSecure = null) {
   if (!url) {
     return url
@@ -495,6 +512,48 @@ class InputDispatcher {
     }
 }
 
+function createGestureHandler(transformer, inputDispatcher) {
+    const GestureClass = (typeof TouchGestureManager !== 'undefined') ? TouchGestureManager : null;
+    
+    if (GestureClass) {
+        log('使用 TouchGestureManager 手势模块');
+        return new GestureClass({
+            transformer: transformer,
+            sendInput: (x, y, type, button, delta) => {
+                if (inputDispatcher) {
+                    inputDispatcher.dispatchTouchInput(x, y, type, button, delta);
+                }
+            },
+            applyTransform: () => {
+                const videoContainer = document.getElementById('videoContainer');
+                if (videoContainer && transformer) {
+                    transformer.applyTransform(videoContainer);
+                }
+            },
+            onToggleUI: () => {
+                toggleControlsHide();
+            },
+            vibrate: (pattern) => {
+                if (navigator.vibrate) {
+                    navigator.vibrate(pattern);
+                }
+            },
+            isTouchOnUI: (x, y) => {
+                if (window.isTouchOnUI) {
+                    return window.isTouchOnUI(x, y);
+                }
+                return false;
+            },
+            logger: (message) => {
+                log('[Gesture] ' + message);
+            }
+        });
+    }
+    
+    log('TouchGestureManager 不可用，使用内置 GestureHandler');
+    return new GestureHandler(transformer, inputDispatcher, null);
+}
+
 class GestureHandler {
     constructor(transformer, inputDispatcher, onDirectInput) {
         this.transformer = transformer;
@@ -757,7 +816,6 @@ class GestureHandler {
             }
             this.lastTapTime = now;
         } else {
-            // 对于移动距离较大或触摸时间较长的情况，也发送单击事件
             this.sendMouseClick(touch.clientX, touch.clientY, 0);
             log('单击 (distance=' + distance.toFixed(2) + ', duration=' + duration + ')');
         }
@@ -2703,10 +2761,9 @@ function setupRemoteScreenInteraction() {
             
             inputDispatcher = new InputDispatcher(matrixTransformer);
             
-            gestureHandler = new GestureHandler(
+            gestureHandler = createGestureHandler(
                 matrixTransformer,
-                inputDispatcher,
-                null
+                inputDispatcher
             );
             
             const isTouchOnUI = (x, y) => {
