@@ -17,25 +17,22 @@ function normalizeServerUrl(url, preferSecure = null) {
   
   let normalized = url.trim()
   
-  // 修复常见拼写错误
   normalized = normalized.replace(/^wws:\/\//i, 'wss://')
-  normalized = normalized.replace(/^ws:\/\//i, 'ws://')
-  normalized = normalized.replace(/^http:\/\//i, 'http://')
+  normalized = normalized.replace(/^wss:\/\//i, 'https://')
+  normalized = normalized.replace(/^ws:\/\//i, 'http://')
   normalized = normalized.replace(/^https:\/\//i, 'https://')
+  normalized = normalized.replace(/^http:\/\//i, 'http://')
   
-  // 如果用户已经指定了协议，则保留用户的选择
-  if (normalized.match(/^(wss|ws|http|https):\/\//i)) {
+  if (normalized.match(/^(https?):\/\//i)) {
     return normalized
   }
   
-  // 如果没有协议前缀，根据 preferSecure 参数决定默认协议
   if (preferSecure === true) {
-    normalized = 'wss://' + normalized
+    normalized = 'https://' + normalized
   } else if (preferSecure === false) {
-    normalized = 'ws://' + normalized
+    normalized = 'http://' + normalized
   } else {
-    // 默认使用 wss://
-    normalized = 'wss://' + normalized
+    normalized = 'http://' + normalized
   }
   
   return normalized
@@ -869,6 +866,8 @@ let controllerMode = 'direct'
 let currentDirectClientId = null
 let directPeerConnection = null
 let dataChannel = null
+let inputChannel = null
+let inputChannelReady = false
 let connectionLogDiv = null
 let currentRole = null
 let isConnected = false
@@ -1103,7 +1102,7 @@ function reconnectFromHistory(type, index) {
     document.getElementById('serverUrl').value = item.serverUrl
     document.getElementById('targetDeviceId').value = item.deviceId
     
-    if (!socket || !socket.connected) {
+    if (!isSocketConnected()) {
       manualConnectToServer()
     } else {
       connectDevice()
@@ -1178,7 +1177,7 @@ function goBack() {
   stopListening()
   cancelReconnect()
   if (socket) {
-    socket.disconnect()
+    socket.close()
     socket = null
   }
   currentRole = null
@@ -1196,7 +1195,7 @@ function switchControllerMode(mode) {
   if (mode === 'direct') {
     document.getElementById('controllerDirectMode').classList.add('active')
     if (socket) {
-      socket.disconnect()
+      socket.close()
       socket = null
     }
   } else {
@@ -1222,7 +1221,7 @@ function switchControlledMode(mode) {
   if (mode === 'direct') {
     document.getElementById('controlledDirectMode').classList.add('active')
     if (socket) {
-      socket.disconnect()
+      socket.close()
       socket = null
     }
   } else {
@@ -1234,7 +1233,7 @@ function switchControlledMode(mode) {
 }
 
 function manualConnectToServer() {
-  if (socket && socket.connected) {
+  if (isSocketConnected()) {
     showToast('已经连接到服务器')
     log('已经连接到服务器，无需重复连接')
     return
@@ -1243,7 +1242,7 @@ function manualConnectToServer() {
 }
 
 function controlledConnectToServer() {
-  if (socket && socket.connected) {
+  if (isSocketConnected()) {
     showToast('已经连接到服务器')
     log('已经连接到服务器，无需重复连接')
     return
@@ -1253,8 +1252,9 @@ function controlledConnectToServer() {
 
 function disconnectFromServer() {
   cancelReconnect()
+  stopWsHeartbeat()
   if (socket) {
-    socket.disconnect()
+    socket.close()
     socket = null
     log('已手动断开服务器连接')
     updateServerStatus('已断开', 'disconnected')
@@ -1267,8 +1267,9 @@ function disconnectFromServer() {
 
 function controlledDisconnectFromServer() {
   cancelReconnect()
+  stopWsHeartbeat()
   if (socket) {
-    socket.disconnect()
+    socket.close()
     socket = null
     log('已手动断开服务器连接')
     updateServerStatus('已断开', 'disconnected')
@@ -1279,15 +1280,116 @@ function controlledDisconnectFromServer() {
   }
 }
 
+function buildWsUrl(serverUrl) {
+  let url = serverUrl.trim()
+  url = url.replace(/^https:\/\//i, 'wss://')
+  url = url.replace(/^http:\/\//i, 'ws://')
+  if (!url.match(/^wss?:\/\//i)) {
+    url = 'ws://' + url
+  }
+  return url
+}
+
+let wsHeartbeatTimer = null
+
+function startWsHeartbeat() {
+  stopWsHeartbeat()
+  wsHeartbeatTimer = setInterval(() => {
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      wsSend('ping', { timestamp: Date.now() })
+    }
+  }, 25000)
+}
+
+function stopWsHeartbeat() {
+  if (wsHeartbeatTimer) {
+    clearInterval(wsHeartbeatTimer)
+    wsHeartbeatTimer = null
+  }
+}
+
+function wsSend(type, data) {
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    let message
+    if (data) {
+      message = { type: type, ...data }
+    } else {
+      message = { type: type }
+    }
+    const json = JSON.stringify(message)
+    log('发送消息: ' + json)
+    socket.send(json)
+  } else {
+    log('wsSend: socket未连接或未就绪')
+  }
+}
+
+function isSocketConnected() {
+  return socket && socket.readyState === WebSocket.OPEN
+}
+
+function handleWsMessage(data) {
+  const type = data.type
+
+  switch (type) {
+    case 'registered':
+      log('设备注册成功: ' + data.deviceId)
+      break
+
+    case 'incoming-connection':
+      log('收到连接请求: ' + JSON.stringify(data))
+      incomingFromDeviceId = data.fromDeviceId
+      currentSessionId = data.sessionId
+      isController = false
+      showIncomingConnectionDialog(data.fromDeviceId)
+      break
+
+    case 'connection-result':
+      log('连接结果: ' + JSON.stringify(data))
+      if (data.accepted) {
+        isController = true
+        startControllerConnection()
+      } else {
+        showToast('对方拒绝了连接请求')
+      }
+      break
+
+    case 'connection-failed':
+      log('连接失败: ' + (data.reason || '未知原因'))
+      showToast('连接失败: ' + (data.reason === 'device-offline' ? '目标设备不在线' : data.reason))
+      break
+
+    case 'offer':
+      log('收到 offer')
+      handleOffer(data)
+      break
+
+    case 'answer':
+      log('收到 answer')
+      handleAnswer(data)
+      break
+
+    case 'ice-candidate':
+      log('收到 ICE candidate')
+      handleIceCandidate(data)
+      break
+
+    case 'pong':
+      break
+  }
+}
+
 function connectToServer(serverUrl, role) {
+  log('========== 使用新版 WebSocket 代码 (2026-04-10) ==========')
   if (!serverUrl) {
     showToast('请先输入信令服务器地址')
     return
   }
   
-  // 自动修正 URL（如 wws:// -> wss://），保留用户输入的协议
+  log('原始地址: ' + serverUrl)
   const originalUrl = serverUrl
   serverUrl = normalizeServerUrl(serverUrl)
+  log('normalize后: ' + serverUrl)
   if (originalUrl !== serverUrl) {
     log('自动修正服务器地址: ' + originalUrl + ' -> ' + serverUrl)
   }
@@ -1296,94 +1398,52 @@ function connectToServer(serverUrl, role) {
   savedRole = role
   reconnectAttempts = 0
   
-  // 显示连接协议信息
-  const protocol = serverUrl.startsWith('wss://') || serverUrl.startsWith('https://') ? 'HTTPS/WSS (安全)' : 'HTTP/WS (非安全)'
-  log('正在连接信令服务器 [' + protocol + ']: ' + serverUrl)
-  updateServerStatus('连接中... (' + protocol + ')', 'connecting')
+  const wsUrl = buildWsUrl(serverUrl)
+  log('最终WebSocket地址: ' + wsUrl)
+  log('连接信令服务器: ' + wsUrl)
+  updateServerStatus('连接中...', 'connecting')
   setConnectionStatus(CONNECTION_STATUS.CONNECTING)
   
   try {
     if (socket) {
-      socket.disconnect()
+      socket.close()
     }
     
-    socket = io(serverUrl, {
-      transports: ['websocket', 'polling'],
-      reconnection: true,
-      reconnectionAttempts: MAX_RECONNECT_ATTEMPTS,
-      reconnectionDelay: BASE_RECONNECT_DELAY,
-      timeout: 10000
-    })
+    socket = new WebSocket(wsUrl)
 
-    socket.on('connect', () => {
-      log('✓ 已连接到信令服务器，Socket ID: ' + socket.id)
+    socket.onopen = () => {
+      log('✓ 已连接到信令服务器')
       log('正在注册设备 ID: ' + myDeviceId)
-      socket.emit('register', { deviceId: myDeviceId })
+      wsSend('register', { deviceId: myDeviceId })
       updateServerStatus('已连接', 'connected')
       setConnectionStatus(CONNECTION_STATUS.CONNECTED)
       reconnectAttempts = 0
       showToast('已连接到信令服务器')
-    })
+      startWsHeartbeat()
+    }
 
-    socket.on('disconnect', (reason) => {
-      log('与信令服务器断开连接，原因: ' + reason)
+    socket.onclose = (event) => {
+      log('与信令服务器断开连接, code: ' + event.code)
+      stopWsHeartbeat()
       updateServerStatus('已断开', 'disconnected')
       setConnectionStatus(CONNECTION_STATUS.DISCONNECTED)
-    })
+    }
 
-    socket.on('connect_error', (error) => {
-      log('✗ 连接错误: ' + (error.message || error))
-      log('提示: 如果使用 HTTPS/WSS，确保证书已正确安装')
-      log('提示: 如果不想使用证书，可以尝试用 http:// 或 ws:// 开头的地址')
+    socket.onerror = (error) => {
+      log('✗ 连接错误')
       updateServerStatus('连接失败', 'error')
       setConnectionStatus(CONNECTION_STATUS.ERROR)
       showToast('连接服务器失败')
-    })
+    }
 
-    socket.on('reconnect_attempt', (attemptNumber) => {
-      log('正在尝试重连... (第 ' + attemptNumber + ' 次)')
-      reconnectAttempts = attemptNumber
-    })
-
-    socket.on('reconnect_failed', () => {
-      log('✗ 重连失败，请检查服务器地址和网络连接')
-      updateServerStatus('重连失败', 'error')
-      setConnectionStatus(CONNECTION_STATUS.ERROR)
-      showToast('重连失败')
-    })
-
-    socket.on('incoming-connection', (data) => {
-      log('收到连接请求: ' + JSON.stringify(data))
-      incomingFromDeviceId = data.fromDeviceId
-      currentSessionId = data.sessionId
-      isController = false
-      showIncomingConnectionDialog(data.fromDeviceId)
-    })
-
-    socket.on('connection-result', async (data) => {
-      log('连接结果: ' + JSON.stringify(data))
-      if (data.accepted) {
-        isController = true
-        await startControllerConnection()
-      } else {
-        showToast('对方拒绝了连接请求')
+    socket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        handleWsMessage(data)
+      } catch (e) {
+        log('解析消息失败: ' + e.message)
       }
-    })
-
-    socket.on('offer', async (data) => {
-      log('收到 offer')
-      await handleOffer(data)
-    })
-
-    socket.on('answer', async (data) => {
-      log('收到 answer')
-      await handleAnswer(data)
-    })
-
-    socket.on('ice-candidate', async (data) => {
-      log('收到 ICE candidate')
-      await handleIceCandidate(data)
-    })
+    }
   } catch (error) {
     log('✗ 连接初始化错误: ' + error.message)
     showToast('连接失败')
@@ -1408,7 +1468,7 @@ async function connectDevice() {
     showToast('不能连接自己')
     return
   }
-  if (!socket || !socket.connected) {
+  if (!isSocketConnected()) {
     showToast('未连接到信令服务器')
     return
   }
@@ -1416,7 +1476,7 @@ async function connectDevice() {
   saveToHistory('signaling', { deviceId: targetId, serverUrl: serverUrl })
   
   incomingFromDeviceId = targetId
-  socket.emit('connect-request', {
+  wsSend('connect-request', {
     fromDeviceId: myDeviceId,
     toDeviceId: targetId
   })
@@ -1433,7 +1493,7 @@ function showIncomingConnectionDialog(fromDeviceId) {
 }
 
 async function acceptConnection() {
-  socket.emit('connection-response', {
+  wsSend('connection-response', {
     sessionId: currentSessionId,
     accepted: true,
     fromDeviceId: incomingFromDeviceId,
@@ -1444,7 +1504,7 @@ async function acceptConnection() {
 }
 
 function rejectConnection() {
-  socket.emit('connection-response', {
+  wsSend('connection-response', {
     sessionId: currentSessionId,
     accepted: false,
     fromDeviceId: incomingFromDeviceId,
@@ -1677,14 +1737,71 @@ async function startDirectControllerConnection() {
   }
   
   directPeerConnection.ondatachannel = (event) => {
-    log('收到数据通道')
-    dataChannel = event.channel
-    setupDataChannel()
+    log('收到数据通道: ' + event.channel.label)
+    if (event.channel.label === 'control') {
+      dataChannel = event.channel
+      setupDataChannel()
+    } else if (event.channel.label === 'input') {
+      inputChannel = event.channel
+      inputChannel.binaryType = 'arraybuffer'
+      inputChannelReady = true
+      inputChannel.onmessage = (msgEvent) => {
+        try {
+          const data = JSON.parse(msgEvent.data)
+          if (data.type === 'input') {
+            handleReceivedInput(data)
+          }
+        } catch (e) {
+          log('输入通道消息解析失败: ' + e.message)
+        }
+      }
+      inputChannel.onclose = () => {
+        inputChannelReady = false
+        log('输入数据通道已关闭')
+      }
+      inputChannel.onerror = (error) => {
+        inputChannelReady = false
+        log('输入数据通道错误: ' + error)
+      }
+      log('输入数据通道已就绪（接收端）')
+    }
   }
   
   log('创建数据通道')
-  dataChannel = directPeerConnection.createDataChannel('control')
+  dataChannel = directPeerConnection.createDataChannel('control', {
+    ordered: true,
+    maxRetransmits: 3
+  })
   setupDataChannel()
+  
+  inputChannel = directPeerConnection.createDataChannel('input', {
+    ordered: false,
+    maxRetransmits: 0
+  })
+  inputChannel.binaryType = 'arraybuffer'
+  inputChannelReady = false
+  inputChannel.onopen = () => {
+    inputChannelReady = true
+    log('输入数据通道已打开（无序、不重传）')
+  }
+  inputChannel.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data)
+      if (data.type === 'input') {
+        handleReceivedInput(data)
+      }
+    } catch (e) {
+      log('输入通道消息解析失败: ' + e.message)
+    }
+  }
+  inputChannel.onclose = () => {
+    inputChannelReady = false
+    log('输入数据通道已关闭')
+  }
+  inputChannel.onerror = (error) => {
+    inputChannelReady = false
+    log('输入数据通道错误: ' + error)
+  }
   
   try {
     log('创建WebRTC Offer')
@@ -1736,9 +1853,34 @@ async function handleDirectOffer(offer) {
     }
     
     directPeerConnection.ondatachannel = (event) => {
-      log('收到数据通道')
-      dataChannel = event.channel
-      setupDataChannel()
+      log('收到数据通道: ' + event.channel.label)
+      if (event.channel.label === 'control') {
+        dataChannel = event.channel
+        setupDataChannel()
+      } else if (event.channel.label === 'input') {
+        inputChannel = event.channel
+        inputChannel.binaryType = 'arraybuffer'
+        inputChannelReady = true
+        inputChannel.onmessage = (msgEvent) => {
+          try {
+            const data = JSON.parse(msgEvent.data)
+            if (data.type === 'input') {
+              handleReceivedInput(data)
+            }
+          } catch (e) {
+            log('输入通道消息解析失败: ' + e.message)
+          }
+        }
+        inputChannel.onclose = () => {
+          inputChannelReady = false
+          log('输入数据通道已关闭')
+        }
+        inputChannel.onerror = (error) => {
+          inputChannelReady = false
+          log('输入数据通道错误: ' + error)
+        }
+        log('输入数据通道已就绪（接收端）')
+      }
     }
     
     await directPeerConnection.setRemoteDescription(new RTCSessionDescription(offer))
@@ -1918,7 +2060,7 @@ async function startControllerConnection() {
     const offer = await peerConnection.createOffer()
     await peerConnection.setLocalDescription(offer)
     
-    socket.emit('offer', {
+    wsSend('offer', {
       sessionId: currentSessionId,
       offer: offer,
       toDeviceId: incomingFromDeviceId
@@ -1945,7 +2087,7 @@ async function createPeerConnection() {
 
   peerConnection.onicecandidate = (event) => {
     if (event.candidate && socket) {
-      socket.emit('ice-candidate', {
+      wsSend('ice-candidate', {
         sessionId: currentSessionId,
         candidate: event.candidate,
         toDeviceId: incomingFromDeviceId
@@ -2023,9 +2165,34 @@ async function createPeerConnection() {
   }
 
   peerConnection.ondatachannel = (event) => {
-    log('收到数据通道')
-    dataChannel = event.channel
-    setupDataChannel()
+    log('收到数据通道: ' + event.channel.label)
+    if (event.channel.label === 'control') {
+      dataChannel = event.channel
+      setupDataChannel()
+    } else if (event.channel.label === 'input') {
+      inputChannel = event.channel
+      inputChannel.binaryType = 'arraybuffer'
+      inputChannelReady = true
+      inputChannel.onmessage = (msgEvent) => {
+        try {
+          const data = JSON.parse(msgEvent.data)
+          if (data.type === 'input') {
+            handleReceivedInput(data)
+          }
+        } catch (e) {
+          log('输入通道消息解析失败: ' + e.message)
+        }
+      }
+      inputChannel.onclose = () => {
+        inputChannelReady = false
+        log('输入数据通道已关闭')
+      }
+      inputChannel.onerror = (error) => {
+        inputChannelReady = false
+        log('输入数据通道错误: ' + error)
+      }
+      log('输入数据通道已就绪（接收端）')
+    }
   }
 
   if (isController) {
@@ -2034,8 +2201,40 @@ async function createPeerConnection() {
     log('已添加视频和音频接收器')
     
     log('创建数据通道（主控端）')
-    dataChannel = peerConnection.createDataChannel('control')
+    dataChannel = peerConnection.createDataChannel('control', {
+      ordered: true,
+      maxRetransmits: 3
+    })
     setupDataChannel()
+    
+    inputChannel = peerConnection.createDataChannel('input', {
+      ordered: false,
+      maxRetransmits: 0
+    })
+    inputChannel.binaryType = 'arraybuffer'
+    inputChannelReady = false
+    inputChannel.onopen = () => {
+      inputChannelReady = true
+      log('输入数据通道已打开（无序、不重传）')
+    }
+    inputChannel.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        if (data.type === 'input') {
+          handleReceivedInput(data)
+        }
+      } catch (e) {
+        log('输入通道消息解析失败: ' + e.message)
+      }
+    }
+    inputChannel.onclose = () => {
+      inputChannelReady = false
+      log('输入数据通道已关闭')
+    }
+    inputChannel.onerror = (error) => {
+      inputChannelReady = false
+      log('输入数据通道错误: ' + error)
+    }
   }
 }
 
@@ -2267,10 +2466,18 @@ function simulateKeyUp(code, key, modifiers) {
 }
 
 function sendControlCommand(command) {
+  const inputCommand = convertToInputCommand(command)
+  const message = JSON.stringify(inputCommand)
+  
+  if (inputChannel && inputChannelReady && inputChannel.readyState === 'open') {
+    if (inputChannel.bufferedAmount < 65536) {
+      inputChannel.send(message)
+      return
+    }
+  }
+  
   if (dataChannel && dataChannel.readyState === 'open') {
-    const inputCommand = convertToInputCommand(command)
-    log('发送控制命令: ' + JSON.stringify(inputCommand))
-    dataChannel.send(JSON.stringify(inputCommand))
+    dataChannel.send(message)
   } else {
     log('数据通道未打开，无法发送命令')
   }
@@ -2937,6 +3144,11 @@ async function handleOffer(data) {
   isAndroidControlled = true
   isController = false
   
+  if (!peerConnection) {
+    log('[Android信令模式-被控端] PeerConnection不存在，先创建')
+    await createPeerConnection()
+  }
+  
   try {
     await InputExecutor.setControlledMode({ enabled: true })
     log('[Android信令模式-被控端] InputExecutor被控模式已启用')
@@ -2944,24 +3156,31 @@ async function handleOffer(data) {
     log('[Android信令模式-被控端] 设置InputExecutor模式失败: ' + e.message)
   }
   
-  await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer))
-  log('[Android信令模式-被控端] 远程描述设置成功')
-  
-  log('[Android信令模式-被控端] 开始捕获屏幕...')
-  await startAndroidScreenCapture()
-  
-  log('[Android信令模式-被控端] 创建Answer...')
-  const answer = await peerConnection.createAnswer()
-  await peerConnection.setLocalDescription(answer)
-  log('[Android信令模式-被控端] 本地描述设置成功')
-  
-  log('[Android信令模式-被控端] 发送Answer到信令服务器')
-  socket.emit('answer', {
-    sessionId: currentSessionId,
-    answer: answer,
-    toDeviceId: incomingFromDeviceId
-  })
-  log('[Android信令模式-被控端] Answer已发送')
+  try {
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer))
+    log('[Android信令模式-被控端] 远程描述设置成功')
+    
+    await addPendingIceCandidates()
+    
+    log('[Android信令模式-被控端] 开始捕获屏幕...')
+    await startAndroidScreenCapture()
+    
+    log('[Android信令模式-被控端] 创建Answer...')
+    const answer = await peerConnection.createAnswer()
+    await peerConnection.setLocalDescription(answer)
+    log('[Android信令模式-被控端] 本地描述设置成功')
+    
+    log('[Android信令模式-被控端] 发送Answer到信令服务器')
+    wsSend('answer', {
+      sessionId: currentSessionId,
+      answer: { type: answer.type, sdp: answer.sdp },
+      toDeviceId: incomingFromDeviceId
+    })
+    log('[Android信令模式-被控端] Answer已发送')
+  } catch (error) {
+    log('[Android信令模式-被控端] 处理Offer失败: ' + error.message)
+    console.error('[Android信令模式-被控端] 处理Offer详细错误:', error)
+  }
 }
 
 async function startAndroidScreenCapture() {
@@ -3002,12 +3221,52 @@ async function startAndroidScreenCapture() {
 }
 
 async function handleAnswer(data) {
-  await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer))
+  if (!data.answer) {
+    log('收到空 answer')
+    return
+  }
+  try {
+    if (data.fromDeviceId) {
+      incomingFromDeviceId = data.fromDeviceId
+    }
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer))
+    log('Answer设置成功')
+    await addPendingIceCandidates()
+  } catch (error) {
+    log('设置Answer失败: ' + error.message)
+  }
+}
+
+async function addPendingIceCandidates() {
+  if (pendingIceCandidates.length === 0) return
+  log('添加缓存的ICE候选: ' + pendingIceCandidates.length + ' 个')
+  for (const candidate of pendingIceCandidates) {
+    try {
+      await peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
+    } catch (error) {
+      log('添加缓存ICE候选失败: ' + error.message)
+    }
+  }
+  pendingIceCandidates = []
 }
 
 async function handleIceCandidate(data) {
-  if (data.candidate && peerConnection) {
+  if (!data.candidate) return
+  
+  if (data.candidate.sdpMid === null && data.candidate.sdpMLineIndex === null) return
+  
+  if (!peerConnection || !peerConnection.remoteDescription) {
+    if (pendingIceCandidates.length < 50) {
+      pendingIceCandidates.push(data.candidate)
+      log('缓存 ICE 候选（远程描述未设置）')
+    }
+    return
+  }
+  
+  try {
     await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate))
+  } catch (error) {
+    log('添加ICE候选失败: ' + error.message)
   }
 }
 

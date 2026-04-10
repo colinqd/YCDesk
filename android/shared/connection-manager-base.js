@@ -171,6 +171,31 @@ class BaseConnectionManager {
             this.log('收到数据通道: ' + event.channel.label)
             if (event.channel.label === 'control') {
                 this.dataChannelManager.setDataChannel(event.channel)
+            } else if (event.channel.label === 'input') {
+                this.inputChannel = event.channel
+                this.inputChannel.binaryType = 'arraybuffer'
+                this.inputChannelReady = true
+                
+                this.inputChannel.onmessage = (msgEvent) => {
+                    try {
+                        const data = JSON.parse(msgEvent.data)
+                        this.handleInputChannelMessage(data)
+                    } catch (e) {
+                        this.error('输入通道消息解析失败:', e)
+                    }
+                }
+                
+                this.inputChannel.onclose = () => {
+                    this.inputChannelReady = false
+                    this.log('输入数据通道已关闭')
+                }
+                
+                this.inputChannel.onerror = (error) => {
+                    this.inputChannelReady = false
+                    this.error('输入数据通道错误:', error)
+                }
+                
+                this.log('输入数据通道已就绪（接收端）')
             } else if (event.channel.label.startsWith('aux-')) {
                 const channelName = event.channel.label.replace('aux-', '')
                 this.auxiliaryChannels.set(channelName, event.channel)
@@ -185,19 +210,19 @@ class BaseConnectionManager {
     }
 
     async createDataChannel() {
-        this.log('创建数据通道')
+        this.log('创建数据通道（双通道架构）')
         
         this.dataChannelManager = new DataChannelManager({ logger: this })
         
-        const channel = this.peerConnection.createDataChannel('control', {
+        const controlChannel = this.peerConnection.createDataChannel('control', {
             ordered: true,
             maxRetransmits: 3
         })
         
-        this.dataChannelManager.setDataChannel(channel)
+        this.dataChannelManager.setDataChannel(controlChannel)
         
         this.dataChannelManager.setOnOpen(() => {
-            this.log('数据通道已打开')
+            this.log('控制数据通道已打开')
             this.emit('data-channel-open')
         })
         
@@ -214,6 +239,38 @@ class BaseConnectionManager {
             this.error('数据通道错误:', error)
             this.emit('data-channel-error', error)
         })
+        
+        this.inputChannel = this.peerConnection.createDataChannel('input', {
+            ordered: false,
+            maxRetransmits: 0
+        })
+        
+        this.inputChannel.binaryType = 'arraybuffer'
+        this.inputChannelReady = false
+        
+        this.inputChannel.onopen = () => {
+            this.inputChannelReady = true
+            this.log('输入数据通道已打开（无序、不重传）')
+        }
+        
+        this.inputChannel.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data)
+                this.handleInputChannelMessage(data)
+            } catch (e) {
+                this.error('输入通道消息解析失败:', e)
+            }
+        }
+        
+        this.inputChannel.onclose = () => {
+            this.inputChannelReady = false
+            this.log('输入数据通道已关闭')
+        }
+        
+        this.inputChannel.onerror = (error) => {
+            this.inputChannelReady = false
+            this.error('输入数据通道错误:', error)
+        }
     }
 
     async waitForDataChannelOpen() {
@@ -528,11 +585,31 @@ class BaseConnectionManager {
     }
 
     sendInput(eventData) {
+        const message = JSON.stringify({
+            type: 'input',
+            ...eventData
+        })
+        
+        if (this.inputChannel && this.inputChannelReady && this.inputChannel.readyState === 'open') {
+            if (this.inputChannel.bufferedAmount < 65536) {
+                this.inputChannel.send(message)
+                return
+            }
+        }
+        
         if (this.dataChannelManager && this.dataChannelManager.isOpen()) {
             this.dataChannelManager.send({
                 type: 'input',
                 ...eventData
             }, false)
+        }
+    }
+    
+    handleInputChannelMessage(data) {
+        if (data.type === 'input') {
+            if (window.electronAPI) {
+                window.electronAPI.send('remote-input', data)
+            }
         }
     }
 
@@ -568,6 +645,16 @@ class BaseConnectionManager {
         })
         this.auxiliaryChannels.clear()
         
+        if (this.inputChannel) {
+            try {
+                this.inputChannel.close()
+            } catch (e) {
+                this.error('关闭输入通道失败:', e)
+            }
+            this.inputChannel = null
+            this.inputChannelReady = false
+        }
+
         if (this.dataChannelManager) {
             this.dataChannelManager.close()
         }

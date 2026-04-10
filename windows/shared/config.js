@@ -147,31 +147,24 @@ function normalizeServerUrl(url, preferSecure = null) {
   
   let normalized = url.trim()
   
-  // 修复常见拼写错误
   normalized = normalized.replace(/^wws:\/\//i, 'wss://')
-  
-  // Socket.IO 应该使用 WebSocket 协议，自动转换
-  // https:// -> wss://
-  // http:// -> ws://
-  normalized = normalized.replace(/^https:\/\//i, 'wss://')
-  normalized = normalized.replace(/^http:\/\//i, 'ws://')
-  
-  // 确保 ws:// 和 wss:// 格式正确
-  normalized = normalized.replace(/^ws:\/\//i, 'ws://')
   normalized = normalized.replace(/^wss:\/\//i, 'wss://')
+  normalized = normalized.replace(/^ws:\/\//i, 'ws://')
   
-  // 如果用户已经指定了协议，则保留用户的选择
-  if (normalized.match(/^(wss|ws):\/\//i)) {
+  if (normalized.match(/^wss?:\/\//i)) {
     return normalized
   }
   
-  // 如果没有协议前缀，根据 preferSecure 参数决定默认协议
+  normalized = normalized.replace(/^https:\/\//i, 'wss://')
+  normalized = normalized.replace(/^http:\/\//i, 'ws://')
+  
+  if (normalized.match(/^wss?:\/\//i)) {
+    return normalized
+  }
+  
   if (preferSecure === true) {
     normalized = 'wss://' + normalized
-  } else if (preferSecure === false) {
-    normalized = 'ws://' + normalized
   } else {
-    // 默认使用 ws://（和修改前一致）
     normalized = 'ws://' + normalized
   }
   

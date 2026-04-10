@@ -624,9 +624,8 @@
       
       const MOUSE_MOVE_CONFIG = {
         MIN_INTERVAL_MS: 8,
-        MIN_DISTANCE_PX: 2,
-        IDLE_TIMEOUT_MS: 100,
-        SMOOTH_FACTOR: 0.6
+        MIN_DISTANCE_PX: 1,
+        IDLE_TIMEOUT_MS: 100
       };
 
       const BLOCKED_SHORTCUTS = [
@@ -650,18 +649,6 @@
       let wheelSendTimer = null;
       const WHEEL_BATCH_INTERVAL_MS = 16;
       
-      let smoothedDeltaX = 0;
-      let smoothedDeltaY = 0;
-      
-      function smoothDelta(dx, dy) {
-        smoothedDeltaX = smoothedDeltaX + (dx - smoothedDeltaX) * MOUSE_MOVE_CONFIG.SMOOTH_FACTOR;
-        smoothedDeltaY = smoothedDeltaY + (dy - smoothedDeltaY) * MOUSE_MOVE_CONFIG.SMOOTH_FACTOR;
-        return {
-          dx: Math.round(smoothedDeltaX),
-          dy: Math.round(smoothedDeltaY)
-        };
-      }
-      
       function getShortcutKey(e) {
         let shortcut = '';
         if (e.ctrlKey) shortcut += 'Ctrl+';
@@ -680,12 +667,10 @@
       function flushMouseDelta() {
         if (accumulatedDeltaX === 0 && accumulatedDeltaY === 0) return;
         
-        const smoothed = smoothDelta(accumulatedDeltaX, accumulatedDeltaY);
-        
         connectionManager.sendInput({
           inputType: 'mousemove_delta',
-          dx: smoothed.dx,
-          dy: smoothed.dy,
+          dx: Math.round(accumulatedDeltaX),
+          dy: Math.round(accumulatedDeltaY),
           sequenceId: sequenceId++
         });
         

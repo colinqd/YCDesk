@@ -53,29 +53,6 @@ let pressedButtons = {
 }
 let pressedKeys = new Set()
 
-const INPUT_RATE_LIMIT = {
-  mousemove: { interval: 8, lastTime: 0 },
-  mousemove_delta: { interval: 8, lastTime: 0 },
-  wheel: { interval: 16, lastTime: 0 },
-  wheel_batch: { interval: 16, lastTime: 0 },
-  default: { interval: 0, lastTime: 0 }
-}
-
-function checkRateLimit(inputType) {
-  const limit = INPUT_RATE_LIMIT[inputType] || INPUT_RATE_LIMIT.default
-  if (limit.interval === 0) return true
-  
-  const now = Date.now()
-  if (now - limit.lastTime < limit.interval) {
-    return false
-  }
-  limit.lastTime = now
-  return true
-}
-
-function updateNetworkLatency(latency) {
-}
-
 const BUTTON_MAP = {
   0: 'left',
   1: 'middle', 
@@ -128,10 +105,6 @@ const KEY_CODE_MAP = {
 
 function handleRemoteInput(event, inputData) {
   if (!robot) {
-    return
-  }
-  
-  if (!checkRateLimit(inputData.inputType)) {
     return
   }
   
@@ -542,7 +515,6 @@ function cleanup() {
   pressedKeys = new Set()
   pressedButtons = { left: false, right: false, middle: false }
   pressedModifiers = { Control: false, Shift: false, Alt: false, Meta: false }
-  Object.values(INPUT_RATE_LIMIT).forEach(limit => { limit.lastTime = 0 })
   log('info', '输入处理器已清理')
 }
 
@@ -552,7 +524,6 @@ module.exports = {
   resetAllInputState,
   cleanup,
   initLogger,
-  updateNetworkLatency,
   flushInterpolationQueue: () => {},
   hideCursor,
   showCursor

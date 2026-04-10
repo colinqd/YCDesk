@@ -200,7 +200,12 @@ io.on('connection', (socket) => {
   console.log('新连接:', socket.id);
 
   // 设备注册
-  socket.on('register', (deviceId) => {
+  socket.on('register', (data) => {
+    const deviceId = typeof data === 'string' ? data : data.deviceId;
+    if (!deviceId) {
+      console.log('注册失败: 缺少 deviceId');
+      return;
+    }
     devices.set(deviceId, {
       socketId: socket.id,
       lastSeen: new Date()
@@ -245,7 +250,7 @@ io.on('connection', (socket) => {
     const session = sessions.get(sessionId);
     
     if (session) {
-      session.status = accepted ? 'accepted' : 'rejected';
+      session.status = accepted ? 'active' : 'rejected';
       sessions.set(sessionId, session);
       
       const fromDevice = devices.get(fromDeviceId);
@@ -264,42 +269,59 @@ io.on('connection', (socket) => {
   // WebRTC Offer
   socket.on('offer', (data) => {
     const { sessionId, offer, toDeviceId } = data;
-    const toDevice = devices.get(toDeviceId);
+    const fromDeviceId = findDeviceBySocket(socket.id);
+    const targetDeviceId = toDeviceId;
+    const toDevice = devices.get(targetDeviceId);
+    
+    let resolvedSessionId = sessionId;
+    if (!resolvedSessionId && fromDeviceId) {
+      for (const [sid, session] of sessions.entries()) {
+        if (session.fromDeviceId === fromDeviceId && session.status === 'active') {
+          resolvedSessionId = sid;
+          break;
+        }
+      }
+    }
     
     if (toDevice) {
       io.to(toDevice.socketId).emit('offer', {
-        sessionId,
-        offer
+        sessionId: resolvedSessionId,
+        offer,
+        fromDeviceId
       });
-      console.log('转发Offer:', sessionId, '->', toDeviceId);
+      console.log('转发Offer:', resolvedSessionId, fromDeviceId, '->', targetDeviceId);
+    } else {
+      console.log('转发Offer失败: 目标设备不在线', targetDeviceId);
     }
   });
 
   // WebRTC Answer
   socket.on('answer', (data) => {
     const { sessionId, answer, toDeviceId } = data;
+    const fromDeviceId = findDeviceBySocket(socket.id);
     const toDevice = devices.get(toDeviceId);
     
     if (toDevice) {
       io.to(toDevice.socketId).emit('answer', {
         sessionId,
-        answer
+        answer,
+        fromDeviceId
       });
-      console.log('转发Answer:', sessionId, '->', toDeviceId);
+      console.log('转发Answer:', sessionId, fromDeviceId, '->', toDeviceId);
     }
   });
 
-  // ICE Candidate
   socket.on('ice-candidate', (data) => {
     const { sessionId, candidate, toDeviceId } = data;
+    const fromDeviceId = findDeviceBySocket(socket.id);
     const toDevice = devices.get(toDeviceId);
     
     if (toDevice) {
       io.to(toDevice.socketId).emit('ice-candidate', {
         sessionId,
-        candidate
+        candidate,
+        fromDeviceId
       });
-      console.log('转发ICE Candidate:', sessionId, '->', toDeviceId);
     }
   });
 
@@ -320,6 +342,15 @@ io.on('connection', (socket) => {
 
 function generateSessionId() {
   return Math.random().toString(36).substr(2, 9).toUpperCase();
+}
+
+function findDeviceBySocket(socketId) {
+  for (const [deviceId, device] of devices.entries()) {
+    if (device.socketId === socketId) {
+      return deviceId;
+    }
+  }
+  return null;
 }
 
 const PORT = process.env.PORT || options.port;
