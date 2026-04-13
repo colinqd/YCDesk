@@ -247,21 +247,21 @@ class MatrixTransformer {
     }
     
     /**
-     * Display 坐标转 Remote 坐标
+     * Display 坐标转 Remote 归一化坐标 (0~1)
      * 
      * @param {number} displayX - Display X 坐标
      * @param {number} displayY - Display Y 坐标
-     * @returns {Object|null} Remote 坐标 {x, y}，失败返回 null
+     * @returns {Object|null} 归一化坐标 {x, y}，范围 0~1，失败返回 null
      */
     displayToRemote(displayX, displayY) {
         if (this.displayWidth === 0 || this.displayHeight === 0) {
             return null
         }
         
-        const remoteX = (displayX / this.displayWidth) * this.remoteScreenWidth
-        const remoteY = (displayY / this.displayHeight) * this.remoteScreenHeight
+        const normalizedX = displayX / this.displayWidth
+        const normalizedY = displayY / this.displayHeight
         
-        return { x: remoteX, y: remoteY }
+        return { x: normalizedX, y: normalizedY }
     }
     
     /**
@@ -469,19 +469,21 @@ class MatrixTransformer {
      * 限制平移范围
      */
     clampPan() {
-        if (this.screenWidth === 0 || this.screenHeight === 0 || 
-            this.elementWidth === 0 || this.elementHeight === 0) {
+        if (this.screenWidth === 0 || this.screenHeight === 0) {
             this._matrixDirty = true
             return
         }
         
-        const scaledWidth = this.elementWidth * this.scale
-        const scaledHeight = this.elementHeight * this.scale
+        const effectiveWidth = this.displayWidth > 0 ? this.displayWidth : (this.elementWidth > 0 ? this.elementWidth : this.screenWidth)
+        const effectiveHeight = this.displayHeight > 0 ? this.displayHeight : (this.elementHeight > 0 ? this.elementHeight : this.screenHeight)
         
-        const minPanX = -this.centerX + 20
-        const maxPanX = this.screenWidth - this.centerX - scaledWidth - 20
-        const minPanY = -this.centerY + 20
-        const maxPanY = this.screenHeight - this.centerY - scaledHeight - 20
+        const scaledWidth = effectiveWidth * this.scale
+        const scaledHeight = effectiveHeight * this.scale
+        
+        const minPanX = -this.centerX
+        const maxPanX = this.screenWidth - this.centerX - scaledWidth
+        const minPanY = -this.centerY
+        const maxPanY = this.screenHeight - this.centerY - scaledHeight
         
         this.panX = Math.max(Math.min(minPanX, maxPanX), Math.min(Math.max(minPanX, maxPanX), this.panX))
         this.panY = Math.max(Math.min(minPanY, maxPanY), Math.min(Math.max(minPanY, maxPanY), this.panY))
@@ -556,10 +558,33 @@ class MatrixTransformer {
                 `设置容器尺寸 ${this.displayWidth}x${this.displayHeight}, 位置 (${this.displayX}, ${this.displayY})`)
             
             if (wrapperElement) {
-                wrapperElement.style.width = '100%'
-                wrapperElement.style.height = '100%'
-                wrapperElement.style.left = '0px'
-                wrapperElement.style.top = '0px'
+                let wrapperWidth = this.displayWidth
+                let wrapperHeight = this.displayHeight
+                let wrapperLeft = 0
+                let wrapperTop = 0
+                
+                if (this.remoteScreenWidth > 0 && this.remoteScreenHeight > 0) {
+                    const containerAspect = this.displayWidth / this.displayHeight
+                    const remoteAspect = this.remoteScreenWidth / this.remoteScreenHeight
+                    
+                    if (remoteAspect > containerAspect) {
+                        wrapperWidth = this.displayWidth
+                        wrapperHeight = this.displayWidth / remoteAspect
+                        wrapperTop = (this.displayHeight - wrapperHeight) / 2
+                    } else {
+                        wrapperHeight = this.displayHeight
+                        wrapperWidth = this.displayHeight * remoteAspect
+                        wrapperLeft = (this.displayWidth - wrapperWidth) / 2
+                    }
+                }
+                
+                wrapperElement.style.width = wrapperWidth + 'px'
+                wrapperElement.style.height = wrapperHeight + 'px'
+                wrapperElement.style.left = wrapperLeft + 'px'
+                wrapperElement.style.top = wrapperTop + 'px'
+                
+                this._log('applyContainerSize', 
+                    `设置 wrapper 尺寸 ${wrapperWidth}x${wrapperHeight}, 位置 (${wrapperLeft}, ${wrapperTop})`)
             }
         } else {
             this._log('applyContainerSize', 'displayWidth 或 displayHeight 为 0，跳过设置')
@@ -633,18 +658,4 @@ class MatrixTransformer {
     }
 }
 
-// 导出 DOM 辅助类（从单独文件）
-try {
-    const { MatrixTransformerDOM } = require('./matrix-transformer-dom.js')
-    module.exports.MatrixTransformerDOM = MatrixTransformerDOM
-} catch (e) {
-    // 如果文件不存在，跳过导出
-}
-
-// 兼容 Node.js 和浏览器
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports.MatrixTransformer = MatrixTransformer
-    module.exports.default = MatrixTransformer
-} else {
-    window.MatrixTransformer = MatrixTransformer
-}
+export default MatrixTransformer

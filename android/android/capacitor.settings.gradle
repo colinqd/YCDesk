@@ -10,6 +10,3 @@ project(':capacitor-device').projectDir = new File('../node_modules/@capacitor/d
 
 include ':capacitor-network'
 project(':capacitor-network').projectDir = new File('../node_modules/@capacitor/network/android')
-
-include ':capacitor-screen-reader'
-project(':capacitor-screen-reader').projectDir = new File('../node_modules/@capacitor/screen-reader/android')

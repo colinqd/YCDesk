@@ -1,6 +1,6 @@
 {
   "name": "ycdesk",
-  "version": "2.1.0",
+  "version": "2.5.0",
   "description": "远程桌面控制软件 - Windows 版本",
   "main": "src/main/main.js",
   "author": "",
@@ -33,9 +33,7 @@
   },
   "dependencies": {
     "robotjs": "0.6.0",
-    "socket.io-client": "^4.6.0",
-    "winston": "^3.11.0",
-    "winston-daily-rotate-file": "^4.7.1"
+    "socket.io-client": "^4.6.0"
   },
   "build": {
     "appId": "com.ycdesk.desktop",

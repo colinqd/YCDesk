@@ -400,4 +400,19 @@ async function closeWindow() {
 
 document.addEventListener('DOMContentLoaded', () => {
   initializeApp()
+  
+  const controlledModeSelect = document.getElementById('controlledConnectionMode')
+  const controllerModeSelect = document.getElementById('controllerConnectionMode')
+  
+  if (controlledModeSelect) {
+    controlledModeSelect.addEventListener('change', (e) => {
+      signalingManager.setConnectionMode(e.target.value)
+    })
+  }
+  
+  if (controllerModeSelect) {
+    controllerModeSelect.addEventListener('change', (e) => {
+      signalingManager.setConnectionMode(e.target.value)
+    })
+  }
 })

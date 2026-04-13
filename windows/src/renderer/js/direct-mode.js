@@ -250,6 +250,20 @@ class DirectModeManager {
       
       if (channel.label === 'control') {
         this.dataChannelManager.setDataChannel(channel)
+      } else if (channel.label === 'input') {
+        channel.onmessage = (e) => {
+          try {
+            const data = JSON.parse(e.data)
+            if (data.type === 'input') {
+              window.electronAPI.send('remote-input', data)
+            }
+          } catch (err) {
+            this.logFn('input通道消息解析失败: ' + err.message)
+          }
+        }
+        channel.onopen = () => {
+          this.logFn('input数据通道已打开')
+        }
       } else if (channel.label.startsWith('aux-')) {
         const channelType = channel.label.replace('aux-', '')
         this.setupAuxiliaryChannel(channelType, channel)
@@ -295,8 +309,8 @@ class DirectModeManager {
       this.logFn('收到分辨率请求: ' + resolution.width + 'x' + resolution.height)
       this.logFn('根据客户端窗口尺寸调整虚拟显示器分辨率...')
       
-      const targetWidth = Math.min(resolution.width, this.config.screenCapture?.maxWidth || 1920)
-      const targetHeight = Math.min(resolution.height, this.config.screenCapture?.maxHeight || 1080)
+      const targetWidth = resolution.width || 1920
+      const targetHeight = resolution.height || 1080
       
       this.logFn('目标捕获分辨率: ' + targetWidth + 'x' + targetHeight)
       
@@ -446,8 +460,8 @@ class DirectModeManager {
       this.logFn('可用屏幕源: ' + sources.length + ' 个')
 
       if (sources.length > 0) {
-        const maxWidth = targetWidth || this.config.screenCapture?.maxWidth || 1920
-        const maxHeight = targetHeight || this.config.screenCapture?.maxHeight || 1080
+        const maxWidth = targetWidth || 1920
+        const maxHeight = targetHeight || 1080
         
         this.currentStream = await navigator.mediaDevices.getUserMedia({
           audio: false,
@@ -466,8 +480,21 @@ class DirectModeManager {
         this.logFn('获取到 ' + tracks.length + ' 个媒体轨道')
 
         tracks.forEach(track => {
-          this.directPeerConnection.addTrack(track, this.currentStream)
+          const sender = this.directPeerConnection.addTrack(track, this.currentStream)
           this.logFn('已添加媒体轨道: ' + track.kind + ', label: ' + track.label)
+          
+          try {
+            const parameters = sender.getParameters()
+            if (!parameters.encodings || parameters.encodings.length === 0) {
+              parameters.encodings = [{}]
+            }
+            parameters.encodings[0].maxBitrate = 8000000
+            parameters.encodings[0].maxFramerate = 30
+            sender.setParameters(parameters)
+            this.logFn('已设置视频编码参数: maxBitrate=8Mbps, maxFramerate=30')
+          } catch (e) {
+            this.logFn('设置视频编码参数失败: ' + e.message)
+          }
         })
 
         const settings = tracks[0].getSettings()

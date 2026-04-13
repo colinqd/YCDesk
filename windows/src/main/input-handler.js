@@ -52,6 +52,8 @@ let pressedButtons = {
   middle: false
 }
 let pressedKeys = new Set()
+let wheelAccumulatorY = 0
+let wheelAccumulatorX = 0
 
 const BUTTON_MAP = {
   0: 'left',
@@ -287,13 +289,21 @@ function handleMouseWheel(deltaY, deltaX, x, y, screenWidth, screenHeight) {
   }
   
   if (deltaY) {
-    const scrollAmount = Math.round(deltaY / 120)
-    robot.scrollMouse(0, -scrollAmount)
+    wheelAccumulatorY += deltaY
+    const scrollAmount = Math.trunc(wheelAccumulatorY / 40)
+    if (scrollAmount !== 0) {
+      robot.scrollMouse(0, -scrollAmount)
+      wheelAccumulatorY -= scrollAmount * 40
+    }
   }
   
   if (deltaX) {
-    const scrollAmountX = Math.round(deltaX / 120)
-    robot.scrollMouse(-scrollAmountX, 0)
+    wheelAccumulatorX += deltaX
+    const scrollAmountX = Math.trunc(wheelAccumulatorX / 40)
+    if (scrollAmountX !== 0) {
+      robot.scrollMouse(-scrollAmountX, 0)
+      wheelAccumulatorX -= scrollAmountX * 40
+    }
   }
 }
 

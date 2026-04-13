@@ -73,16 +73,15 @@
           
           <div id="controlledSignalingMode" class="mode-content">
             <div class="input-group">
+              <label>连接方式</label>
+              <select id="controlledConnectionMode" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px;">
+                <option value="websocket" selected>原始 WebSocket（用于 android-server）</option>
+                <option value="socketio">Socket.IO（用于 server-gui）</option>
+              </select>
+            </div>
+            <div class="input-group">
               <label>信令服务器地址</label>
-              <div style="display: flex; gap: 10px;">
-                <select id="controlledProtocolSelect" style="flex: 0 0 120px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px;">
-                  <option value="ws://" selected>ws:// (非安全)</option>
-                  <option value="wss://">wss:// (安全)</option>
-                  <option value="http://">http:// (非安全)</option>
-                  <option value="https://">https:// (安全)</option>
-                </select>
-                <input type="text" id="controlledServerUrl" placeholder="localhost:3000" value="localhost:3000" style="flex: 1;">
-              </div>
+              <input type="text" id="controlledServerUrl" placeholder="例如: 192.168.1.100:3000" value="localhost:3000" style="width: 100%;">
               <button class="btn btn-primary" onclick="controlledConnectToServer()">连接服务器</button>
               <button class="btn btn-danger" onclick="controlledDisconnectFromServer()">断开连接</button>
             </div>
@@ -140,16 +139,15 @@
               </div>
             </div>
             <div class="input-group">
+              <label>连接方式</label>
+              <select id="controllerConnectionMode" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px;">
+                <option value="websocket" selected>原始 WebSocket（用于 android-server）</option>
+                <option value="socketio">Socket.IO（用于 server-gui）</option>
+              </select>
+            </div>
+            <div class="input-group">
               <label>信令服务器地址</label>
-              <div style="display: flex; gap: 10px;">
-                <select id="controllerProtocolSelect" style="flex: 0 0 120px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px;">
-                  <option value="ws://" selected>ws:// (非安全)</option>
-                  <option value="wss://">wss:// (安全)</option>
-                  <option value="http://">http:// (非安全)</option>
-                  <option value="https://">https:// (安全)</option>
-                </select>
-                <input type="text" id="controllerServerUrl" placeholder="localhost:3000" value="localhost:3000" style="flex: 1;">
-              </div>
+              <input type="text" id="controllerServerUrl" placeholder="例如: 192.168.1.100:3000" value="localhost:3000" style="width: 100%;">
               <button class="btn btn-secondary" style="margin-top: 10px;" onclick="controllerConnectToServer()">连接服务器</button>
               <button class="btn btn-danger" style="margin-top: 10px;" onclick="controllerDisconnectFromServer()">断开连接</button>
             </div>
@@ -174,6 +172,7 @@
   </div>
 
   <script src="shared/config.js"></script>
+  <script src="shared/signaling-client.js"></script>
   <script src="shared/data-channel-manager.js"></script>
   <script src="src/renderer/js/ui-manager.js"></script>
   <script src="src/renderer/js/history-manager.js"></script>

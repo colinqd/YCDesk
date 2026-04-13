@@ -544,6 +544,7 @@
       object-fit: contain;
       background: transparent;
       border-radius: 8px;
+      image-rendering: -webkit-optimize-contrast;
     }
 
     .remote-video.fullscreen {
@@ -1024,7 +1025,7 @@
       }
     }
 
-    .toast {
+    .toast-message {
       position: fixed;
       top: 15px;
       left: 50%;
@@ -1038,9 +1039,10 @@
       transition: transform 0.3s ease;
       max-width: 80%;
       text-align: center;
+      pointer-events: none;
     }
 
-    .toast.show {
+    .toast-message.show {
       transform: translateX(-50%) translateY(0);
     }
 
@@ -1122,16 +1124,15 @@
               </div>
             </div>
             <div class="input-group">
+              <label>连接方式</label>
+              <select id="controllerConnectionMode" style="width: 100%; padding: 12px 10px; font-size: 14px; border: 2px solid #e2e8f0; border-radius: 10px; background: white; font-weight: 600; color: #4a5568;">
+                <option value="websocket" selected>原始 WebSocket（用于 android-server）</option>
+                <option value="socketio">Socket.IO（用于 server-gui）</option>
+              </select>
+            </div>
+            <div class="input-group">
               <label>信令服务器地址</label>
-              <div style="display: flex; gap: 8px;">
-                <select id="controllerProtocolSelect" style="flex: 0 0 100px; padding: 10px 8px; font-size: 12px; border: 2px solid #e2e8f0; border-radius: 10px; background: white; font-weight: 600; color: #4a5568;">
-                  <option value="ws://" selected>ws:// (非安全)</option>
-                  <option value="wss://">wss:// (安全)</option>
-                  <option value="https://">https:// (安全)</option>
-                  <option value="http://">http:// (非安全)</option>
-                </select>
-                <input type="text" id="serverUrl" placeholder="your-server.com:3000" value="10.0.2.2:3000" style="flex: 1;">
-              </div>
+              <input type="text" id="serverUrl" placeholder="例如: 192.168.1.100:3000" value="10.0.2.2:3000" style="width: 100%;">
             </div>
             <div class="btn-group" style="margin-top: 10px;">
               <button class="btn btn-secondary" onclick="manualConnectToServer()">连接服务器</button>
@@ -1186,16 +1187,15 @@
           
           <div id="controlledSignalingMode" class="mode-content">
             <div class="input-group">
+              <label>连接方式</label>
+              <select id="controlledConnectionMode" style="width: 100%; padding: 12px 10px; font-size: 14px; border: 2px solid #e2e8f0; border-radius: 10px; background: white; font-weight: 600; color: #4a5568;">
+                <option value="websocket" selected>原始 WebSocket（用于 android-server）</option>
+                <option value="socketio">Socket.IO（用于 server-gui）</option>
+              </select>
+            </div>
+            <div class="input-group">
               <label>信令服务器地址</label>
-              <div style="display: flex; gap: 8px;">
-                <select id="controlledProtocolSelect" style="flex: 0 0 100px; padding: 10px 8px; font-size: 12px; border: 2px solid #e2e8f0; border-radius: 10px; background: white; font-weight: 600; color: #4a5568;">
-                  <option value="ws://" selected>ws:// (非安全)</option>
-                  <option value="wss://">wss:// (安全)</option>
-                  <option value="https://">https:// (安全)</option>
-                  <option value="http://">http:// (非安全)</option>
-                </select>
-                <input type="text" id="controlledServerUrl" placeholder="your-server.com:3000" value="10.0.2.2:3000" style="flex: 1;">
-              </div>
+              <input type="text" id="controlledServerUrl" placeholder="例如: 192.168.1.100:3000" value="10.0.2.2:3000" style="width: 100%;">
             </div>
             <div class="btn-group" style="margin-top: 10px;">
               <button class="btn btn-secondary" onclick="controlledConnectToServer()">连接服务器</button>

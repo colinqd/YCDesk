@@ -1,6 +1,6 @@
 {
   "name": "ycdesk-android",
-  "version": "2.1.0",
+  "version": "2.5.0",
   "description": "YCDesk - Android版本（包含信令服务器）",
   "main": "index.js",
   "scripts": {
@@ -19,7 +19,6 @@
     "@capacitor/core": "^6.0.0",
     "@capacitor/device": "^6.0.0",
     "@capacitor/network": "^6.0.0",
-    "@capacitor/screen-reader": "^6.0.0",
     "socket.io-client": "^4.6.0"
   },
   "devDependencies": {

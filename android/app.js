@@ -1,1053 +1,139 @@
 import { App } from '@capacitor/app';
 import { Device } from '@capacitor/device';
 import { Network } from '@capacitor/network';
-import { io } from 'socket.io-client';
 import { registerPlugin } from '@capacitor/core';
-import TouchGestureManager from './shared/gestures/touch-gesture-manager.js';
+import './shared/config.js';
+
+import s from './modules/state.js';
+import { InputDispatcher, createGestureHandler, convertToInputCommand } from './modules/input.js';
+import { handleReceivedInput, simulateMouseMove, simulateMouseDown, simulateMouseUp, simulateWheel, simulateKeyDown, simulateKeyUp } from './modules/input-executor.js';
+import { buildWsUrl, buildHttpUrl, setConnectionMode, startWsHeartbeat, stopWsHeartbeat, wsSend, isSocketConnected, handleWsMessage, connectToServer, disconnectFromServer, attemptReconnect, cancelReconnect, sendDirectMessage } from './modules/signaling.js';
+import { getIceConfig, startDirectControllerConnection, handleDirectOffer, handleDirectAnswer, handleRenegotiationAnswer, handleDirectIceCandidate, handleRenegotiationOffer, setupDataChannel, createPeerConnection, startControllerConnection, startControlledConnection, handleOffer, startAndroidScreenCapture, handleAnswer, addPendingIceCandidates, handleIceCandidate } from './modules/webrtc.js';
+import { updateVideoTransformGlobal, resetZoomAndPan, toggleMouseMode, toggleControlsHide, showControls, handleOrientationChange, showFloatingMouse, hideFloatingMouse, handleFloatingMouseEvent, toggleFullscreen, setupRemoteScreenInteraction } from './modules/ui.js';
+import { cycleKeyboardPosition, cycleKeyboardSize, cycleKeyboardOpacity, applyKeyboardPosition, ensureKeyboardInBounds, applyKeyboardSize, applyKeyboardOpacity, saveKeyboardSettings, loadKeyboardSettings, setupKeyboardDrag, toggleKeyboard, sendKey, toggleModifier } from './modules/keyboard.js';
+import { updateScreenSize, showRemoteScreen, updateContainerSizeAfterVideoLoad, hideRemoteScreen, startStatsMonitoring, stopStatsMonitoring } from './modules/screen.js';
 
 const TCPSocket = registerPlugin('TCPSocket');
-const InputExecutor = registerPlugin('InputExecutor');
 const FloatingMouse = registerPlugin('FloatingMouse');
+const InputExecutor = registerPlugin('InputExecutor');
 const ScreenCapture = registerPlugin('ScreenCapture');
-
-function normalizeServerUrl(url, preferSecure = null) {
-  if (!url) {
-    return url
-  }
-  
-  let normalized = url.trim()
-  
-  normalized = normalized.replace(/^wws:\/\//i, 'wss://')
-  normalized = normalized.replace(/^wss:\/\//i, 'https://')
-  normalized = normalized.replace(/^ws:\/\//i, 'http://')
-  normalized = normalized.replace(/^https:\/\//i, 'https://')
-  normalized = normalized.replace(/^http:\/\//i, 'http://')
-  
-  if (normalized.match(/^(https?):\/\//i)) {
-    return normalized
-  }
-  
-  if (preferSecure === true) {
-    normalized = 'https://' + normalized
-  } else if (preferSecure === false) {
-    normalized = 'http://' + normalized
-  } else {
-    normalized = 'http://' + normalized
-  }
-  
-  return normalized
-}
-
-class MatrixTransformer {
-    constructor() {
-        this.scale = 1.0;
-        this.panX = 0;
-        this.panY = 0;
-        
-        this.screenWidth = 0;
-        this.screenHeight = 0;
-        this.remoteScreenWidth = 1920;
-        this.remoteScreenHeight = 1080;
-        
-        this.displayX = 0;
-        this.displayY = 0;
-        this.displayWidth = 0;
-        this.displayHeight = 0;
-        
-        this.scaleFactor = 1;
-        this.workArea = null;
-        
-        this._matrix = null;
-        this._inverseMatrix = null;
-        this._matrixDirty = true;
-    }
-    
-    setScreenSize(width, height) {
-        this.screenWidth = width;
-        this.screenHeight = height;
-        this._matrixDirty = true;
-        this._updateDisplayRect();
-    }
-    
-    setRemoteScreenSize(width, height) {
-        this.remoteScreenWidth = width;
-        this.remoteScreenHeight = height;
-        this._updateDisplayRect();
-    }
-    
-    _updateDisplayRect() {
-        log('_updateDisplayRect: screenWidth=' + this.screenWidth + ', screenHeight=' + this.screenHeight +
-            ', remoteScreenWidth=' + this.remoteScreenWidth + ', remoteScreenHeight=' + this.remoteScreenHeight);
-        
-        if (this.screenWidth === 0 || this.screenHeight === 0) {
-            this.displayX = 0;
-            this.displayY = 0;
-            this.displayWidth = 0;
-            this.displayHeight = 0;
-            log('_updateDisplayRect: screen 尺寸为 0，跳过计算');
-            return;
-        }
-        
-        if (this.remoteScreenWidth === 0 || this.remoteScreenHeight === 0) {
-            this.displayX = 0;
-            this.displayY = 0;
-            this.displayWidth = this.screenWidth;
-            this.displayHeight = this.screenHeight;
-            log('_updateDisplayRect: remoteScreen 尺寸为 0，使用 screen 尺寸');
-            return;
-        }
-        
-        const screenAspect = this.screenWidth / this.screenHeight;
-        const remoteAspect = this.remoteScreenWidth / this.remoteScreenHeight;
-        
-        if (remoteAspect > screenAspect) {
-            this.displayWidth = this.screenWidth;
-            this.displayHeight = this.screenWidth / remoteAspect;
-            this.displayX = 0;
-            this.displayY = (this.screenHeight - this.displayHeight) / 2;
-        } else {
-            this.displayHeight = this.screenHeight;
-            this.displayWidth = this.screenHeight * remoteAspect;
-            this.displayX = (this.screenWidth - this.displayWidth) / 2;
-            this.displayY = 0;
-        }
-        
-        log('_updateDisplayRect: 计算结果 - displayWidth=' + this.displayWidth + ', displayHeight=' + this.displayHeight +
-            ', displayX=' + this.displayX + ', displayY=' + this.displayY);
-    }
-    
-    _updateMatrices() {
-        if (!this._matrixDirty) return;
-        
-        this._matrix = {
-            a: this.scale,
-            b: 0,
-            c: this.panX,
-            d: 0,
-            e: this.scale,
-            f: this.panY
-        };
-        
-        const invScale = 1.0 / this.scale;
-        this._inverseMatrix = {
-            a: invScale,
-            b: 0,
-            c: -this.panX * invScale,
-            d: 0,
-            e: invScale,
-            f: -this.panY * invScale
-        };
-        
-        this._matrixDirty = false;
-    }
-    
-    containerToDisplay(containerX, containerY) {
-        return {
-            x: containerX - this.displayX,
-            y: containerY - this.displayY
-        };
-    }
-    
-    displayToContainer(displayX, displayY) {
-        return {
-            x: displayX + this.displayX,
-            y: displayY + this.displayY
-        };
-    }
-    
-    displayToRemote(displayX, displayY) {
-        if (this.displayWidth === 0 || this.displayHeight === 0) {
-            return null;
-        }
-        
-        const remoteX = (displayX / this.displayWidth) * this.remoteScreenWidth;
-        const remoteY = (displayY / this.displayHeight) * this.remoteScreenHeight;
-        
-        return { x: remoteX, y: remoteY };
-    }
-    
-    containerToRemote(containerX, containerY) {
-        if (this.displayWidth === 0 || this.displayHeight === 0) {
-            return null;
-        }
-        
-        const display = this.containerToDisplay(containerX, containerY);
-        
-        if (display.x < 0 || display.x > this.displayWidth ||
-            display.y < 0 || display.y > this.displayHeight) {
-            return null;
-        }
-        
-        const centerX = this.displayWidth / 2;
-        const centerY = this.displayHeight / 2;
-        
-        const transformedX = centerX + (display.x - centerX - this.panX) / this.scale;
-        const transformedY = centerY + (display.y - centerY - this.panY) / this.scale;
-        
-        return this.displayToRemote(transformedX, transformedY);
-    }
-    
-    viewToVideo(viewX, viewY) {
-        this._updateMatrices();
-        const m = this._inverseMatrix;
-        return {
-            x: m.a * viewX + m.b * viewY + m.c,
-            y: m.d * viewX + m.e * viewY + m.f
-        };
-    }
-    
-    videoToView(videoX, videoY) {
-        this._updateMatrices();
-        const m = this._matrix;
-        return {
-            x: m.a * videoX + m.b * videoY + m.c,
-            y: m.d * videoX + m.e * videoY + m.f
-        };
-    }
-    
-    videoToRemote(videoX, videoY) {
-        if (this.videoWidth === 0 || this.videoHeight === 0) {
-            return { x: 0, y: 0 };
-        }
-        return {
-            x: (videoX / this.videoWidth) * this.remoteScreenWidth,
-            y: (videoY / this.videoHeight) * this.remoteScreenHeight
-        };
-    }
-    
-    remoteToVideo(remoteX, remoteY) {
-        return {
-            x: (remoteX / this.remoteScreenWidth) * this.videoWidth,
-            y: (remoteY / this.remoteScreenHeight) * this.videoHeight
-        };
-    }
-    
-    viewToRemote(viewX, viewY) {
-        const video = this.viewToVideo(viewX, viewY);
-        return this.videoToRemote(video.x, video.y);
-    }
-    
-    remoteToView(remoteX, remoteY) {
-        const video = this.remoteToVideo(remoteX, remoteY);
-        return this.videoToView(video.x, video.y);
-    }
-    
-    updateScale(newScale, centerX, centerY) {
-        const displayX = centerX - this.displayX;
-        const displayY = centerY - this.displayY;
-        
-        const unscaledX = (displayX - this.panX) / this.scale;
-        const unscaledY = (displayY - this.panY) / this.scale;
-        
-        this.scale = Math.max(0.5, Math.min(3.0, newScale));
-        
-        this.panX = displayX - unscaledX * this.scale;
-        this.panY = displayY - unscaledY * this.scale;
-        
-        this._matrixDirty = true;
-        this.clampPan();
-    }
-    
-    updatePan(deltaX, deltaY) {
-        this.panX += deltaX;
-        this.panY += deltaY;
-        this._matrixDirty = true;
-        this.clampPan();
-    }
-    
-    clampPan() {
-        this._matrixDirty = true;
-    }
-    
-    applyTransform(element) {
-        element.style.transform = `translate(${this.panX}px, ${this.panY}px) scale(${this.scale})`;
-        element.style.transformOrigin = '0 0';
-    }
-    
-    applyContainerSize(containerElement, wrapperElement) {
-        log('applyContainerSize: displayWidth=' + this.displayWidth + ', displayHeight=' + this.displayHeight + 
-            ', displayX=' + this.displayX + ', displayY=' + this.displayY);
-        
-        if (this.displayWidth > 0 && this.displayHeight > 0) {
-            containerElement.style.width = this.displayWidth + 'px';
-            containerElement.style.height = this.displayHeight + 'px';
-            containerElement.style.left = this.displayX + 'px';
-            containerElement.style.top = this.displayY + 'px';
-            
-            log('applyContainerSize: 设置 container 尺寸为 ' + this.displayWidth + 'x' + this.displayHeight + 
-                ', 位置 (' + this.displayX + ', ' + this.displayY + ')');
-            
-            if (wrapperElement) {
-                wrapperElement.style.width = '100%';
-                wrapperElement.style.height = '100%';
-                wrapperElement.style.left = '0px';
-                wrapperElement.style.top = '0px';
-            }
-        } else {
-            log('applyContainerSize: displayWidth 或 displayHeight 为 0，跳过设置');
-        }
-    }
-    
-    reset() {
-        this.scale = 1.0;
-        this.panX = 0;
-        this.panY = 0;
-        this._matrixDirty = true;
-    }
-    
-    fullReset() {
-        this.scale = 1.0;
-        this.panX = 0;
-        this.panY = 0;
-        this.screenWidth = 0;
-        this.screenHeight = 0;
-        this.remoteScreenWidth = 1920;
-        this.remoteScreenHeight = 1080;
-        this.displayX = 0;
-        this.displayY = 0;
-        this.displayWidth = 0;
-        this.displayHeight = 0;
-        this._matrixDirty = true;
-    }
-}
-
-class InputDispatcher {
-    constructor(transformer) {
-        this.transformer = transformer;
-        
-        this.lastInputTime = 0;
-        this.inputThrottleMs = 8;
-        
-        this.currentMode = 'touch';
-        this.isMouseDown = false;
-        this.lastTapTime = 0;
-        
-        this.remoteScreenRect = null;
-        this.videoContainerRect = null;
-    }
-    
-    setMode(mode) {
-        this.currentMode = mode;
-    }
-    
-    updateRemoteScreenRect() {
-        const remoteScreen = document.getElementById('remoteScreen');
-        const videoContainer = document.getElementById('videoContainer');
-        
-        log('InputDispatcher: 查找 remoteScreen 元素 - ' + (remoteScreen ? '找到' : '未找到'));
-        log('InputDispatcher: 查找 videoContainer 元素 - ' + (videoContainer ? '找到' : '未找到'));
-        
-        if (remoteScreen) {
-            this.remoteScreenRect = remoteScreen.getBoundingClientRect();
-            log('InputDispatcher: remoteScreen 位置 - left=' + this.remoteScreenRect.left + 
-                ', top=' + this.remoteScreenRect.top + 
-                ', width=' + this.remoteScreenRect.width + 
-                ', height=' + this.remoteScreenRect.height);
-        } else {
-            log('InputDispatcher: 错误 - 找不到 remoteScreen 元素');
-            this.remoteScreenRect = null;
-        }
-        
-        if (videoContainer) {
-            this.videoContainerRect = videoContainer.getBoundingClientRect();
-            log('InputDispatcher: videoContainer 位置 - left=' + this.videoContainerRect.left + 
-                ', top=' + this.videoContainerRect.top + 
-                ', width=' + this.videoContainerRect.width + 
-                ', height=' + this.videoContainerRect.height);
-        } else {
-            this.videoContainerRect = null;
-        }
-    }
-    
-    dispatchTouchInput(clientX, clientY, type, button = 0, delta = 0) {
-        const now = Date.now();
-        if (now - this.lastInputTime < this.inputThrottleMs && type === 'mousemove') {
-            return;
-        }
-        this.lastInputTime = now;
-        
-        let commandType;
-        switch (type) {
-            case 'mousemove':
-                commandType = 'mousemove';
-                break;
-            case 'mousedown':
-                commandType = 'mousedown';
-                break;
-            case 'mouseup':
-                commandType = 'mouseup';
-                break;
-            case 'wheel':
-                commandType = 'wheel';
-                break;
-            case 'dblclick':
-            case 'doubleclick':
-                commandType = 'click';
-                break;
-            case 'dragstart':
-                commandType = 'mousedown';
-                break;
-            case 'dragend':
-                commandType = 'mouseup';
-                break;
-            default:
-                commandType = type;
-        }
-        
-        this.updateRemoteScreenRect();
-        
-        let normalizedX, normalizedY;
-        let remoteX = 0, remoteY = 0;
-        
-        log('InputDispatcher: displayWidth=' + this.transformer.displayWidth + 
-            ', displayHeight=' + this.transformer.displayHeight +
-            ', videoWidth=' + this.transformer.videoWidth + 
-            ', videoHeight=' + this.transformer.videoHeight +
-            ', videoContainerRect=' + (this.videoContainerRect ? 'valid' : 'null'));
-        
-        if (this.transformer.displayWidth > 0 && this.transformer.displayHeight > 0 &&
-            this.transformer.videoWidth > 0 && this.transformer.videoHeight > 0 &&
-            this.videoContainerRect) {
-            
-            const containerX = clientX - this.videoContainerRect.left;
-            const containerY = clientY - this.videoContainerRect.top;
-            
-            const remote = this.transformer.containerToRemote(containerX, containerY);
-            
-            if (remote) {
-                remoteX = remote.x;
-                remoteY = remote.y;
-                normalizedX = remote.x / this.transformer.remoteScreenWidth;
-                normalizedY = remote.y / this.transformer.remoteScreenHeight;
-            } else {
-                normalizedX = 0.5;
-                normalizedY = 0.5;
-                remoteX = this.transformer.remoteScreenWidth / 2;
-                remoteY = this.transformer.remoteScreenHeight / 2;
-            }
-        } else if (this.videoContainerRect && this.videoContainerRect.width > 0 && this.videoContainerRect.height > 0) {
-            const containerX = clientX - this.videoContainerRect.left;
-            const containerY = clientY - this.videoContainerRect.top;
-            normalizedX = containerX / this.videoContainerRect.width;
-            normalizedY = containerY / this.videoContainerRect.height;
-            remoteX = normalizedX * this.transformer.remoteScreenWidth;
-            remoteY = normalizedY * this.transformer.remoteScreenHeight;
-        } else if (this.remoteScreenRect && this.remoteScreenRect.width > 0 && this.remoteScreenRect.height > 0) {
-            normalizedX = (clientX - this.remoteScreenRect.left) / this.remoteScreenRect.width;
-            normalizedY = (clientY - this.remoteScreenRect.top) / this.remoteScreenRect.height;
-            remoteX = normalizedX * this.transformer.remoteScreenWidth;
-            remoteY = normalizedY * this.transformer.remoteScreenHeight;
-        } else {
-            log('InputDispatcher: 警告 - 所有容器尺寸无效，使用安全坐标 (0.5, 0.5)');
-            normalizedX = 0.5;
-            normalizedY = 0.5;
-            remoteX = this.transformer.remoteScreenWidth / 2;
-            remoteY = this.transformer.remoteScreenHeight / 2;
-        }
-        
-        normalizedX = Math.max(0, Math.min(1, normalizedX));
-        normalizedY = Math.max(0, Math.min(1, normalizedY));
-        
-        log('InputDispatcher: 发送输入 - type=' + commandType + 
-            ', clientX=' + clientX.toFixed(0) + ', clientY=' + clientY.toFixed(0) +
-            ', remoteX=' + remoteX.toFixed(0) + ', remoteY=' + remoteY.toFixed(0) +
-            ', normalizedX=' + normalizedX.toFixed(4) + ', normalizedY=' + normalizedY.toFixed(4) + 
-            ', button=' + button);
-        
-        const command = {
-            type: commandType,
-            x: normalizedX,
-            y: normalizedY,
-            button: button
-        };
-        
-        if (type === 'wheel') {
-            command.deltaY = delta;
-        }
-        
-        sendControlCommand(command);
-    }
-    
-    dispatchFloatingMouseInput(screenX, screenY, type, button = 0, delta = 0) {
-        log('InputDispatcher: dispatchFloatingMouseInput 被调用 - screenX=' + screenX + ', screenY=' + screenY + ', type=' + type);
-        
-        this.updateRemoteScreenRect();
-        
-        if (!this.videoContainerRect) {
-            log('InputDispatcher: 错误 - 视频容器位置未初始化');
-            return;
-        }
-        
-        const containerX = screenX - this.videoContainerRect.left;
-        const containerY = screenY - this.videoContainerRect.top;
-        
-        log('InputDispatcher: 悬浮鼠标输入 - screenX=' + screenX + ', screenY=' + screenY + 
-            ', containerX=' + containerX + ', containerY=' + containerY + 
-            ', displayX=' + this.transformer.displayX + 
-            ', displayY=' + this.transformer.displayY +
-            ', displayWidth=' + this.transformer.displayWidth + 
-            ', displayHeight=' + this.transformer.displayHeight +
-            ', type=' + type);
-        
-        this.dispatchTouchInput(containerX, containerY, type, button, delta);
-    }
-}
-
-function createGestureHandler(transformer, inputDispatcher) {
-    if (TouchGestureManager) {
-        log('使用 TouchGestureManager 手势模块');
-        return new TouchGestureManager({
-            transformer: transformer,
-            sendInput: (x, y, type, button, delta) => {
-                if (inputDispatcher) {
-                    inputDispatcher.dispatchTouchInput(x, y, type, button, delta);
-                }
-            },
-            applyTransform: () => {
-                const videoContainer = document.getElementById('videoContainer');
-                if (videoContainer && transformer) {
-                    transformer.applyTransform(videoContainer);
-                }
-            },
-            onToggleUI: () => {
-                toggleControlsHide();
-            },
-            vibrate: (pattern) => {
-                if (navigator.vibrate) {
-                    navigator.vibrate(pattern);
-                }
-            },
-            isTouchOnUI: (x, y) => {
-                if (window.isTouchOnUI) {
-                    return window.isTouchOnUI(x, y);
-                }
-                return false;
-            },
-            logger: (message) => {
-                log('[Gesture] ' + message);
-            }
-        });
-    }
-    
-    log('TouchGestureManager 不可用，使用内置 GestureHandler');
-    return new GestureHandler(transformer, inputDispatcher, null);
-}
-
-class GestureHandler {
-    constructor(transformer, inputDispatcher, onDirectInput) {
-        this.transformer = transformer;
-        this.inputDispatcher = inputDispatcher;
-        this.onDirectInput = onDirectInput;
-        
-        this.touches = new Map();
-        
-        this.isPinching = false;
-        this.initialPinchDistance = 0;
-        this.initialScale = 1;
-        this.pinchCenterX = 0;
-        this.pinchCenterY = 0;
-        
-        this.lastTapTime = 0;
-        this.longPressTimer = null;
-        this.isLongPress = false;
-        this.isDragging = false;
-        this.dragStartX = 0;
-        this.dragStartY = 0;
-        this.lastMouseX = 0;
-        this.lastMouseY = 0;
-        
-        this.scrollStartY = 0;
-        this.isScrolling = false;
-        
-        this.isPanning = false;
-        this.panStartX = 0;
-        this.panStartY = 0;
-        this.initialPanX = 0;
-        this.initialPanY = 0;
-    }
-    
-    handleTouchStart(event) {
-        const touchCount = event.touches.length;
-        
-        for (let i = 0; i < event.touches.length; i++) {
-            const touch = event.touches[i];
-            const pointerId = touch.identifier;
-            
-            this.touches.set(pointerId, {
-                x: touch.clientX,
-                y: touch.clientY,
-                startX: touch.clientX,
-                startY: touch.clientY,
-                startTime: Date.now()
-            });
-        }
-        
-        if (touchCount === 1) {
-            this.handleSingleTouchStart(event.touches[0]);
-        } else if (touchCount === 2) {
-            this.handleTwoTouchStart(event.touches[0], event.touches[1]);
-        } else if (touchCount === 3) {
-            this.handleThreeTouchStart();
-        }
-    }
-    
-    handleSingleTouchStart(touch) {
-        const now = Date.now();
-        
-        this.dragStartX = touch.clientX;
-        this.dragStartY = touch.clientY;
-        this.lastMouseX = touch.clientX;
-        this.lastMouseY = touch.clientY;
-        
-        this.isLongPress = false;
-        this.isDragging = false;
-        
-        if (now - this.lastTapTime < 300) {
-            this.isDragging = true;
-            this.sendMouseDown(touch.clientX, touch.clientY, 0);
-            log('双击拖拽开始');
-        } else {
-            this.longPressTimer = setTimeout(() => {
-                this.isLongPress = true;
-                this.sendMouseDown(this.lastMouseX, this.lastMouseY, 2);
-                log('长按触发右键');
-                if (navigator.vibrate) {
-                    navigator.vibrate(50);
-                }
-            }, 600);
-        }
-    }
-    
-    handleTwoTouchStart(touch1, touch2) {
-        this.isPinching = true;
-        this.isScrolling = false;
-        this.isPanning = false;
-        
-        this.initialPinchDistance = Math.hypot(
-            touch2.clientX - touch1.clientX,
-            touch2.clientY - touch1.clientY
-        );
-        this.initialScale = this.transformer.scale;
-        this.pinchCenterX = (touch1.clientX + touch2.clientX) / 2;
-        this.pinchCenterY = (touch1.clientY + touch2.clientY) / 2;
-        this.scrollStartY = (touch1.clientY + touch2.clientY) / 2;
-        
-        this.panStartX = this.pinchCenterX;
-        this.panStartY = this.pinchCenterY;
-        this.initialPanX = this.transformer.panX;
-        this.initialPanY = this.transformer.panY;
-        
-        if (this.longPressTimer) {
-            clearTimeout(this.longPressTimer);
-            this.longPressTimer = null;
-        }
-    }
-    
-    handleThreeTouchStart() {
-        if (this.longPressTimer) {
-            clearTimeout(this.longPressTimer);
-            this.longPressTimer = null;
-        }
-        toggleControlsHide();
-        log('三指轻点 - 切换工具栏');
-    }
-    
-    handleTouchMove(event) {
-        const touchCount = event.touches.length;
-        
-        if (touchCount === 1) {
-            this.handleSingleTouchMove(event.touches[0]);
-        } else if (touchCount === 2) {
-            this.handleTwoTouchMove(event.touches[0], event.touches[1]);
-        }
-    }
-    
-    handleSingleTouchMove(touch) {
-        if (this.longPressTimer) {
-            const dx = touch.clientX - this.dragStartX;
-            const dy = touch.clientY - this.dragStartY;
-            if (Math.hypot(dx, dy) > 10) {
-                clearTimeout(this.longPressTimer);
-                this.longPressTimer = null;
-            }
-        }
-        
-        if (!this.isLongPress) {
-            if (this.isDragging) {
-                this.sendMouseMove(touch.clientX, touch.clientY);
-            } else {
-                const dx = touch.clientX - this.dragStartX;
-                const dy = touch.clientY - this.dragStartY;
-                if (Math.hypot(dx, dy) > 10) {
-                    this.isDragging = true;
-                    this.sendMouseDown(touch.clientX, touch.clientY, 0);
-                    log('开始拖拽');
-                }
-            }
-            
-            this.lastMouseX = touch.clientX;
-            this.lastMouseY = touch.clientY;
-        }
-    }
-    
-    handleTwoTouchMove(touch1, touch2) {
-        const currentDistance = Math.hypot(
-            touch2.clientX - touch1.clientX,
-            touch2.clientY - touch1.clientY
-        );
-        
-        const currentCenterX = (touch1.clientX + touch2.clientX) / 2;
-        const currentCenterY = (touch1.clientY + touch2.clientY) / 2;
-        
-        const distanceDelta = Math.abs(currentDistance - this.initialPinchDistance);
-        const deltaX = currentCenterX - this.panStartX;
-        const deltaY = currentCenterY - this.panStartY;
-        const centerDelta = Math.hypot(deltaX, deltaY);
-        
-        if (distanceDelta > 30) {
-            this.isScrolling = false;
-            this.isPanning = false;
-            const scaleDelta = currentDistance / this.initialPinchDistance;
-            const newScale = Math.max(0.5, Math.min(3.0, this.initialScale * scaleDelta));
-            
-            this.transformer.updateScale(newScale, currentCenterX, currentCenterY);
-            log('双指缩放: scale=' + newScale.toFixed(2));
-            
-            const videoContainer = document.getElementById('videoContainer');
-            if (videoContainer) {
-                this.transformer.applyTransform(videoContainer);
-            }
-        } else if (this.transformer.scale > 1.05 && centerDelta > 10) {
-            this.isScrolling = false;
-            this.isPanning = true;
-            
-            this.transformer.panX = this.initialPanX + deltaX;
-            this.transformer.panY = this.initialPanY + deltaY;
-            this.transformer.clampPan();
-            this.transformer._matrixDirty = true;
-            
-            const videoContainer = document.getElementById('videoContainer');
-            if (videoContainer) {
-                this.transformer.applyTransform(videoContainer);
-            }
-            log('双指平移: panX=' + this.transformer.panX.toFixed(0) + ', panY=' + this.transformer.panY.toFixed(0));
-        } else if (Math.abs(deltaY) > 10 && Math.abs(deltaX) < 20 && !this.isPanning) {
-            this.isScrolling = true;
-            const scrollDelta = -deltaY * 2;
-            this.sendWheel(scrollDelta);
-            this.panStartY = currentCenterY;
-            this.scrollStartY = currentCenterY;
-            log('双指滚动: delta=' + scrollDelta.toFixed(0));
-        }
-    }
-    
-    handleTouchEnd(event) {
-        const touchCount = event.touches.length;
-        
-        for (let i = 0; i < event.changedTouches.length; i++) {
-            const touch = event.changedTouches[i];
-            const pointerId = touch.identifier;
-            const touchData = this.touches.get(pointerId);
-            
-            if (touchData && touchCount === 0) {
-                this.handleSingleTouchEnd(touch, touchData);
-            }
-            
-            this.touches.delete(pointerId);
-        }
-        
-        if (touchCount < 2) {
-            this.isPinching = false;
-            this.isScrolling = false;
-            this.isPanning = false;
-        }
-    }
-    
-    handleSingleTouchEnd(touch, touchData) {
-        if (this.longPressTimer) {
-            clearTimeout(this.longPressTimer);
-            this.longPressTimer = null;
-        }
-        
-        const duration = Date.now() - touchData.startTime;
-        const distance = Math.hypot(
-            touch.clientX - touchData.startX,
-            touch.clientY - touchData.startY
-        );
-        
-        log('handleSingleTouchEnd: duration=' + duration + ', distance=' + distance.toFixed(2) + 
-            ', isLongPress=' + this.isLongPress + ', isDragging=' + this.isDragging);
-        
-        if (this.isLongPress) {
-            this.sendMouseUp(touch.clientX, touch.clientY, 2);
-            log('右键释放');
-        } else if (this.isDragging) {
-            this.sendMouseUp(touch.clientX, touch.clientY, 0);
-            log('拖拽结束');
-        } else if (distance < 15 && duration < 300) {
-            const now = Date.now();
-            if (now - this.lastTapTime < 300) {
-                this.sendDoubleClick(touch.clientX, touch.clientY);
-                log('双击');
-            } else {
-                this.sendMouseClick(touch.clientX, touch.clientY, 0);
-                log('单击');
-            }
-            this.lastTapTime = now;
-        } else {
-            this.sendMouseClick(touch.clientX, touch.clientY, 0);
-            log('单击 (distance=' + distance.toFixed(2) + ', duration=' + duration + ')');
-        }
-        
-        this.isDragging = false;
-        this.isLongPress = false;
-    }
-    
-    sendMouseMove(x, y) {
-        if (this.inputDispatcher) {
-            this.inputDispatcher.dispatchTouchInput(x, y, 'mousemove', 0);
-        }
-    }
-    
-    sendMouseDown(x, y, button) {
-        if (this.inputDispatcher) {
-            this.inputDispatcher.dispatchTouchInput(x, y, 'mousedown', button);
-        }
-        if (navigator.vibrate) {
-            navigator.vibrate(30);
-        }
-    }
-    
-    sendMouseUp(x, y, button) {
-        if (this.inputDispatcher) {
-            this.inputDispatcher.dispatchTouchInput(x, y, 'mouseup', button);
-        }
-    }
-    
-    sendMouseClick(x, y, button) {
-        if (this.inputDispatcher) {
-            this.inputDispatcher.dispatchTouchInput(x, y, 'mousedown', button);
-            this.inputDispatcher.dispatchTouchInput(x, y, 'mouseup', button);
-        }
-        if (navigator.vibrate) {
-            navigator.vibrate(30);
-        }
-    }
-    
-    sendDoubleClick(x, y) {
-        if (this.inputDispatcher) {
-            this.inputDispatcher.dispatchTouchInput(x, y, 'doubleclick', 0);
-        }
-        if (navigator.vibrate) {
-            navigator.vibrate([30, 50, 30]);
-        }
-    }
-    
-    sendWheel(deltaY) {
-        if (this.inputDispatcher) {
-            this.inputDispatcher.dispatchTouchInput(0, 0, 'wheel', 0, deltaY);
-        }
-    }
-}
-
-let matrixTransformer = null;
-let inputDispatcher = null;
-let gestureHandler = null;
-
-let myDeviceId = ''
-let socket = null
-let peerConnection = null
-let currentSessionId = null
-let incomingFromDeviceId = null
-let isController = false
-let controlledMode = 'direct'
-let controllerMode = 'direct'
-
-let currentDirectClientId = null
-let directPeerConnection = null
-let dataChannel = null
-let inputChannel = null
-let inputChannelReady = false
-let connectionLogDiv = null
-let currentRole = null
-let isConnected = false
-let pendingIceCandidates = []
-let isWaitingRenegotiation = false
-let isDirectControllerMode = false
-
-const CONNECTION_STATUS = {
-  DISCONNECTED: 'disconnected',
-  CONNECTING: 'connecting',
-  CONNECTED: 'connected',
-  ERROR: 'error'
-}
-
-let connectionStatus = CONNECTION_STATUS.DISCONNECTED
-let reconnectAttempts = 0
-let reconnectTimeout = null
-const MAX_RECONNECT_ATTEMPTS = 10
-const BASE_RECONNECT_DELAY = 1000
-
-let savedServerUrl = null
-let savedRole = null
-
-const STORAGE_KEYS = {
-  DIRECT_HISTORY: 'ycdesk_direct_history',
-  SIGNALING_HISTORY: 'ycdesk_signaling_history'
-}
-
-const MAX_HISTORY_ITEMS = 10
-
-function setConnectionStatus(status) {
-  connectionStatus = status
-  log(`连接状态变更: ${status}`)
-}
 
 function log(message) {
   const timestamp = new Date().toLocaleTimeString()
   const logMessage = `[${timestamp}] ${message}`
   console.log(logMessage)
-  if (connectionLogDiv) {
+  if (s.connectionLogDiv) {
     const div = document.createElement('div')
     div.textContent = logMessage
-    connectionLogDiv.appendChild(div)
-    connectionLogDiv.scrollTop = connectionLogDiv.scrollHeight
+    s.connectionLogDiv.appendChild(div)
+    s.connectionLogDiv.scrollTop = s.connectionLogDiv.scrollHeight
   }
 }
+window.log = log
 
 function generateDeviceId() {
-  return Math.random().toString(36).substr(2, 9).toUpperCase()
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
+  let id = ''
+  for (let i = 0; i < 9; i++) {
+    id += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  return id
 }
 
 function getServerUrl() {
-  const protocol = document.getElementById('controllerProtocolSelect')?.value || 'wss://'
-  const serverAddr = document.getElementById('serverUrl')?.value || '10.0.2.2:3000'
-  return protocol + serverAddr.replace(/^(wss|ws|http|https):\/\//i, '')
+  const input = document.getElementById('controllerServerUrl')
+  return input ? input.value.trim() : ''
 }
 
 function getControlledServerUrl() {
-  const protocol = document.getElementById('controlledProtocolSelect')?.value || 'wss://'
-  const serverAddr = document.getElementById('controlledServerUrl')?.value || '10.0.2.2:3000'
-  return protocol + serverAddr.replace(/^(wss|ws|http|https):\/\//i, '')
-}
-
-function getIceConfig() {
-  return {
-    iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' }
-    ]
-  }
+  const input = document.getElementById('controlledServerUrl')
+  return input ? input.value.trim() : ''
 }
 
 function showToast(message, duration = 3000) {
-  const existingToast = document.querySelector('.toast')
-  if (existingToast) {
-    existingToast.remove()
-  }
+  const existing = document.querySelector('.toast-message')
+  if (existing) existing.remove()
   
   const toast = document.createElement('div')
-  toast.className = 'toast show'
+  toast.className = 'toast-message'
   toast.textContent = message
   document.body.appendChild(toast)
   
+  setTimeout(() => toast.classList.add('show'), 10)
   setTimeout(() => {
     toast.classList.remove('show')
-    setTimeout(() => {
-      toast.remove()
-    }, 300)
+    setTimeout(() => toast.remove(), 300)
   }, duration)
 }
+window.showToast = showToast
 
 function updateServerStatus(text, status) {
-  const statusText = document.getElementById('serverStatusText')
-  const statusBadge = document.getElementById('serverStatus')
+  const statusEl = document.getElementById('serverStatusText')
   const statusDot = document.querySelector('.status-dot')
   
-  if (!statusText || !statusBadge || !statusDot) return
-  
-  statusText.textContent = text
-  
-  const statusStyles = {
-    'connected': { bg: '#e6f4ea', color: '#135429', dotColor: '#2ecc71' },
-    'connecting': { bg: '#fff3cd', color: '#856404', dotColor: '#ffc107' },
-    'disconnected': { bg: '#f8d7da', color: '#721c24', dotColor: '#e74c3c' },
-    'error': { bg: '#f8d7da', color: '#721c24', dotColor: '#e74c3c' }
+  if (statusEl) statusEl.textContent = text
+  if (statusDot) {
+    statusDot.className = 'status-dot'
+    if (status === 'connected') statusDot.classList.add('connected')
+    else if (status === 'connecting') statusDot.classList.add('connecting')
+    else if (status === 'error') statusDot.classList.add('error')
   }
-  
-  const style = statusStyles[status] || statusStyles['disconnected']
-  statusBadge.style.background = style.bg
-  statusBadge.style.color = style.color
-  statusDot.style.background = style.dotColor
 }
+window.updateServerStatus = updateServerStatus
 
 async function copyDeviceId() {
   try {
-    await navigator.clipboard.writeText(myDeviceId)
-    showToast('设备ID已复制')
-    const el = document.getElementById('deviceId')
-    if (el) {
-      const originalText = el.textContent
-      el.textContent = '已复制!'
-      setTimeout(() => {
-        el.textContent = originalText
-      }, 1500)
-    }
-  } catch (err) {
+    await navigator.clipboard.writeText(s.myDeviceId)
+    showToast('设备 ID 已复制')
+  } catch (e) {
     showToast('复制失败')
   }
 }
 
 function saveToHistory(type, data) {
   try {
-    const key = type === 'direct' ? STORAGE_KEYS.DIRECT_HISTORY : STORAGE_KEYS.SIGNALING_HISTORY
+    const key = type === 'direct' ? s.STORAGE_KEYS.DIRECT_HISTORY : s.STORAGE_KEYS.SIGNALING_HISTORY
     let history = JSON.parse(localStorage.getItem(key) || '[]')
     
-    const existingIndex = history.findIndex(item => {
-      if (type === 'direct') {
-        return item.ip === data.ip && item.port === data.port
-      } else {
-        return item.deviceId === data.deviceId && item.serverUrl === data.serverUrl
-      }
+    const existing = history.findIndex(item => {
+      if (type === 'direct') return item.ip === data.ip && item.port === data.port
+      return item.serverUrl === data.serverUrl
     })
     
-    if (existingIndex !== -1) {
-      history.splice(existingIndex, 1)
+    if (existing >= 0) {
+      history.splice(existing, 1)
     }
     
-    history.unshift({
-      ...data,
-      timestamp: Date.now()
-    })
+    history.unshift({ ...data, timestamp: Date.now() })
     
-    history = history.slice(0, MAX_HISTORY_ITEMS)
+    if (history.length > s.MAX_HISTORY_ITEMS) {
+      history = history.slice(0, s.MAX_HISTORY_ITEMS)
+    }
+    
     localStorage.setItem(key, JSON.stringify(history))
-    
-    renderHistory(type)
-  } catch (error) {
-    console.error('保存历史记录失败:', error)
+  } catch (e) {
+    console.error('保存历史记录失败:', e)
   }
 }
 
 function loadHistory(type) {
   try {
-    const key = type === 'direct' ? STORAGE_KEYS.DIRECT_HISTORY : STORAGE_KEYS.SIGNALING_HISTORY
+    const key = type === 'direct' ? s.STORAGE_KEYS.DIRECT_HISTORY : s.STORAGE_KEYS.SIGNALING_HISTORY
     return JSON.parse(localStorage.getItem(key) || '[]')
-  } catch (error) {
-    console.error('加载历史记录失败:', error)
+  } catch (e) {
     return []
   }
 }
 
 function deleteFromHistory(type, index) {
   try {
-    const key = type === 'direct' ? STORAGE_KEYS.DIRECT_HISTORY : STORAGE_KEYS.SIGNALING_HISTORY
+    const key = type === 'direct' ? s.STORAGE_KEYS.DIRECT_HISTORY : s.STORAGE_KEYS.SIGNALING_HISTORY
     let history = JSON.parse(localStorage.getItem(key) || '[]')
     history.splice(index, 1)
     localStorage.setItem(key, JSON.stringify(history))
     renderHistory(type)
-  } catch (error) {
-    console.error('删除历史记录失败:', error)
+  } catch (e) {
+    console.error('删除历史记录失败:', e)
   }
 }
 
@@ -1064,392 +150,92 @@ function renderHistory(type) {
   }
   
   listEl.innerHTML = history.map((item, index) => {
-    const time = new Date(item.timestamp).toLocaleString('zh-CN')
-    let targetText = ''
-    
     if (type === 'direct') {
-      targetText = `${item.ip}:${item.port}`
+      return `<div class="history-item" onclick="reconnectFromHistory('direct', ${index})">
+        <span class="history-text">${item.ip}:${item.port}</span>
+        <button class="history-delete" onclick="event.stopPropagation(); deleteFromHistory('direct', ${index})">×</button>
+      </div>`
     } else {
-      targetText = `设备: ${item.deviceId}`
+      return `<div class="history-item" onclick="reconnectFromHistory('signaling', ${index})">
+        <span class="history-text">${item.serverUrl}</span>
+        <button class="history-delete" onclick="event.stopPropagation(); deleteFromHistory('signaling', ${index})">×</button>
+      </div>`
     }
-    
-    return `
-      <div class="history-item">
-        <div class="history-info">
-          <div class="history-target">${targetText}</div>
-          <div class="history-time">${time}</div>
-        </div>
-        <div class="history-actions">
-          <button class="history-btn history-btn-connect" onclick="reconnectFromHistory('${type}', ${index})">重连</button>
-          <button class="history-btn history-btn-delete" onclick="deleteFromHistory('${type}', ${index})">删除</button>
-        </div>
-      </div>
-    `
   }).join('')
 }
 
 function reconnectFromHistory(type, index) {
   const history = loadHistory(type)
+  if (index >= history.length) return
+  
   const item = history[index]
-  
-  if (!item) return
-  
   if (type === 'direct') {
     document.getElementById('remoteIp').value = item.ip
     document.getElementById('remotePort').value = item.port
     connectDirect()
   } else {
-    document.getElementById('serverUrl').value = item.serverUrl
-    document.getElementById('targetDeviceId').value = item.deviceId
-    
-    if (!isSocketConnected()) {
-      manualConnectToServer()
-    } else {
-      connectDevice()
-    }
+    document.getElementById('controllerServerUrl').value = item.serverUrl
+    manualConnectToServer()
   }
-}
-
-async function attemptReconnect() {
-  if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-    log('重连次数已达上限，停止重连')
-    reconnectAttempts = 0
-    setConnectionStatus(CONNECTION_STATUS.ERROR)
-    showToast('重连失败，请检查网络后手动重试')
-    return
-  }
-
-  reconnectAttempts++
-  const delay = BASE_RECONNECT_DELAY * Math.pow(2, Math.min(reconnectAttempts, 5))
-  
-  log(`将在 ${Math.round(delay/1000)} 秒后尝试重连... (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`)
-  
-  if (reconnectTimeout) {
-    clearTimeout(reconnectTimeout)
-  }
-  
-  reconnectTimeout = setTimeout(async () => {
-    try {
-      setConnectionStatus(CONNECTION_STATUS.CONNECTING)
-      
-      if (savedRole === 'controlled' && savedServerUrl) {
-        await controlledConnectToServer()
-      } else if (savedRole === 'controller' && savedServerUrl) {
-        await manualConnectToServer()
-      }
-    } catch (error) {
-      log('重连失败: ' + error.message)
-      attemptReconnect()
-    }
-  }, delay)
-}
-
-function cancelReconnect() {
-  if (reconnectTimeout) {
-    clearTimeout(reconnectTimeout)
-    reconnectTimeout = null
-  }
-  reconnectAttempts = 0
 }
 
 function selectRole(role) {
-  console.log('selectRole called with role: ' + role)
-  log('选择角色: ' + role)
-  currentRole = role
+  s.currentRole = role
   document.getElementById('rolePage').classList.remove('active')
   
   if (role === 'controller') {
     document.getElementById('controllerPage').classList.add('active')
-    connectionLogDiv = document.getElementById('connectionLog')
-    console.log('Calling initController...')
     initController()
   } else {
     document.getElementById('controlledPage').classList.add('active')
-    connectionLogDiv = document.getElementById('connectionLogControlled')
     initControlled()
   }
 }
 
 function goBack() {
-  document.getElementById('controllerPage').classList.remove('active')
-  document.getElementById('controlledPage').classList.remove('active')
+  s.currentRole = null
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'))
   document.getElementById('rolePage').classList.add('active')
-  stopListening()
-  cancelReconnect()
-  if (socket) {
-    socket.close()
-    socket = null
-  }
-  currentRole = null
 }
 
 function switchControllerMode(mode) {
-  controllerMode = mode
-  
-  document.querySelectorAll('#controllerPage .mode-tab').forEach(tab => tab.classList.remove('active'))
-  event.target.classList.add('active')
-  
-  document.getElementById('controllerSignalingMode').classList.remove('active')
-  document.getElementById('controllerDirectMode').classList.remove('active')
+  s.controllerMode = mode
+  document.querySelectorAll('#controllerPage .mode-tab').forEach(t => t.classList.remove('active'))
+  document.querySelectorAll('#controllerPage .mode-content').forEach(c => c.classList.remove('active'))
   
   if (mode === 'direct') {
+    document.querySelector('#controllerPage .mode-tab:first-child').classList.add('active')
     document.getElementById('controllerDirectMode').classList.add('active')
-    if (socket) {
-      socket.close()
-      socket = null
-    }
   } else {
+    document.querySelector('#controllerPage .mode-tab:last-child').classList.add('active')
     document.getElementById('controllerSignalingMode').classList.add('active')
   }
-  
-  log('主控端切换到 ' + (mode === 'direct' ? '直连模式' : '信令服务器模式'))
 }
 
 function switchControlledMode(mode) {
-  controlledMode = mode
-  
-  document.querySelectorAll('#controlledPage .mode-tab').forEach(tab => tab.classList.remove('active'))
-  event.target.classList.add('active')
-  
-  document.getElementById('controlledSignalingMode').classList.remove('active')
-  document.getElementById('controlledDirectMode').classList.remove('active')
-  const controlledDirectSection = document.getElementById('controlledDirectSection')
-  if (controlledDirectSection) {
-    controlledDirectSection.style.display = mode === 'direct' ? 'block' : 'none'
-  }
+  s.controlledMode = mode
+  document.querySelectorAll('#controlledPage .mode-tab').forEach(t => t.classList.remove('active'))
+  document.querySelectorAll('#controlledPage .mode-content').forEach(c => c.classList.remove('active'))
   
   if (mode === 'direct') {
+    document.querySelector('#controlledPage .mode-tab:first-child').classList.add('active')
     document.getElementById('controlledDirectMode').classList.add('active')
-    if (socket) {
-      socket.close()
-      socket = null
-    }
   } else {
+    document.querySelector('#controlledPage .mode-tab:last-child').classList.add('active')
     document.getElementById('controlledSignalingMode').classList.add('active')
-    stopListening()
   }
-  
-  log('被控端切换到 ' + (mode === 'direct' ? '直连模式' : '信令服务器模式'))
 }
 
 function manualConnectToServer() {
-  if (isSocketConnected()) {
-    showToast('已经连接到服务器')
-    log('已经连接到服务器，无需重复连接')
-    return
-  }
   connectToServer(getServerUrl(), 'controller')
 }
 
 function controlledConnectToServer() {
-  if (isSocketConnected()) {
-    showToast('已经连接到服务器')
-    log('已经连接到服务器，无需重复连接')
-    return
-  }
   connectToServer(getControlledServerUrl(), 'controlled')
 }
 
-function disconnectFromServer() {
-  cancelReconnect()
-  stopWsHeartbeat()
-  if (socket) {
-    socket.close()
-    socket = null
-    log('已手动断开服务器连接')
-    updateServerStatus('已断开', 'disconnected')
-    showToast('已断开连接')
-  } else {
-    log('未连接到服务器')
-    showToast('未连接到服务器')
-  }
-}
-
 function controlledDisconnectFromServer() {
-  cancelReconnect()
-  stopWsHeartbeat()
-  if (socket) {
-    socket.close()
-    socket = null
-    log('已手动断开服务器连接')
-    updateServerStatus('已断开', 'disconnected')
-    showToast('已断开连接')
-  } else {
-    log('未连接到服务器')
-    showToast('未连接到服务器')
-  }
-}
-
-function buildWsUrl(serverUrl) {
-  let url = serverUrl.trim()
-  url = url.replace(/^https:\/\//i, 'wss://')
-  url = url.replace(/^http:\/\//i, 'ws://')
-  if (!url.match(/^wss?:\/\//i)) {
-    url = 'ws://' + url
-  }
-  return url
-}
-
-let wsHeartbeatTimer = null
-
-function startWsHeartbeat() {
-  stopWsHeartbeat()
-  wsHeartbeatTimer = setInterval(() => {
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      wsSend('ping', { timestamp: Date.now() })
-    }
-  }, 25000)
-}
-
-function stopWsHeartbeat() {
-  if (wsHeartbeatTimer) {
-    clearInterval(wsHeartbeatTimer)
-    wsHeartbeatTimer = null
-  }
-}
-
-function wsSend(type, data) {
-  if (socket && socket.readyState === WebSocket.OPEN) {
-    let message
-    if (data) {
-      message = { type: type, ...data }
-    } else {
-      message = { type: type }
-    }
-    const json = JSON.stringify(message)
-    log('发送消息: ' + json)
-    socket.send(json)
-  } else {
-    log('wsSend: socket未连接或未就绪')
-  }
-}
-
-function isSocketConnected() {
-  return socket && socket.readyState === WebSocket.OPEN
-}
-
-function handleWsMessage(data) {
-  const type = data.type
-
-  switch (type) {
-    case 'registered':
-      log('设备注册成功: ' + data.deviceId)
-      break
-
-    case 'incoming-connection':
-      log('收到连接请求: ' + JSON.stringify(data))
-      incomingFromDeviceId = data.fromDeviceId
-      currentSessionId = data.sessionId
-      isController = false
-      showIncomingConnectionDialog(data.fromDeviceId)
-      break
-
-    case 'connection-result':
-      log('连接结果: ' + JSON.stringify(data))
-      if (data.accepted) {
-        isController = true
-        startControllerConnection()
-      } else {
-        showToast('对方拒绝了连接请求')
-      }
-      break
-
-    case 'connection-failed':
-      log('连接失败: ' + (data.reason || '未知原因'))
-      showToast('连接失败: ' + (data.reason === 'device-offline' ? '目标设备不在线' : data.reason))
-      break
-
-    case 'offer':
-      log('收到 offer')
-      handleOffer(data)
-      break
-
-    case 'answer':
-      log('收到 answer')
-      handleAnswer(data)
-      break
-
-    case 'ice-candidate':
-      log('收到 ICE candidate')
-      handleIceCandidate(data)
-      break
-
-    case 'pong':
-      break
-  }
-}
-
-function connectToServer(serverUrl, role) {
-  log('========== 使用新版 WebSocket 代码 (2026-04-10) ==========')
-  if (!serverUrl) {
-    showToast('请先输入信令服务器地址')
-    return
-  }
-  
-  log('原始地址: ' + serverUrl)
-  const originalUrl = serverUrl
-  serverUrl = normalizeServerUrl(serverUrl)
-  log('normalize后: ' + serverUrl)
-  if (originalUrl !== serverUrl) {
-    log('自动修正服务器地址: ' + originalUrl + ' -> ' + serverUrl)
-  }
-  
-  savedServerUrl = serverUrl
-  savedRole = role
-  reconnectAttempts = 0
-  
-  const wsUrl = buildWsUrl(serverUrl)
-  log('最终WebSocket地址: ' + wsUrl)
-  log('连接信令服务器: ' + wsUrl)
-  updateServerStatus('连接中...', 'connecting')
-  setConnectionStatus(CONNECTION_STATUS.CONNECTING)
-  
-  try {
-    if (socket) {
-      socket.close()
-    }
-    
-    socket = new WebSocket(wsUrl)
-
-    socket.onopen = () => {
-      log('✓ 已连接到信令服务器')
-      log('正在注册设备 ID: ' + myDeviceId)
-      wsSend('register', { deviceId: myDeviceId })
-      updateServerStatus('已连接', 'connected')
-      setConnectionStatus(CONNECTION_STATUS.CONNECTED)
-      reconnectAttempts = 0
-      showToast('已连接到信令服务器')
-      startWsHeartbeat()
-    }
-
-    socket.onclose = (event) => {
-      log('与信令服务器断开连接, code: ' + event.code)
-      stopWsHeartbeat()
-      updateServerStatus('已断开', 'disconnected')
-      setConnectionStatus(CONNECTION_STATUS.DISCONNECTED)
-    }
-
-    socket.onerror = (error) => {
-      log('✗ 连接错误')
-      updateServerStatus('连接失败', 'error')
-      setConnectionStatus(CONNECTION_STATUS.ERROR)
-      showToast('连接服务器失败')
-    }
-
-    socket.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data)
-        handleWsMessage(data)
-      } catch (e) {
-        log('解析消息失败: ' + e.message)
-      }
-    }
-  } catch (error) {
-    log('✗ 连接初始化错误: ' + error.message)
-    showToast('连接失败')
-    updateServerStatus('连接失败', 'error')
-    setConnectionStatus(CONNECTION_STATUS.ERROR)
-  }
+  disconnectFromServer()
 }
 
 async function connectDevice() {
@@ -1461,31 +247,29 @@ async function connectDevice() {
     return
   }
   if (targetId.length !== 9) {
-    showToast('设备 ID 格式不正确')
+    showToast('设备 ID 格式不正确（需要 9 位字符）')
     return
   }
-  if (targetId === myDeviceId) {
+  if (targetId === s.myDeviceId) {
     showToast('不能连接自己')
     return
   }
   if (!isSocketConnected()) {
-    showToast('未连接到信令服务器')
+    showToast('未连接到信令服务器，请先连接服务器')
     return
   }
-
-  saveToHistory('signaling', { deviceId: targetId, serverUrl: serverUrl })
   
-  incomingFromDeviceId = targetId
+  s.incomingFromDeviceId = targetId
   wsSend('connect-request', {
-    fromDeviceId: myDeviceId,
+    fromDeviceId: s.myDeviceId,
     toDeviceId: targetId
   })
-
-  showToast('连接请求已发送')
+  
+  showToast('连接请求已发送，请等待对方确认...')
 }
 
 function showIncomingConnectionDialog(fromDeviceId) {
-  if (confirm(`设备 ${fromDeviceId} 想要连接到你的设备，是否接受？`)) {
+  if (confirm('设备 ' + fromDeviceId + ' 请求连接，是否接受？')) {
     acceptConnection()
   } else {
     rejectConnection()
@@ -1493,22 +277,24 @@ function showIncomingConnectionDialog(fromDeviceId) {
 }
 
 async function acceptConnection() {
+  if (!isSocketConnected()) return
   wsSend('connection-response', {
-    sessionId: currentSessionId,
+    sessionId: s.currentSessionId,
     accepted: true,
-    fromDeviceId: incomingFromDeviceId,
-    toDeviceId: myDeviceId
+    fromDeviceId: s.incomingFromDeviceId,
+    toDeviceId: s.myDeviceId
   })
-
+  showToast('已接受连接')
   await startControlledConnection()
 }
 
 function rejectConnection() {
+  if (!isSocketConnected()) return
   wsSend('connection-response', {
-    sessionId: currentSessionId,
+    sessionId: s.currentSessionId,
     accepted: false,
-    fromDeviceId: incomingFromDeviceId,
-    toDeviceId: myDeviceId
+    fromDeviceId: s.incomingFromDeviceId,
+    toDeviceId: s.myDeviceId
   })
 }
 
@@ -1561,6 +347,26 @@ async function connectDirect() {
     return
   }
   
+  if (s.currentDirectClientId) {
+    log('清理旧连接...')
+    stopHeartbeat()
+    try { await TCPSocket.disconnect({ clientId: s.currentDirectClientId }) } catch(e) {}
+    s.currentDirectClientId = null
+  }
+  if (s.directPeerConnection) {
+    s.directPeerConnection.close()
+    s.directPeerConnection = null
+  }
+  if (s.dataChannel) {
+    s.dataChannel = null
+  }
+  if (s.inputChannel) {
+    s.inputChannel = null
+    s.inputChannelReady = false
+  }
+  s.isDirectControllerMode = false
+  s.isWaitingRenegotiation = false
+  
   saveToHistory('direct', { ip: remoteIp, port: remotePort })
   
   log('正在连接到 ' + remoteIp + ':' + remotePort + '...')
@@ -1569,8 +375,8 @@ async function connectDirect() {
     const result = await TCPSocket.connect({ host: remoteIp, port: remotePort })
     
     if (result.success) {
-      currentDirectClientId = result.clientId
-      log('TCP连接成功，clientId: ' + currentDirectClientId)
+      s.currentDirectClientId = result.clientId
+      log('TCP连接成功，clientId: ' + s.currentDirectClientId)
       showToast('已连接到服务器')
       
       startHeartbeat()
@@ -1586,14 +392,12 @@ async function connectDirect() {
   }
 }
 
-let heartbeatInterval = null
-
 function startHeartbeat() {
   stopHeartbeat()
   
-  heartbeatInterval = setInterval(() => {
-    if (currentDirectClientId) {
-      sendDirectMessage(currentDirectClientId, { type: 'heartbeat' })
+  s.heartbeatInterval = setInterval(() => {
+    if (s.currentDirectClientId) {
+      sendDirectMessage(s.currentDirectClientId, { type: 'heartbeat' })
     }
   }, 5000)
   
@@ -1601,371 +405,48 @@ function startHeartbeat() {
 }
 
 function stopHeartbeat() {
-  if (heartbeatInterval) {
-    clearInterval(heartbeatInterval)
-    heartbeatInterval = null
+  if (s.heartbeatInterval) {
+    clearInterval(s.heartbeatInterval)
+    s.heartbeatInterval = null
     log('心跳已停止')
   }
 }
 
-async function sendDirectMessage(clientId, message) {
-  try {
-    await TCPSocket.send({ clientId, message: JSON.stringify(message) })
-  } catch (error) {
-    log('发送TCP消息失败: ' + error.message)
-  }
-}
-
 async function handleDirectMessage(message) {
-  log('收到TCP消息: ' + message.type)
-  
   try {
     switch (message.type) {
       case 'offer':
-        if (isWaitingRenegotiation && directPeerConnection) {
+        if (s.directPeerConnection && s.directPeerConnection.connectionState === 'connected') {
           await handleRenegotiationOffer(message.offer)
         } else {
           await handleDirectOffer(message.offer)
         }
         break
       case 'answer':
-        await handleDirectAnswer(message.answer)
+        if (s.directPeerConnection && s.isDirectControllerMode && s.directPeerConnection.signalingState === 'have-local-offer') {
+          await handleRenegotiationAnswer(message.answer)
+        } else {
+          await handleDirectAnswer(message.answer)
+        }
         break
       case 'ice-candidate':
         await handleDirectIceCandidate(message.candidate)
         break
+      case 'offer-with-video':
+        await handleRenegotiationOffer(message.offer)
+        break
       case 'heartbeat':
         break
+      default:
+        log('未知TCP消息类型: ' + message.type)
     }
   } catch (error) {
     log('处理TCP消息失败: ' + error.message)
   }
 }
 
-async function startDirectControllerConnection() {
-  log('作为主控端建立直连WebRTC连接')
-  
-  isDirectControllerMode = true
-  isWaitingRenegotiation = false
-  
-  // 提前初始化matrixTransformer，确保在收到视频流时可用
-  if (!matrixTransformer) {
-    matrixTransformer = new MatrixTransformer()
-    log('提前初始化matrixTransformer完成')
-  }
-  
-  directPeerConnection = new RTCPeerConnection({ iceServers: [] })
-  
-  directPeerConnection.onicecandidate = (event) => {
-    if (event.candidate) {
-      log('发送ICE候选')
-      sendDirectMessage(currentDirectClientId, {
-        type: 'ice-candidate',
-        candidate: {
-          candidate: event.candidate.candidate,
-          sdpMid: event.candidate.sdpMid,
-          sdpMLineIndex: event.candidate.sdpMLineIndex
-        }
-      })
-    }
-  }
-  
-  directPeerConnection.ontrack = (event) => {
-    log('收到远程媒体流，track类型: ' + event.track.kind)
-    const stream = event.streams[0]
-    if (stream) {
-      log('流ID: ' + stream.id + ', tracks数量: ' + stream.getTracks().length)
-      const remoteVideo = document.getElementById('remoteVideo')
-      remoteVideo.srcObject = stream
-      
-      remoteVideo.muted = true
-      remoteVideo.playsInline = true
-      
-      remoteVideo.play().then(() => {
-        log('视频自动播放成功')
-      }).catch(e => {
-        log('视频自动播放失败（需要用户交互）: ' + e.message)
-        const tryPlayOnInteraction = () => {
-          remoteVideo.play().then(() => {
-            log('用户交互后视频播放成功')
-          }).catch(playErr => {
-            log('用户交互后视频播放仍失败: ' + playErr.message)
-          })
-          document.removeEventListener('touchstart', tryPlayOnInteraction)
-          document.removeEventListener('click', tryPlayOnInteraction)
-        }
-        document.addEventListener('touchstart', tryPlayOnInteraction, { once: true })
-        document.addEventListener('click', tryPlayOnInteraction, { once: true })
-      })
-      
-      log('视频流已设置到video元素')
-      
-      remoteVideo.onloadedmetadata = () => {
-        log('视频元数据加载: ' + remoteVideo.videoWidth + 'x' + remoteVideo.videoHeight)
-        if (matrixTransformer) {
-          matrixTransformer.setVideoSize(remoteVideo.videoWidth, remoteVideo.videoHeight)
-          
-          const videoContainer = document.getElementById('videoContainer')
-          const videoWrapper = document.getElementById('videoWrapper')
-          if (videoContainer && videoWrapper) {
-            matrixTransformer.applyContainerSize(videoContainer, videoWrapper)
-            log('视频加载后更新 container: ' + matrixTransformer.displayWidth + 'x' + matrixTransformer.displayHeight)
-          }
-        }
-      }
-      
-      remoteVideo.oncanplay = () => {
-        log('视频可以播放')
-        remoteVideo.play().catch(e => {
-          log('视频oncanplay时播放失败: ' + e.message)
-        })
-      }
-    }
-  }
-  
-  directPeerConnection.onconnectionstatechange = () => {
-    log('WebRTC连接状态: ' + directPeerConnection.connectionState)
-    if (directPeerConnection.connectionState === 'connected') {
-      isConnected = true
-      log('WebRTC连接已建立，等待数据通道打开...')
-    } else if (directPeerConnection.connectionState === 'failed') {
-      isConnected = false
-      isDirectControllerMode = false
-      isWaitingRenegotiation = false
-      showToast('连接失败')
-    }
-  }
-  
-  directPeerConnection.ondatachannel = (event) => {
-    log('收到数据通道: ' + event.channel.label)
-    if (event.channel.label === 'control') {
-      dataChannel = event.channel
-      setupDataChannel()
-    } else if (event.channel.label === 'input') {
-      inputChannel = event.channel
-      inputChannel.binaryType = 'arraybuffer'
-      inputChannelReady = true
-      inputChannel.onmessage = (msgEvent) => {
-        try {
-          const data = JSON.parse(msgEvent.data)
-          if (data.type === 'input') {
-            handleReceivedInput(data)
-          }
-        } catch (e) {
-          log('输入通道消息解析失败: ' + e.message)
-        }
-      }
-      inputChannel.onclose = () => {
-        inputChannelReady = false
-        log('输入数据通道已关闭')
-      }
-      inputChannel.onerror = (error) => {
-        inputChannelReady = false
-        log('输入数据通道错误: ' + error)
-      }
-      log('输入数据通道已就绪（接收端）')
-    }
-  }
-  
-  log('创建数据通道')
-  dataChannel = directPeerConnection.createDataChannel('control', {
-    ordered: true,
-    maxRetransmits: 3
-  })
-  setupDataChannel()
-  
-  inputChannel = directPeerConnection.createDataChannel('input', {
-    ordered: false,
-    maxRetransmits: 0
-  })
-  inputChannel.binaryType = 'arraybuffer'
-  inputChannelReady = false
-  inputChannel.onopen = () => {
-    inputChannelReady = true
-    log('输入数据通道已打开（无序、不重传）')
-  }
-  inputChannel.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data)
-      if (data.type === 'input') {
-        handleReceivedInput(data)
-      }
-    } catch (e) {
-      log('输入通道消息解析失败: ' + e.message)
-    }
-  }
-  inputChannel.onclose = () => {
-    inputChannelReady = false
-    log('输入数据通道已关闭')
-  }
-  inputChannel.onerror = (error) => {
-    inputChannelReady = false
-    log('输入数据通道错误: ' + error)
-  }
-  
-  try {
-    log('创建WebRTC Offer')
-    const offer = await directPeerConnection.createOffer()
-    await directPeerConnection.setLocalDescription(offer)
-    
-    log('发送Offer到被控端')
-    sendDirectMessage(currentDirectClientId, {
-      type: 'offer',
-      offer: {
-        type: offer.type,
-        sdp: offer.sdp
-      }
-    })
-    
-    log('Offer已发送')
-  } catch (error) {
-    log('创建Offer失败: ' + error.message)
-    showToast('连接失败')
-  }
-}
-
-async function handleDirectOffer(offer) {
-  if (!offer) {
-    log('错误: offer为空')
-    return
-  }
-  
-  log('处理Offer')
-  
-  try {
-    directPeerConnection = new RTCPeerConnection({ iceServers: [] })
-    
-    directPeerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
-        sendDirectMessage(currentDirectClientId, {
-          type: 'ice-candidate',
-          candidate: {
-            candidate: event.candidate.candidate,
-            sdpMid: event.candidate.sdpMid,
-            sdpMLineIndex: event.candidate.sdpMLineIndex
-          }
-        })
-      }
-    }
-    
-    directPeerConnection.onconnectionstatechange = () => {
-      log('WebRTC连接状态: ' + directPeerConnection.connectionState)
-    }
-    
-    directPeerConnection.ondatachannel = (event) => {
-      log('收到数据通道: ' + event.channel.label)
-      if (event.channel.label === 'control') {
-        dataChannel = event.channel
-        setupDataChannel()
-      } else if (event.channel.label === 'input') {
-        inputChannel = event.channel
-        inputChannel.binaryType = 'arraybuffer'
-        inputChannelReady = true
-        inputChannel.onmessage = (msgEvent) => {
-          try {
-            const data = JSON.parse(msgEvent.data)
-            if (data.type === 'input') {
-              handleReceivedInput(data)
-            }
-          } catch (e) {
-            log('输入通道消息解析失败: ' + e.message)
-          }
-        }
-        inputChannel.onclose = () => {
-          inputChannelReady = false
-          log('输入数据通道已关闭')
-        }
-        inputChannel.onerror = (error) => {
-          inputChannelReady = false
-          log('输入数据通道错误: ' + error)
-        }
-        log('输入数据通道已就绪（接收端）')
-      }
-    }
-    
-    await directPeerConnection.setRemoteDescription(new RTCSessionDescription(offer))
-    log('远程描述设置成功')
-    
-    const answer = await directPeerConnection.createAnswer()
-    await directPeerConnection.setLocalDescription(answer)
-    log('本地描述设置成功')
-    
-    sendDirectMessage(currentDirectClientId, {
-      type: 'answer',
-      answer: {
-        type: answer.type,
-        sdp: answer.sdp
-      }
-    })
-    
-    log('Answer已发送')
-  } catch (error) {
-    log('处理Offer失败: ' + error.message)
-  }
-}
-
-async function handleDirectAnswer(answer) {
-  if (!answer) {
-    log('错误: answer为空')
-    return
-  }
-  
-  try {
-    await directPeerConnection.setRemoteDescription(new RTCSessionDescription(answer))
-    log('Answer设置成功')
-  } catch (error) {
-    log('设置Answer失败: ' + error.message)
-  }
-}
-
-async function handleDirectIceCandidate(candidate) {
-  if (!candidate || !directPeerConnection) return
-  
-  try {
-    await directPeerConnection.addIceCandidate(new RTCIceCandidate(candidate))
-    log('ICE候选添加成功')
-  } catch (error) {
-    log('添加ICE候选失败: ' + error.message)
-  }
-}
-
-async function handleRenegotiationOffer(offer) {
-  if (!offer || !directPeerConnection) {
-    log('renegotiation offer无效')
-    return
-  }
-  
-  log('收到renegotiation offer（含视频），开始处理...')
-  isWaitingRenegotiation = false
-  
-  try {
-    await directPeerConnection.setRemoteDescription(new RTCSessionDescription(offer))
-    log('renegotiation远程描述设置成功')
-    
-    const answer = await directPeerConnection.createAnswer()
-    await directPeerConnection.setLocalDescription(answer)
-    log('renegotiation answer创建成功')
-    
-    sendDirectMessage(currentDirectClientId, {
-      type: 'answer',
-      answer: {
-        type: answer.type,
-        sdp: answer.sdp
-      }
-    })
-    
-    log('renegotiation answer已发送，等待视频流...')
-    showToast('正在加载远程屏幕...')
-    
-    showRemoteScreen()
-  } catch (error) {
-    log('处理renegotiation offer失败: ' + error.message)
-    console.error('renegotiation详细错误:', error)
-  }
-}
-
 async function initController() {
-  log('YCDesk Android 主控端初始化完成，设备ID: ' + myDeviceId)
+  log('YCDesk Android 主控端初始化完成，设备ID: ' + s.myDeviceId)
   renderHistory('direct')
   renderHistory('signaling')
   
@@ -1992,9 +473,9 @@ async function initController() {
   
   TCPSocket.addListener('disconnected', (data) => {
     log('TCP连接断开: ' + data.clientId)
-    if (data.clientId === currentDirectClientId) {
-      currentDirectClientId = null
-      isConnected = false
+    if (data.clientId === s.currentDirectClientId) {
+      s.currentDirectClientId = null
+      s.isConnected = false
       stopHeartbeat()
       hideFloatingMouse()
       showToast('连接已断开')
@@ -2003,9 +484,9 @@ async function initController() {
 }
 
 async function initControlled() {
-  document.getElementById('deviceId').textContent = myDeviceId
-  isAndroidControlled = true
-  log('YCDesk Android 被控端初始化完成，设备ID: ' + myDeviceId)
+  document.getElementById('deviceId').textContent = s.myDeviceId
+  s.isAndroidControlled = true
+  log('YCDesk Android 被控端初始化完成，设备ID: ' + s.myDeviceId)
   log('Android端被控模式已启用，可以接收来自Windows端的控制指令')
   
   try {
@@ -2022,8 +503,8 @@ async function initControlled() {
   
   TCPSocket.addListener('incomingConnection', async (data) => {
     log('收到来自 ' + data.remoteAddress + ':' + data.remotePort + ' 的连接')
-    currentDirectClientId = data.clientId
-    isAndroidControlled = true
+    s.currentDirectClientId = data.clientId
+    s.isAndroidControlled = true
     try {
       await InputExecutor.setControlledMode({ enabled: true })
     } catch (e) {
@@ -2043,1726 +524,70 @@ async function initControlled() {
   
   TCPSocket.addListener('disconnected', (data) => {
     log('TCP连接断开: ' + data.clientId)
-    if (data.clientId === currentDirectClientId) {
-      currentDirectClientId = null
-      isConnected = false
-      isAndroidControlled = false
+    if (data.clientId === s.currentDirectClientId) {
+      s.currentDirectClientId = null
+      s.isConnected = false
+      s.isAndroidControlled = false
       InputExecutor.setControlledMode({ enabled: false }).catch(() => {})
     }
   })
 }
 
-async function startControllerConnection() {
-  log('作为主控端建立连接')
-  await createPeerConnection()
+function sendPhysicalKeyEvent(eventType, e) {
+  if (!s.isConnected) return
   
-  try {
-    const offer = await peerConnection.createOffer()
-    await peerConnection.setLocalDescription(offer)
-    
-    wsSend('offer', {
-      sessionId: currentSessionId,
-      offer: offer,
-      toDeviceId: incomingFromDeviceId
-    })
-  } catch (error) {
-    log('创建 offer 失败: ' + error.message)
-    showToast('连接失败')
-  }
-}
-
-async function startControlledConnection() {
-  log('作为被控端建立连接')
-  await createPeerConnection()
-}
-
-async function createPeerConnection() {
-  // 提前初始化matrixTransformer，确保在收到视频流时可用
-  if (!matrixTransformer) {
-    matrixTransformer = new MatrixTransformer()
-    log('提前初始化matrixTransformer完成')
+  const keyEvent = {
+    type: eventType,
+    code: e.code,
+    key: e.key,
+    ctrlKey: e.ctrlKey,
+    shiftKey: e.shiftKey,
+    altKey: e.altKey,
+    metaKey: e.metaKey
   }
   
-  peerConnection = new RTCPeerConnection(getIceConfig())
-
-  peerConnection.onicecandidate = (event) => {
-    if (event.candidate && socket) {
-      wsSend('ice-candidate', {
-        sessionId: currentSessionId,
-        candidate: event.candidate,
-        toDeviceId: incomingFromDeviceId
-      })
-    }
-  }
-
-  peerConnection.ontrack = (event) => {
-    log('收到远程媒体流，track类型: ' + event.track.kind)
-    const stream = event.streams[0]
-    if (stream) {
-      log('流ID: ' + stream.id + ', tracks数量: ' + stream.getTracks().length)
-      const remoteVideo = document.getElementById('remoteVideo')
-      remoteVideo.srcObject = stream
-      
-      // 确保视频静音以符合自动播放策略
-      remoteVideo.muted = true
-      remoteVideo.playsInline = true
-      
-      // 尝试播放视频，失败时记录并继续
-      remoteVideo.play().then(() => {
-        log('视频自动播放成功')
-      }).catch(e => {
-        log('视频自动播放失败（需要用户交互）: ' + e.message)
-        // 添加用户交互后尝试播放
-        const tryPlayOnInteraction = () => {
-          remoteVideo.play().then(() => {
-            log('用户交互后视频播放成功')
-          }).catch(playErr => {
-            log('用户交互后视频播放仍失败: ' + playErr.message)
-          })
-          document.removeEventListener('touchstart', tryPlayOnInteraction)
-          document.removeEventListener('click', tryPlayOnInteraction)
-        }
-        document.addEventListener('touchstart', tryPlayOnInteraction, { once: true })
-        document.addEventListener('click', tryPlayOnInteraction, { once: true })
-      })
-      
-      log('视频流已设置到video元素')
-      
-      remoteVideo.onloadedmetadata = () => {
-        log('视频元数据加载: ' + remoteVideo.videoWidth + 'x' + remoteVideo.videoHeight)
-        if (matrixTransformer) {
-          matrixTransformer.setVideoSize(remoteVideo.videoWidth, remoteVideo.videoHeight)
-          
-          const videoContainer = document.getElementById('videoContainer')
-          const videoWrapper = document.getElementById('videoWrapper')
-          if (videoContainer && videoWrapper) {
-            matrixTransformer.applyContainerSize(videoContainer, videoWrapper)
-            log('视频加载后更新 container: ' + matrixTransformer.displayWidth + 'x' + matrixTransformer.displayHeight)
-          }
-        }
-      }
-      
-      // 当视频准备好时，再次尝试播放
-      remoteVideo.oncanplay = () => {
-        log('视频可以播放')
-        remoteVideo.play().catch(e => {
-          log('视频oncanplay时播放失败: ' + e.message)
-        })
-      }
-    }
-  }
-
-  peerConnection.onconnectionstatechange = () => {
-    log('连接状态: ' + peerConnection.connectionState)
-    if (peerConnection.connectionState === 'connected') {
-      isConnected = true
-      showToast('连接成功')
-    } else if (peerConnection.connectionState === 'disconnected' || peerConnection.connectionState === 'failed') {
-      isConnected = false
-      showToast('连接已断开')
-      hideRemoteScreen()
-    }
-  }
-
-  peerConnection.ondatachannel = (event) => {
-    log('收到数据通道: ' + event.channel.label)
-    if (event.channel.label === 'control') {
-      dataChannel = event.channel
-      setupDataChannel()
-    } else if (event.channel.label === 'input') {
-      inputChannel = event.channel
-      inputChannel.binaryType = 'arraybuffer'
-      inputChannelReady = true
-      inputChannel.onmessage = (msgEvent) => {
-        try {
-          const data = JSON.parse(msgEvent.data)
-          if (data.type === 'input') {
-            handleReceivedInput(data)
-          }
-        } catch (e) {
-          log('输入通道消息解析失败: ' + e.message)
-        }
-      }
-      inputChannel.onclose = () => {
-        inputChannelReady = false
-        log('输入数据通道已关闭')
-      }
-      inputChannel.onerror = (error) => {
-        inputChannelReady = false
-        log('输入数据通道错误: ' + error)
-      }
-      log('输入数据通道已就绪（接收端）')
-    }
-  }
-
-  if (isController) {
-    peerConnection.addTransceiver('video', { direction: 'recvonly' })
-    peerConnection.addTransceiver('audio', { direction: 'recvonly' })
-    log('已添加视频和音频接收器')
-    
-    log('创建数据通道（主控端）')
-    dataChannel = peerConnection.createDataChannel('control', {
-      ordered: true,
-      maxRetransmits: 3
-    })
-    setupDataChannel()
-    
-    inputChannel = peerConnection.createDataChannel('input', {
-      ordered: false,
-      maxRetransmits: 0
-    })
-    inputChannel.binaryType = 'arraybuffer'
-    inputChannelReady = false
-    inputChannel.onopen = () => {
-      inputChannelReady = true
-      log('输入数据通道已打开（无序、不重传）')
-    }
-    inputChannel.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data)
-        if (data.type === 'input') {
-          handleReceivedInput(data)
-        }
-      } catch (e) {
-        log('输入通道消息解析失败: ' + e.message)
-      }
-    }
-    inputChannel.onclose = () => {
-      inputChannelReady = false
-      log('输入数据通道已关闭')
-    }
-    inputChannel.onerror = (error) => {
-      inputChannelReady = false
-      log('输入数据通道错误: ' + error)
-    }
-  }
-}
-
-function setupDataChannel() {
-  dataChannel.onopen = () => {
-    log('数据通道已打开')
-    
-    if (isDirectControllerMode) {
-      showToast('正在协商分辨率...')
-      
-      const dpr = window.devicePixelRatio || 1
-      
-      const remoteScreen = document.getElementById('remoteScreen')
-      let localCssWidth = window.innerWidth
-      let localCssHeight = window.innerHeight
-      if (remoteScreen && remoteScreen.clientWidth > 0) {
-        localCssWidth = remoteScreen.clientWidth
-        localCssHeight = remoteScreen.clientHeight
-      }
-      
-      const localPhysicalWidth = Math.round(localCssWidth * dpr)
-      const localPhysicalHeight = Math.round(localCssHeight * dpr)
-      
-      log('本地窗口: CSS=' + localCssWidth + 'x' + localCssHeight + ', 物理=' + localPhysicalWidth + 'x' + localPhysicalHeight + ', DPR=' + dpr)
-      
-      const sendResolutionRequest = () => {
-        if (!dataChannel || dataChannel.readyState !== 'open') {
-          log('数据通道已关闭，无法发送分辨率请求')
-          return
-        }
-        
-        try {
-          dataChannel.send(JSON.stringify({
-            type: 'resolution-request',
-            width: localPhysicalWidth,
-            height: localPhysicalHeight,
-            devicePixelRatio: 1
-          }))
-          log('分辨率请求已发送: ' + localPhysicalWidth + 'x' + localPhysicalHeight)
-        } catch (e) {
-          log('发送分辨率请求失败: ' + e.message)
-        }
-      }
-      
-      isWaitingRenegotiation = true
-      
-      setTimeout(() => {
-        log('主控端：发送分辨率请求...')
-        sendResolutionRequest()
-        
-        let retryCount = 0
-        const retryInterval = setInterval(() => {
-          if (!isWaitingRenegotiation) {
-            clearInterval(retryInterval)
-            return
-          }
-          retryCount++
-          if (retryCount > 5) {
-            clearInterval(retryInterval)
-            log('分辨率请求重试次数已用完')
-            return
-          }
-          log('重发分辨率请求 (' + retryCount + '/5)')
-          sendResolutionRequest()
-        }, 3000)
-      }, 1000)
-    } else {
-      showToast('连接成功！正在加载远程屏幕...')
-      setTimeout(() => {
-        showRemoteScreen()
-      }, 500)
-    }
-  }
-
-  dataChannel.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data)
-      log('收到数据通道消息: ' + JSON.stringify(data).substring(0, 200))
-      
-      if (data.type === 'resolution-response') {
-        log('收到分辨率响应: ' + data.width + 'x' + data.height)
-        if (matrixTransformer) {
-          matrixTransformer.setRemoteScreenSize(data.width, data.height)
-          if (data.originalWidth && data.originalHeight) {
-            log('原始屏幕尺寸: ' + data.originalWidth + 'x' + data.originalHeight)
-          }
-        }
-      } else if (data.type === 'screen-size') {
-        log('收到屏幕尺寸: ' + data.width + 'x' + data.height + ', scaleFactor=' + data.scaleFactor)
-        updateScreenSize(data.width, data.height, data.scaleFactor, data.workArea)
-      } else if (data.type === 'input') {
-        handleReceivedInput(data)
-      } else if (data.type === 'ping') {
-        dataChannel.send(JSON.stringify({ type: 'pong', timestamp: data.timestamp }))
-      }
-    } catch (e) {
-      log('解析数据通道消息失败: ' + e.message)
-    }
-  }
-
-  dataChannel.onclose = () => {
-    log('数据通道已关闭')
-    isWaitingRenegotiation = false
-    isDirectControllerMode = false
-    hideRemoteScreen()
-  }
-
-  dataChannel.onerror = (error) => {
-    console.error('数据通道错误:', error)
-    showToast('数据通道错误')
-  }
-}
-
-let isAndroidControlled = false
-
-async function handleReceivedInput(inputData) {
-  if (!isAndroidControlled) {
-    log('Android端不是被控模式，忽略输入')
-    return
-  }
-  
-  log('处理接收到的输入: ' + inputData.inputType)
-  
-  try {
-    switch (inputData.inputType) {
-      case 'mousemove':
-        await InputExecutor.executeMouseMove({
-          x: inputData.x,
-          y: inputData.y,
-          screenWidth: matrixTransformer?.remoteScreenWidth || 1920,
-          screenHeight: matrixTransformer?.remoteScreenHeight || 1080
-        });
-        break;
-      case 'mousedown':
-        await InputExecutor.executeMouseDown({
-          x: inputData.x,
-          y: inputData.y,
-          button: inputData.button,
-          screenWidth: matrixTransformer?.remoteScreenWidth || 1920,
-          screenHeight: matrixTransformer?.remoteScreenHeight || 1080
-        });
-        break;
-      case 'mouseup':
-        await InputExecutor.executeMouseUp({
-          x: inputData.x,
-          y: inputData.y,
-          button: inputData.button,
-          screenWidth: matrixTransformer?.remoteScreenWidth || 1920,
-          screenHeight: matrixTransformer?.remoteScreenHeight || 1080
-        });
-        break;
-      case 'wheel':
-        await InputExecutor.executeMouseWheel({
-          deltaY: inputData.deltaY || 0
-        });
-        break;
-      case 'keydown':
-        await InputExecutor.executeKeyDown({
-          key: inputData.key
-        });
-        break;
-      case 'keyup':
-        await InputExecutor.executeKeyUp({
-          key: inputData.key
-        });
-        break;
-      default:
-        log('未知输入类型: ' + inputData.inputType);
-    }
-  } catch (e) {
-    log('执行输入失败: ' + e.message)
-  }
-}
-
-function simulateMouseMove(x, y) {
-  log('模拟鼠标移动: ' + x + ', ' + y)
-  InputExecutor.executeMouseMove({
-    x: x,
-    y: y,
-    screenWidth: matrixTransformer?.remoteScreenWidth || 1920,
-    screenHeight: matrixTransformer?.remoteScreenHeight || 1080
-  }).catch(e => log('执行鼠标移动失败: ' + e.message))
-}
-
-function simulateMouseDown(x, y, button) {
-  log('模拟鼠标按下: ' + x + ', ' + y + ', button: ' + button)
-  InputExecutor.executeMouseDown({
-    x: x,
-    y: y,
-    button: button,
-    screenWidth: matrixTransformer?.remoteScreenWidth || 1920,
-    screenHeight: matrixTransformer?.remoteScreenHeight || 1080
-  }).catch(e => log('执行鼠标按下失败: ' + e.message))
-}
-
-function simulateMouseUp(x, y, button) {
-  log('模拟鼠标释放: ' + x + ', ' + y + ', button: ' + button)
-  InputExecutor.executeMouseUp({
-    x: x,
-    y: y,
-    button: button,
-    screenWidth: matrixTransformer?.remoteScreenWidth || 1920,
-    screenHeight: matrixTransformer?.remoteScreenHeight || 1080
-  }).catch(e => log('执行鼠标释放失败: ' + e.message))
-}
-
-function simulateWheel(deltaY, deltaX) {
-  log('模拟滚轮: deltaY=' + deltaY + ', deltaX=' + deltaX)
-  InputExecutor.executeMouseWheel({
-    deltaY: deltaY
-  }).catch(e => log('执行滚轮失败: ' + e.message))
-}
-
-function simulateKeyDown(code, key, modifiers) {
-  log('模拟键盘按下: ' + code + ', key: ' + key + 
-      ', ctrl: ' + (modifiers.ctrlKey || false) +
-      ', shift: ' + (modifiers.shiftKey || false) +
-      ', alt: ' + (modifiers.altKey || false))
-  InputExecutor.executeKeyDown({
-    key: key
-  }).catch(e => log('执行键盘按下失败: ' + e.message))
-}
-
-function simulateKeyUp(code, key, modifiers) {
-  log('模拟键盘释放: ' + code + ', key: ' + key)
-  InputExecutor.executeKeyUp({
-    key: key
-  }).catch(e => log('执行键盘释放失败: ' + e.message))
-}
-
-function sendControlCommand(command) {
-  const inputCommand = convertToInputCommand(command)
+  const inputCommand = convertToInputCommand(keyEvent)
   const message = JSON.stringify(inputCommand)
   
-  if (inputChannel && inputChannelReady && inputChannel.readyState === 'open') {
-    if (inputChannel.bufferedAmount < 65536) {
-      inputChannel.send(message)
-      return
+  if (s.inputChannel && s.inputChannelReady && s.inputChannel.readyState === 'open') {
+    if (s.inputChannel.bufferedAmount < 65536) {
+      s.inputChannel.send(message)
+    } else if (s.dataChannel && s.dataChannel.readyState === 'open') {
+      s.dataChannel.send(message)
     }
+  } else if (s.dataChannel && s.dataChannel.readyState === 'open') {
+    s.dataChannel.send(message)
   }
-  
-  if (dataChannel && dataChannel.readyState === 'open') {
-    dataChannel.send(message)
-  } else {
-    log('数据通道未打开，无法发送命令')
-  }
-}
-
-function convertToInputCommand(command) {
-  const inputCommand = {
-    type: 'input',
-    timestamp: Date.now()
-  }
-  
-  switch (command.type) {
-    case 'mousemove':
-      inputCommand.inputType = 'mousemove'
-      inputCommand.x = normalizeCoordinate(command.x)
-      inputCommand.y = normalizeCoordinate(command.y)
-      break
-      
-    case 'mousedown':
-      inputCommand.inputType = 'mousedown'
-      inputCommand.x = normalizeCoordinate(command.x)
-      inputCommand.y = normalizeCoordinate(command.y)
-      inputCommand.button = normalizeButton(command.button)
-      break
-      
-    case 'mouseup':
-      inputCommand.inputType = 'mouseup'
-      inputCommand.x = normalizeCoordinate(command.x)
-      inputCommand.y = normalizeCoordinate(command.y)
-      inputCommand.button = normalizeButton(command.button)
-      break
-      
-    case 'click':
-      inputCommand.inputType = 'click'
-      inputCommand.x = normalizeCoordinate(command.x)
-      inputCommand.y = normalizeCoordinate(command.y)
-      inputCommand.button = normalizeButton(command.button)
-      break
-      
-    case 'dblclick':
-      inputCommand.inputType = 'dblclick'
-      inputCommand.x = normalizeCoordinate(command.x)
-      inputCommand.y = normalizeCoordinate(command.y)
-      inputCommand.button = normalizeButton(command.button)
-      break
-      
-    case 'wheel':
-      inputCommand.inputType = 'wheel'
-      inputCommand.deltaY = command.deltaY || 0
-      inputCommand.deltaX = command.deltaX || 0
-      break
-      
-    case 'keydown':
-    case 'keyup':
-      inputCommand.inputType = command.type
-      inputCommand.code = command.code
-      inputCommand.key = command.key || getKeyFromCode(command.code)
-      if (command.ctrlKey) inputCommand.ctrlKey = true
-      if (command.shiftKey) inputCommand.shiftKey = true
-      if (command.altKey) inputCommand.altKey = true
-      if (command.metaKey) inputCommand.metaKey = true
-      break
-      
-    default:
-      log('convertToInputCommand: 未知命令类型 - ' + command.type + ', 直接发送')
-      return command
-  }
-  
-  return inputCommand
-}
-
-function normalizeCoordinate(value, maxValue = 65535) {
-  if (value === undefined || value === null) return 0
-  if (value >= 0 && value <= 1) return value
-  if (value >= 0 && value <= maxValue) {
-    return value / maxValue
-  }
-  return Math.max(0, Math.min(1, value / maxValue))
-}
-
-function normalizeButton(button) {
-  if (typeof button === 'number') return button
-  if (typeof button === 'string') {
-    const lower = button.toLowerCase()
-    if (lower === 'right') return 2
-    if (lower === 'middle') return 1
-  }
-  return 0
-}
-
-function getKeyFromCode(code) {
-  const keyMap = {
-    'Digit0': '0', 'Digit1': '1', 'Digit2': '2', 'Digit3': '3', 'Digit4': '4',
-    'Digit5': '5', 'Digit6': '6', 'Digit7': '7', 'Digit8': '8', 'Digit9': '9',
-    'KeyA': 'a', 'KeyB': 'b', 'KeyC': 'c', 'KeyD': 'd', 'KeyE': 'e',
-    'KeyF': 'f', 'KeyG': 'g', 'KeyH': 'h', 'KeyI': 'i', 'KeyJ': 'j',
-    'KeyK': 'k', 'KeyL': 'l', 'KeyM': 'm', 'KeyN': 'n', 'KeyO': 'o',
-    'KeyP': 'p', 'KeyQ': 'q', 'KeyR': 'r', 'KeyS': 's', 'KeyT': 't',
-    'KeyU': 'u', 'KeyV': 'v', 'KeyW': 'w', 'KeyX': 'x', 'KeyY': 'y', 'KeyZ': 'z',
-    'Space': ' ', 'Enter': 'Enter', 'Backspace': 'Backspace', 'Tab': 'Tab',
-    'Escape': 'Escape', 'Delete': 'Delete', 'Insert': 'Insert',
-    'ArrowUp': 'ArrowUp', 'ArrowDown': 'ArrowDown', 'ArrowLeft': 'ArrowLeft', 'ArrowRight': 'ArrowRight',
-    'Home': 'Home', 'End': 'End', 'PageUp': 'PageUp', 'PageDown': 'PageDown',
-    'F1': 'F1', 'F2': 'F2', 'F3': 'F3', 'F4': 'F4', 'F5': 'F5', 'F6': 'F6',
-    'F7': 'F7', 'F8': 'F8', 'F9': 'F9', 'F10': 'F10', 'F11': 'F11', 'F12': 'F12',
-    'Minus': '-', 'Equal': '=', 'BracketLeft': '[', 'BracketRight': ']',
-    'Backslash': '\\', 'Semicolon': ';', 'Quote': "'", 'Comma': ',', 'Period': '.', 'Slash': '/',
-    'Backquote': '`'
-  }
-  return keyMap[code] || code
-}
-
-let currentScale = 1
-let lastTouchDistance = 0
-let panX = 0
-let panY = 0
-let lastPanX = 0
-let lastPanY = 0
-let isPanning = false
-let isFullscreen = false
-let isFloatMode = false
-let controlsHidden = false
-
-function updateVideoTransformGlobal() {
-  const remoteVideo = document.getElementById('remoteVideo')
-  if (remoteVideo) {
-    remoteVideo.style.transform = `translate(${panX}px, ${panY}px) scale(${currentScale})`
-  }
-}
-
-function resetZoomAndPan() {
-  if (matrixTransformer) {
-      matrixTransformer.reset();
-      const videoContainer = document.getElementById('videoContainer');
-      if (videoContainer) {
-          matrixTransformer.applyTransform(videoContainer);
-      }
-      showToast('已重置缩放和位置');
-  } else {
-      currentScale = 1;
-      panX = 0;
-      panY = 0;
-      isZoomed = false;
-      updateVideoTransformGlobal();
-      showToast('已重置缩放和位置');
-  }
-}
-
-let isPointerMode = false
-
-function toggleMouseMode() {
-    isPointerMode = !isPointerMode
-    
-    const mouseModeBtn = document.getElementById('mouseModeBtn')
-    
-    if (isPointerMode) {
-        showFloatingMouse().catch(e => log('显示悬浮鼠标失败: ' + e.message))
-        showToast('指针模式已开启')
-        if (mouseModeBtn) {
-            mouseModeBtn.style.background = '#667eea'
-            mouseModeBtn.style.color = 'white'
-        }
-    } else {
-        hideFloatingMouse().catch(e => log('隐藏悬浮鼠标失败: ' + e.message))
-        showToast('指针模式已关闭')
-        if (mouseModeBtn) {
-            mouseModeBtn.style.background = ''
-            mouseModeBtn.style.color = ''
-        }
-    }
-}
-
-function toggleControlsHide() {
-  controlsHidden = !controlsHidden
-  const controlOverlay = document.getElementById('controlOverlay')
-  const controlToggle = document.getElementById('controlToggle')
-  
-  if (controlOverlay && controlToggle) {
-    if (controlsHidden) {
-      controlOverlay.classList.add('hidden')
-      controlToggle.classList.add('visible')
-      showToast('控制栏已隐藏')
-    } else {
-      controlOverlay.classList.remove('hidden')
-      controlToggle.classList.remove('visible')
-      showToast('控制栏已显示')
-    }
-  }
-}
-
-function showControls() {
-  controlsHidden = false
-  const controlOverlay = document.getElementById('controlOverlay')
-  const controlToggle = document.getElementById('controlToggle')
-  
-  if (controlOverlay && controlToggle) {
-    controlOverlay.classList.remove('hidden')
-    controlToggle.classList.remove('visible')
-  }
-}
-
-function handleOrientationChange() {
-  const remoteScreen = document.getElementById('remoteScreen')
-  const isLandscape = window.innerWidth > window.innerHeight
-  
-  if (remoteScreen && remoteScreen.classList.contains('active')) {
-    if (isLandscape) {
-      remoteScreen.classList.add('landscape-mode')
-      if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen().catch(() => {})
-      }
-    } else {
-      remoteScreen.classList.remove('landscape-mode')
-      if (document.fullscreenElement) {
-        document.exitFullscreen().catch(() => {})
-      }
-    }
-    
-    if (dataChannel && dataChannel.readyState === 'open') {
-      const rotation = isLandscape ? 90 : 0
-      sendControlCommand({
-        type: 'screen-rotation',
-        rotation: rotation
-      })
-    }
-    
-    setTimeout(() => {
-      const remoteScreen = document.getElementById('remoteScreen')
-      const videoContainer = document.getElementById('videoContainer')
-      const videoWrapper = document.getElementById('videoWrapper')
-      
-      if (remoteScreen && videoContainer && videoWrapper) {
-        const screenRect = remoteScreen.getBoundingClientRect()
-        
-        if (matrixTransformer) {
-          matrixTransformer.setScreenSize(screenRect.width, screenRect.height)
-          matrixTransformer.reset()
-          matrixTransformer.applyContainerSize(videoContainer, videoWrapper)
-          matrixTransformer.applyTransform(videoContainer)
-        }
-        
-        if (inputDispatcher) {
-          inputDispatcher.updateRemoteScreenRect()
-        }
-        
-        log('横竖屏切换: 屏幕尺寸更新为 ' + screenRect.width + 'x' + screenRect.height)
-      }
-    }, 300)
-  }
-}
-
-async function showFloatingMouse() {
-  try {
-    // 先检查权限
-    const permResult = await FloatingMouse.hasPermission()
-    log('悬浮窗权限状态: ' + (permResult.granted ? '已授权' : '未授权'))
-    
-    if (!permResult.granted) {
-      log('正在请求悬浮窗权限...')
-      const requestResult = await FloatingMouse.requestPermission()
-      if (!requestResult.granted) {
-        showToast('请在设置中开启悬浮窗权限')
-        return
-      }
-    }
-    
-    const result = await FloatingMouse.show()
-    if (result.success) {
-      log('悬浮鼠标已显示')
-    } else {
-      log('显示悬浮鼠标失败: ' + result.error)
-      if (result.needPermission) {
-        showToast('需要悬浮窗权限')
-      } else if (result.needStartService) {
-        log('服务未启动，正在启动...')
-        await FloatingMouse.startService()
-        await FloatingMouse.show()
-      }
-    }
-  } catch (e) {
-    log('显示悬浮鼠标失败: ' + e.message)
-  }
-}
-
-async function hideFloatingMouse() {
-  try {
-    await FloatingMouse.hide()
-    log('悬浮鼠标已隐藏')
-  } catch (e) {
-    log('隐藏悬浮鼠标失败: ' + e.message)
-  }
-}
-
-function handleFloatingMouseEvent(event) {
-  if (!dataChannel || dataChannel.readyState !== 'open') {
-    log('数据通道未打开，无法发送鼠标事件')
-    return
-  }
-  
-  log('handleFloatingMouseEvent: 收到事件 - type=' + event.type + ', x=' + event.x + ', y=' + event.y + ', button=' + event.button);
-  
-  if (matrixTransformer && inputDispatcher) {
-      log('handleFloatingMouseEvent: 使用 InputDispatcher');
-      inputDispatcher.dispatchFloatingMouseInput(
-          event.x,
-          event.y,
-          event.type,
-          event.button,
-          event.delta || 0
-      );
-  } else {
-      log('handleFloatingMouseEvent: InputDispatcher 未初始化，使用旧逻辑');
-      
-      const videoContainer = document.getElementById('videoContainer')
-      if (!videoContainer) {
-        log('handleFloatingMouseEvent: 找不到 videoContainer')
-        return
-      }
-      
-      const containerRect = videoContainer.getBoundingClientRect()
-      
-      const screenX = event.x
-      const screenY = event.y
-      
-      const pixelX = screenX - containerRect.left
-      const pixelY = screenY - containerRect.top
-      
-      const x = Math.round(pixelX / containerRect.width * 65535)
-      const y = Math.round(pixelY / containerRect.height * 65535)
-      
-      log('handleFloatingMouseEvent: 旧逻辑坐标 - x=' + x + ', y=' + y)
-      
-      const inputCommand = {
-        type: 'input',
-        timestamp: Date.now()
-      }
-      
-      switch (event.type) {
-        case 'mousemove':
-          inputCommand.inputType = 'mousemove'
-          inputCommand.x = x
-          inputCommand.y = y
-          break
-          
-        case 'mousedown':
-          inputCommand.inputType = 'mousedown'
-          inputCommand.x = x
-          inputCommand.y = y
-          inputCommand.button = event.button
-          break
-          
-        case 'mouseup':
-          inputCommand.inputType = 'mouseup'
-          inputCommand.x = x
-          inputCommand.y = y
-          inputCommand.button = event.button
-          break
-          
-        case 'wheel':
-          inputCommand.inputType = 'wheel'
-          inputCommand.deltaY = event.delta
-          break
-          
-        case 'dblclick':
-          inputCommand.inputType = 'dblclick'
-          inputCommand.x = x
-          inputCommand.y = y
-          inputCommand.button = event.button
-          break
-          
-        case 'dragstart':
-          inputCommand.inputType = 'mousedown'
-          inputCommand.x = x
-          inputCommand.y = y
-          inputCommand.button = event.button
-          break
-          
-        case 'dragend':
-          inputCommand.inputType = 'mouseup'
-          inputCommand.x = x
-          inputCommand.y = y
-          inputCommand.button = event.button
-          break
-          
-        default:
-          return
-      }
-      
-      dataChannel.send(JSON.stringify(inputCommand))
-      log('handleFloatingMouseEvent: 已发送命令 - ' + JSON.stringify(inputCommand))
-  }
-}
-
-function toggleFullscreen() {
-  const remoteScreen = document.getElementById('remoteScreen')
-  const remoteVideo = document.getElementById('remoteVideo')
-  
-  if (!isFullscreen) {
-    if (remoteScreen.requestFullscreen) {
-      remoteScreen.requestFullscreen()
-    } else if (remoteScreen.webkitRequestFullscreen) {
-      remoteScreen.webkitRequestFullscreen()
-    } else if (remoteScreen.msRequestFullscreen) {
-      remoteScreen.msRequestFullscreen()
-    }
-    remoteScreen.classList.add('fullscreen-mode')
-    remoteVideo.classList.add('fullscreen')
-    isFullscreen = true
-    showToast('全屏模式已开启')
-  } else {
-    if (document.exitFullscreen) {
-      document.exitFullscreen()
-    } else if (document.webkitExitFullscreen) {
-      document.webkitExitFullscreen()
-    } else if (document.msExitFullscreen) {
-      document.msExitFullscreen()
-    }
-    remoteScreen.classList.remove('fullscreen-mode')
-    remoteVideo.classList.remove('fullscreen')
-    isFullscreen = false
-    showToast('已退出全屏')
-  }
-}
-
-window.addEventListener('orientationchange', handleOrientationChange)
-window.addEventListener('resize', () => {
-  if (window.innerWidth > window.innerHeight) {
-    log('横屏检测')
-  }
-})
-
-function setupRemoteScreenInteraction() {
-    log('初始化远程屏幕交互...')
-    
-    const remoteScreen = document.getElementById('remoteScreen');
-    const videoContainer = document.getElementById('videoContainer');
-    const videoWrapper = document.getElementById('videoWrapper');
-    
-    if (!remoteScreen || !videoContainer) {
-        log('错误：找不到 remoteScreen 或 videoContainer 元素');
-        return;
-    }
-    
-    // 确保matrixTransformer已初始化
-    if (!matrixTransformer) {
-        matrixTransformer = new MatrixTransformer();
-    }
-    
-    // 使用requestAnimationFrame确保DOM完全渲染后再获取尺寸
-    requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-            const screenRect = remoteScreen.getBoundingClientRect();
-            log('屏幕尺寸: ' + screenRect.width + 'x' + screenRect.height);
-            
-            matrixTransformer.setScreenSize(screenRect.width, screenRect.height);
-    
-            videoContainer.style.width = screenRect.width + 'px';
-            videoContainer.style.height = screenRect.height + 'px';
-            videoContainer.style.left = '0px';
-            videoContainer.style.top = '0px';
-            
-            if (videoWrapper) {
-                videoWrapper.style.width = '100%';
-                videoWrapper.style.height = '100%';
-                videoWrapper.style.left = '0px';
-                videoWrapper.style.top = '0px';
-            }
-            
-            log('初始化 videoContainer 填满屏幕: ' + screenRect.width + 'x' + screenRect.height);
-            
-            inputDispatcher = new InputDispatcher(matrixTransformer);
-            
-            gestureHandler = createGestureHandler(
-                matrixTransformer,
-                inputDispatcher
-            );
-            
-            const isTouchOnUI = (x, y) => {
-                const controlOverlay = document.getElementById('controlOverlay');
-                const controlToggle = document.getElementById('controlToggle');
-                const statsOverlay = document.getElementById('statsOverlay');
-                const keyboardOverlay = document.getElementById('keyboardOverlay');
-                
-                const uiElements = [controlOverlay, controlToggle, statsOverlay, keyboardOverlay];
-                
-                for (const element of uiElements) {
-                    if (element && element.style.display !== 'none') {
-                        const rect = element.getBoundingClientRect();
-                        if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
-                            log('触摸在 UI 元素上: ' + element.id);
-                            return true;
-                        }
-                    }
-                }
-                
-                return false;
-            };
-            
-            window.isTouchOnUI = isTouchOnUI;
-            
-            let isMiddleButtonDown = false;
-            
-            remoteScreen.addEventListener('mousedown', (e) => {
-                if (e.button === 1) {
-                    isMiddleButtonDown = true;
-                    e.preventDefault();
-                }
-            });
-            
-            remoteScreen.addEventListener('mouseup', (e) => {
-                if (e.button === 1) {
-                    isMiddleButtonDown = false;
-                    e.preventDefault();
-                }
-            });
-            
-            remoteScreen.addEventListener('touchstart', (e) => {
-                const touch = e.touches[0];
-                if (isTouchOnUI(touch.clientX, touch.clientY)) {
-                    return;
-                }
-                e.preventDefault();
-                gestureHandler.handleTouchStart(e);
-            }, { passive: false });
-            
-            remoteScreen.addEventListener('touchmove', (e) => {
-                const touch = e.touches[0];
-                if (isTouchOnUI(touch.clientX, touch.clientY)) {
-                    return;
-                }
-                e.preventDefault();
-                gestureHandler.handleTouchMove(e);
-            }, { passive: false });
-            
-            remoteScreen.addEventListener('touchend', (e) => {
-                const touch = e.changedTouches[0];
-                if (isTouchOnUI(touch.clientX, touch.clientY)) {
-                    return;
-                }
-                gestureHandler.handleTouchEnd(e);
-            }, { passive: false });
-            
-            remoteScreen.addEventListener('touchcancel', (e) => {
-                gestureHandler.handleTouchEnd(e);
-            }, { passive: false });
-            
-            remoteScreen.addEventListener('wheel', (e) => {
-                if (isTouchOnUI(e.clientX, e.clientY)) {
-                    return;
-                }
-                
-                e.preventDefault();
-                
-                const deltaX = e.deltaX || 0;
-                const deltaY = e.deltaY || 0;
-                
-                if (e.ctrlKey || isMiddleButtonDown) {
-                    const scaleDelta = deltaY > 0 ? 0.9 : 1.1;
-                    const newScale = matrixTransformer.scale * scaleDelta;
-                    matrixTransformer.updateScale(newScale, e.clientX, e.clientY);
-                    const videoContainer = document.getElementById('videoContainer');
-                    if (videoContainer) {
-                        matrixTransformer.applyTransform(videoContainer);
-                    }
-                    log('缩放: scale=' + newScale.toFixed(2) + ', center=(' + e.clientX + ', ' + e.clientY + ')');
-                } else {
-                    inputDispatcher.dispatchTouchInput(
-                        e.clientX,
-                        e.clientY,
-                        'wheel',
-                        0,
-                        deltaY
-                    );
-                }
-            }, { passive: false });
-            
-            remoteScreen.addEventListener('contextmenu', (e) => {
-                if (isTouchOnUI(e.clientX, e.clientY)) {
-                    return;
-                }
-                e.preventDefault();
-                return false;
-            });
-            
-            remoteScreen.addEventListener('selectstart', (e) => {
-                if (isTouchOnUI(e.clientX, e.clientY)) {
-                    return;
-                }
-                e.preventDefault();
-                return false;
-            });
-            
-            const remoteVideo = document.getElementById('remoteVideo');
-            if (remoteVideo) {
-                log('remoteVideo 元素已找到');
-            }
-            
-            log('远程屏幕交互已初始化 - 事件绑定在 remoteScreen 层，已添加 UI 检测');
-        });
-    });
-}
-
-function updateScreenSize(width, height, scaleFactor, workArea) {
-    log('收到远程屏幕尺寸: ' + width + 'x' + height + ', scaleFactor=' + scaleFactor);
-    
-    if (matrixTransformer) {
-        matrixTransformer.setRemoteScreenSize(width, height);
-        
-        if (scaleFactor) {
-            matrixTransformer.scaleFactor = scaleFactor;
-        }
-        if (workArea) {
-            matrixTransformer.workArea = workArea;
-        }
-        
-        const videoContainer = document.getElementById('videoContainer');
-        const videoWrapper = document.getElementById('videoWrapper');
-        const remoteVideo = document.getElementById('remoteVideo');
-        const remoteScreen = document.getElementById('remoteScreen');
-        
-        if (videoContainer && videoWrapper && remoteScreen) {
-            // 重置缩放和平移
-            matrixTransformer.reset();
-            
-            // 更新本地屏幕尺寸
-            const screenRect = remoteScreen.getBoundingClientRect();
-            matrixTransformer.setScreenSize(screenRect.width, screenRect.height);
-            
-            // 设置视频尺寸（优先使用实际视频尺寸）
-            if (remoteVideo && remoteVideo.videoWidth > 0) {
-                matrixTransformer.setVideoSize(remoteVideo.videoWidth, remoteVideo.videoHeight);
-                log('使用视频尺寸: ' + remoteVideo.videoWidth + 'x' + remoteVideo.videoHeight);
-            } else {
-                // 如果视频还没加载，使用远程屏幕尺寸作为视频尺寸
-                matrixTransformer.setVideoSize(width, height);
-                log('使用远程屏幕尺寸作为视频尺寸: ' + width + 'x' + height);
-            }
-            
-            // 立即应用容器尺寸（类似横屏后的重构）
-            matrixTransformer.applyContainerSize(videoContainer, videoWrapper);
-            
-            log('调整 videoContainer: ' + matrixTransformer.displayWidth + 'x' + matrixTransformer.displayHeight +
-                ', 位置 (' + matrixTransformer.displayX + ', ' + matrixTransformer.displayY + ')');
-            
-            // 多次延迟重构，确保视频加载后正确调整
-            [100, 300, 500, 1000].forEach(delay => {
-                setTimeout(() => {
-                    if (remoteVideo && remoteVideo.videoWidth > 0) {
-                        matrixTransformer.setVideoSize(remoteVideo.videoWidth, remoteVideo.videoHeight);
-                        matrixTransformer.setScreenSize(remoteScreen.getBoundingClientRect().width, remoteScreen.getBoundingClientRect().height);
-                        matrixTransformer.applyContainerSize(videoContainer, videoWrapper);
-                        log('延迟' + delay + 'ms重构容器尺寸: ' + matrixTransformer.displayWidth + 'x' + matrixTransformer.displayHeight);
-                    }
-                }, delay);
-            });
-        }
-    }
-}
-
-async function handleOffer(data) {
-  log('[Android信令模式-被控端] 收到Offer，开始处理')
-  incomingFromDeviceId = data.fromDeviceId || incomingFromDeviceId
-  currentSessionId = data.sessionId
-  isAndroidControlled = true
-  isController = false
-  
-  if (!peerConnection) {
-    log('[Android信令模式-被控端] PeerConnection不存在，先创建')
-    await createPeerConnection()
-  }
-  
-  try {
-    await InputExecutor.setControlledMode({ enabled: true })
-    log('[Android信令模式-被控端] InputExecutor被控模式已启用')
-  } catch (e) {
-    log('[Android信令模式-被控端] 设置InputExecutor模式失败: ' + e.message)
-  }
-  
-  try {
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer))
-    log('[Android信令模式-被控端] 远程描述设置成功')
-    
-    await addPendingIceCandidates()
-    
-    log('[Android信令模式-被控端] 开始捕获屏幕...')
-    await startAndroidScreenCapture()
-    
-    log('[Android信令模式-被控端] 创建Answer...')
-    const answer = await peerConnection.createAnswer()
-    await peerConnection.setLocalDescription(answer)
-    log('[Android信令模式-被控端] 本地描述设置成功')
-    
-    log('[Android信令模式-被控端] 发送Answer到信令服务器')
-    wsSend('answer', {
-      sessionId: currentSessionId,
-      answer: { type: answer.type, sdp: answer.sdp },
-      toDeviceId: incomingFromDeviceId
-    })
-    log('[Android信令模式-被控端] Answer已发送')
-  } catch (error) {
-    log('[Android信令模式-被控端] 处理Offer失败: ' + error.message)
-    console.error('[Android信令模式-被控端] 处理Offer详细错误:', error)
-  }
-}
-
-async function startAndroidScreenCapture() {
-  try {
-    log('[Android信令模式-被控端] 请求屏幕录制权限...')
-    const permResult = await ScreenCapture.requestPermission()
-    
-    if (!permResult.success) {
-      log('[Android信令模式-被控端] 屏幕录制权限被拒绝')
-      showToast('请授予屏幕录制权限')
-      return
-    }
-    
-    log('[Android信令模式-被控端] 权限已获取，开始屏幕捕获...')
-    const captureResult = await ScreenCapture.startCapture()
-    
-    if (captureResult.success) {
-      log('[Android信令模式-被控端] 屏幕捕获已启动')
-      
-      try {
-        const sizeResult = await ScreenCapture.getDisplaySize()
-        if (sizeResult.success) {
-          log('[Android信令模式-被控端] 屏幕尺寸: ' + sizeResult.width + 'x' + sizeResult.height)
-        }
-      } catch (e) {
-        log('[Android信令模式-被控端] 获取屏幕尺寸失败: ' + e.message)
-      }
-      
-      showToast('屏幕捕获已启动')
-    } else {
-      log('[Android信令模式-被控端] 屏幕捕获启动失败: ' + captureResult.error)
-      showToast('屏幕捕获失败')
-    }
-  } catch (error) {
-    log('[Android信令模式-被控端] 屏幕捕获异常: ' + error.message)
-    console.error('[Android信令模式-被控端] 屏幕捕获详细错误:', error)
-  }
-}
-
-async function handleAnswer(data) {
-  if (!data.answer) {
-    log('收到空 answer')
-    return
-  }
-  try {
-    if (data.fromDeviceId) {
-      incomingFromDeviceId = data.fromDeviceId
-    }
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer))
-    log('Answer设置成功')
-    await addPendingIceCandidates()
-  } catch (error) {
-    log('设置Answer失败: ' + error.message)
-  }
-}
-
-async function addPendingIceCandidates() {
-  if (pendingIceCandidates.length === 0) return
-  log('添加缓存的ICE候选: ' + pendingIceCandidates.length + ' 个')
-  for (const candidate of pendingIceCandidates) {
-    try {
-      await peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
-    } catch (error) {
-      log('添加缓存ICE候选失败: ' + error.message)
-    }
-  }
-  pendingIceCandidates = []
-}
-
-async function handleIceCandidate(data) {
-  if (!data.candidate) return
-  
-  if (data.candidate.sdpMid === null && data.candidate.sdpMLineIndex === null) return
-  
-  if (!peerConnection || !peerConnection.remoteDescription) {
-    if (pendingIceCandidates.length < 50) {
-      pendingIceCandidates.push(data.candidate)
-      log('缓存 ICE 候选（远程描述未设置）')
-    }
-    return
-  }
-  
-  try {
-    await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate))
-  } catch (error) {
-    log('添加ICE候选失败: ' + error.message)
-  }
-}
-
-function showRemoteScreen() {
-  if (matrixTransformer) {
-      matrixTransformer.fullReset();
-  }
-  
-  document.getElementById('mainContainer').style.display = 'none'
-  document.getElementById('remoteScreen').classList.add('active')
-  startStatsMonitoring()
-  
-  setTimeout(() => {
-      setupRemoteScreenInteraction();
-      // 额外延迟后再次更新尺寸，确保视频加载后正确调整
-      setTimeout(() => {
-          updateContainerSizeAfterVideoLoad();
-      }, 500);
-  }, 100);
-}
-
-function updateContainerSizeAfterVideoLoad() {
-  log('更新容器尺寸（视频加载后）');
-  const remoteVideo = document.getElementById('remoteVideo');
-  const videoContainer = document.getElementById('videoContainer');
-  const videoWrapper = document.getElementById('videoWrapper');
-  const remoteScreen = document.getElementById('remoteScreen');
-  
-  if (!remoteVideo || !videoContainer || !videoWrapper || !remoteScreen) {
-      log('缺少必要元素，跳过尺寸更新');
-      return;
-  }
-  
-  // 更新屏幕尺寸
-  const screenRect = remoteScreen.getBoundingClientRect();
-  if (matrixTransformer) {
-      matrixTransformer.setScreenSize(screenRect.width, screenRect.height);
-      
-      // 如果视频有尺寸，更新视频尺寸
-      if (remoteVideo.videoWidth > 0 && remoteVideo.videoHeight > 0) {
-          matrixTransformer.setVideoSize(remoteVideo.videoWidth, remoteVideo.videoHeight);
-          log('视频尺寸: ' + remoteVideo.videoWidth + 'x' + remoteVideo.videoHeight);
-      }
-      
-      // 应用容器尺寸
-      matrixTransformer.applyContainerSize(videoContainer, videoWrapper);
-      log('容器尺寸已更新: ' + matrixTransformer.displayWidth + 'x' + matrixTransformer.displayHeight);
-  }
-}
-
-function hideRemoteScreen() {
-  document.getElementById('mainContainer').style.display = 'block'
-  document.getElementById('remoteScreen').classList.remove('active')
-  const remoteVideo = document.getElementById('remoteVideo')
-  remoteVideo.srcObject = null
-  isDirectControllerMode = false
-  isWaitingRenegotiation = false
-  stopStatsMonitoring()
-}
-
-let statsInterval = null
-
-function startStatsMonitoring() {
-  if (statsInterval) {
-    clearInterval(statsInterval)
-  }
-  
-  statsInterval = setInterval(async () => {
-    const pc = directPeerConnection || peerConnection
-    if (!pc) return
-    
-    try {
-      const stats = await pc.getStats()
-      let videoStats = null
-      let candidatePairStats = null
-      
-      stats.forEach(report => {
-        if (report.type === 'inbound-rtp' && report.kind === 'video') {
-          videoStats = report
-        }
-        if (report.type === 'candidate-pair' && report.state === 'succeeded') {
-          candidatePairStats = report
-        }
-      })
-      
-      if (videoStats) {
-        const width = videoStats.frameWidth || 0
-        const height = videoStats.frameHeight || 0
-        const fps = videoStats.framesPerSecond || 0
-        const bitrate = videoStats.bytesReceived || 0
-        
-        document.getElementById('statsResolution').textContent = 
-          width > 0 ? `${width}x${height}` : '-'
-        document.getElementById('statsFps').textContent = 
-          fps > 0 ? `${fps} fps` : '-'
-        
-        if (videoStats.lastStatsTime) {
-          const timeDiff = (Date.now() - videoStats.lastStatsTime) / 1000
-          const bytesDiff = bitrate - (videoStats.lastBytesReceived || 0)
-          const bitrateMbps = ((bytesDiff * 8) / timeDiff / 1000000).toFixed(2)
-          document.getElementById('statsBitrate').textContent = `${bitrateMbps} Mbps`
-        }
-        
-        videoStats.lastStatsTime = Date.now()
-        videoStats.lastBytesReceived = bitrate
-      }
-      
-      if (candidatePairStats) {
-        const rtt = candidatePairStats.currentRoundTripTime
-        if (rtt !== undefined) {
-          const latencyMs = (rtt * 1000).toFixed(0)
-          document.getElementById('statsLatency').textContent = `${latencyMs} ms`
-        }
-      }
-    } catch (error) {
-      console.error('获取统计信息失败:', error)
-    }
-  }, 1000)
-}
-
-function stopStatsMonitoring() {
-  if (statsInterval) {
-    clearInterval(statsInterval)
-    statsInterval = null
-  }
-}
-
-let keyboardVisible = false
-let currentKeyboardPosition = 'bottom'
-let currentKeyboardSize = 'medium'
-let currentKeyboardOpacity = '100'
-let keyboardPositions = ['bottom']
-let keyboardSizes = ['small', 'medium', 'large']
-let keyboardOpacities = ['100', '80', '60', '40']
-let isDraggingKeyboard = false
-let dragStartX = 0
-let dragStartY = 0
-let dragStartLeft = 0
-let dragStartTop = 0
-let activeModifiers = {
-  Control: false,
-  Shift: false,
-  Alt: false,
-  Meta: false,
-  CapsLock: false
-}
-
-function cycleKeyboardPosition() {
-  showToast('键盘位置: 底部')
-}
-
-function cycleKeyboardSize() {
-  const currentIndex = keyboardSizes.indexOf(currentKeyboardSize)
-  const nextIndex = (currentIndex + 1) % keyboardSizes.length
-  currentKeyboardSize = keyboardSizes[nextIndex]
-  applyKeyboardSize()
-  const sizeNames = {
-    'small': '小',
-    'medium': '中',
-    'large': '大'
-  }
-  showToast(`键盘大小: ${sizeNames[currentKeyboardSize]}`)
-  saveKeyboardSettings()
-}
-
-function cycleKeyboardOpacity() {
-  const currentIndex = keyboardOpacities.indexOf(currentKeyboardOpacity)
-  const nextIndex = (currentIndex + 1) % keyboardOpacities.length
-  currentKeyboardOpacity = keyboardOpacities[nextIndex]
-  applyKeyboardOpacity()
-  showToast(`键盘透明度: ${currentKeyboardOpacity}%`)
-  saveKeyboardSettings()
-}
-
-function applyKeyboardPosition() {
-  const keyboardOverlay = document.getElementById('keyboardOverlay')
-  const remoteScreen = document.getElementById('remoteScreen')
-  
-  if (!keyboardOverlay) return
-  
-  // 只使用底部位置
-  keyboardPositions.forEach(pos => {
-    keyboardOverlay.classList.remove(`position-${pos}`)
-  })
-  keyboardOverlay.classList.add('position-bottom')
-  
-  // 重置自定义位置样式
-  keyboardOverlay.style.left = ''
-  keyboardOverlay.style.top = ''
-  keyboardOverlay.style.right = ''
-  keyboardOverlay.style.bottom = ''
-  keyboardOverlay.style.transform = ''
-  
-  // 计算位置，确保键盘底部齐平 remote-screen 底部
-  setTimeout(() => {
-    if (remoteScreen && keyboardOverlay) {
-      const remoteRect = remoteScreen.getBoundingClientRect()
-      const keyboardRect = keyboardOverlay.getBoundingClientRect()
-      
-      // 水平居中
-      const leftPos = remoteRect.left + (remoteRect.width - keyboardRect.width) / 2
-      
-      // 设置位置
-      keyboardOverlay.style.position = 'fixed'
-      keyboardOverlay.style.left = `${leftPos}px`
-      keyboardOverlay.style.bottom = `${window.innerHeight - remoteRect.bottom}px`
-      keyboardOverlay.style.top = 'auto'
-      keyboardOverlay.style.transform = 'none'
-      
-      log(`键盘位置: left=${leftPos.toFixed(0)}, bottom=${(window.innerHeight - remoteRect.bottom).toFixed(0)}`)
-    }
-    
-    ensureKeyboardInBounds()
-  }, 50)
-}
-
-function ensureKeyboardInBounds() {
-  const keyboardOverlay = document.getElementById('keyboardOverlay')
-  const remoteScreen = document.getElementById('remoteScreen')
-  
-  if (!keyboardOverlay || !remoteScreen) return
-  
-  // 使用 remote-screen 元素的边界作为基准
-  const remoteRect = remoteScreen.getBoundingClientRect()
-  const keyboardRect = keyboardOverlay.getBoundingClientRect()
-  
-  // 只检查左右边界，确保键盘在 remote-screen 范围内
-  let needsAdjustment = false
-  let newLeft = keyboardRect.left
-  
-  // 检查是否超出 remote-screen 左侧
-  if (keyboardRect.left < remoteRect.left) {
-    newLeft = remoteRect.left
-    needsAdjustment = true
-  }
-  
-  // 检查是否超出 remote-screen 右侧
-  if (keyboardRect.right > remoteRect.right) {
-    newLeft = remoteRect.right - keyboardRect.width
-    needsAdjustment = true
-  }
-  
-  if (needsAdjustment) {
-    keyboardOverlay.style.left = `${newLeft}px`
-    keyboardOverlay.style.right = 'auto'
-    log(`键盘位置已调整以保持在远程屏幕内`)
-  }
-}
-
-function applyKeyboardSize() {
-  const keyboardOverlay = document.getElementById('keyboardOverlay')
-  if (!keyboardOverlay) return
-  
-  keyboardSizes.forEach(size => {
-    keyboardOverlay.classList.remove(`size-${size}`)
-  })
-  keyboardOverlay.classList.add(`size-${currentKeyboardSize}`)
-}
-
-function applyKeyboardOpacity() {
-  const keyboardOverlay = document.getElementById('keyboardOverlay')
-  const controlOverlay = document.getElementById('controlOverlay')
-  
-  if (keyboardOverlay) {
-    keyboardOpacities.forEach(opacity => {
-      keyboardOverlay.classList.remove(`opacity-${opacity}`)
-    })
-    keyboardOverlay.classList.add(`opacity-${currentKeyboardOpacity}`)
-  }
-  
-  if (controlOverlay) {
-    keyboardOpacities.forEach(opacity => {
-      controlOverlay.classList.remove(`opacity-${opacity}`)
-    })
-    controlOverlay.classList.add(`opacity-${currentKeyboardOpacity}`)
-  }
-}
-
-function saveKeyboardSettings() {
-  try {
-    localStorage.setItem('ycdesk_keyboard_position', currentKeyboardPosition)
-    localStorage.setItem('ycdesk_keyboard_size', currentKeyboardSize)
-    localStorage.setItem('ycdesk_keyboard_opacity', currentKeyboardOpacity)
-  } catch (e) {
-    console.log('保存键盘设置失败:', e)
-  }
-}
-
-function loadKeyboardSettings() {
-  try {
-    const savedPosition = localStorage.getItem('ycdesk_keyboard_position')
-    const savedSize = localStorage.getItem('ycdesk_keyboard_size')
-    const savedOpacity = localStorage.getItem('ycdesk_keyboard_opacity')
-    
-    if (savedPosition && keyboardPositions.includes(savedPosition)) {
-      currentKeyboardPosition = savedPosition
-    }
-    if (savedSize && keyboardSizes.includes(savedSize)) {
-      currentKeyboardSize = savedSize
-    }
-    if (savedOpacity && keyboardOpacities.includes(savedOpacity)) {
-      currentKeyboardOpacity = savedOpacity
-    }
-  } catch (e) {
-    console.log('加载键盘设置失败:', e)
-  }
-}
-
-function setupKeyboardDrag() {
-  const keyboardOverlay = document.getElementById('keyboardOverlay')
-  const dragHandle = document.getElementById('keyboardDragHandle')
-  
-  if (!keyboardOverlay || !dragHandle) return
-  
-  dragHandle.addEventListener('touchstart', (e) => {
-    isDraggingKeyboard = true
-    const touch = e.touches[0]
-    dragStartX = touch.clientX
-    dragStartY = touch.clientY
-    
-    const rect = keyboardOverlay.getBoundingClientRect()
-    dragStartLeft = rect.left
-    dragStartTop = rect.top
-    
-    e.preventDefault()
-  }, { passive: false })
-  
-  document.addEventListener('touchmove', (e) => {
-    if (!isDraggingKeyboard) return
-    
-    const touch = e.touches[0]
-    const deltaX = touch.clientX - dragStartX
-    const deltaY = touch.clientY - dragStartY
-    
-    let newLeft = dragStartLeft + deltaX
-    let newTop = dragStartTop + deltaY
-    
-    const remoteScreen = document.getElementById('remoteScreen')
-    if (remoteScreen) {
-      const remoteRect = remoteScreen.getBoundingClientRect()
-      const keyboardRect = keyboardOverlay.getBoundingClientRect()
-      
-      // 限制在 remote-screen 范围内
-      newLeft = Math.max(remoteRect.left, Math.min(remoteRect.right - keyboardRect.width, newLeft))
-      newTop = Math.max(remoteRect.top, Math.min(remoteRect.bottom - keyboardRect.height, newTop))
-    } else {
-      const maxLeft = window.innerWidth - keyboardOverlay.offsetWidth
-      const maxTop = window.innerHeight - keyboardOverlay.offsetHeight
-      
-      newLeft = Math.max(0, Math.min(maxLeft, newLeft))
-      newTop = Math.max(0, Math.min(maxTop, newTop))
-    }
-    
-    keyboardOverlay.style.left = `${newLeft}px`
-    keyboardOverlay.style.top = `${newTop}px`
-    keyboardOverlay.style.bottom = 'auto'
-    keyboardOverlay.style.transform = 'none'
-    
-    e.preventDefault()
-  }, { passive: false })
-  
-  document.addEventListener('touchend', () => {
-    isDraggingKeyboard = false
-  })
-}
-
-function toggleKeyboard() {
-  keyboardVisible = !keyboardVisible
-  console.log('toggleKeyboard called, keyboardVisible=' + keyboardVisible)
-  
-  const keyboardOverlay = document.getElementById('keyboardOverlay')
-  const remoteScreen = document.getElementById('remoteScreen')
-  
-  if (keyboardVisible) {
-    loadKeyboardSettings()
-    applyKeyboardPosition()
-    applyKeyboardSize()
-    applyKeyboardOpacity()
-    
-    if (currentKeyboardPosition !== 'center') {
-      keyboardOverlay.style.left = ''
-      keyboardOverlay.style.top = ''
-      keyboardOverlay.style.transform = ''
-    }
-    
-    if (keyboardOverlay) {
-      keyboardOverlay.classList.add('active')
-    }
-    if (remoteScreen) {
-      remoteScreen.classList.add('keyboard-visible')
-    }
-    showToast('键盘已打开')
-    console.log('HTML键盘已打开')
-  } else {
-    if (keyboardOverlay) {
-      keyboardOverlay.classList.remove('active')
-    }
-    if (remoteScreen) {
-      remoteScreen.classList.remove('keyboard-visible')
-    }
-    showToast('键盘已关闭')
-    console.log('HTML键盘已关闭')
-  }
-}
-
-function sendKey(keyCode) {
-  if (!dataChannel || dataChannel.readyState !== 'open') {
-    console.error('数据通道未打开，无法发送按键')
-    showToast('数据通道未打开')
-    return
-  }
-  
-  const event = {
-    type: 'keydown',
-    code: keyCode,
-    key: getKeyFromCode(keyCode),
-    ctrlKey: activeModifiers.Control,
-    shiftKey: activeModifiers.Shift,
-    altKey: activeModifiers.Alt,
-    metaKey: activeModifiers.Meta
-  }
-  
-  console.log('发送键盘事件:', JSON.stringify(event))
-  sendControlCommand(event)
-  
-  setTimeout(() => {
-    sendControlCommand({
-      type: 'keyup',
-      code: keyCode,
-      key: getKeyFromCode(keyCode),
-      ctrlKey: activeModifiers.Control,
-      shiftKey: activeModifiers.Shift,
-      altKey: activeModifiers.Alt,
-      metaKey: activeModifiers.Meta
-    })
-  }, 50)
-  
-  if (activeModifiers.Shift) {
-    toggleModifier('Shift')
-  }
-}
-
-function toggleModifier(modifier) {
-  activeModifiers[modifier] = !activeModifiers[modifier]
-  
-  const keyIds = {
-    'Control': ['keyControl', 'keyControl2'],
-    'Shift': ['keyShift', 'keyShift2'],
-    'Alt': ['keyAlt', 'keyAlt2'],
-    'Meta': ['keyMeta'],
-    'CapsLock': ['keyCapsLock']
-  }
-  
-  const ids = keyIds[modifier] || []
-  ids.forEach(id => {
-    const el = document.getElementById(id)
-    if (el) {
-      if (activeModifiers[modifier]) {
-        el.classList.add('active')
-      } else {
-        el.classList.remove('active')
-      }
-    }
-  })
-  
-  showToast(`${modifier} ${activeModifiers[modifier] ? '已按下' : '已释放'}`)
 }
 
 function disconnect() {
   if (confirm('确定要断开连接吗？')) {
     stopHeartbeat()
     hideFloatingMouse()
-    if (dataChannel) {
-      dataChannel.close()
-      dataChannel = null
+    if (s.dataChannel) {
+      s.dataChannel.close()
+      s.dataChannel = null
     }
-    if (peerConnection) {
-      peerConnection.close()
-      peerConnection = null
+    if (s.peerConnection) {
+      s.peerConnection.close()
+      s.peerConnection = null
     }
-    if (directPeerConnection) {
-      directPeerConnection.close()
-      directPeerConnection = null
+    if (s.directPeerConnection) {
+      s.directPeerConnection.close()
+      s.directPeerConnection = null
     }
-    if (currentDirectClientId) {
-      TCPSocket.disconnect({ clientId: currentDirectClientId })
-      currentDirectClientId = null
+    if (s.currentDirectClientId) {
+      TCPSocket.disconnect({ clientId: s.currentDirectClientId })
+      s.currentDirectClientId = null
     }
-    isConnected = false
-    isController = false
-    keyboardVisible = false
+    s.isConnected = false
+    s.isController = false
+    s.keyboardVisible = false
     const keyboardOverlay = document.getElementById('keyboardOverlay')
     if (keyboardOverlay) keyboardOverlay.classList.remove('active')
     
-    if (matrixTransformer) {
-        matrixTransformer.fullReset()
+    if (s.matrixTransformer) {
+        s.matrixTransformer.fullReset()
     }
     
     hideRemoteScreen()
@@ -3780,7 +605,7 @@ async function init() {
     console.log('获取设备信息失败')
   }
   
-  myDeviceId = generateDeviceId()
+  s.myDeviceId = generateDeviceId()
   
   const networkStatus = await Network.getStatus()
   console.log('网络状态:', networkStatus)
@@ -3789,16 +614,16 @@ async function init() {
     console.log('网络状态变化:', status)
     if (!status.connected) {
       showToast('网络已断开')
-      if (connectionStatus === CONNECTION_STATUS.CONNECTED) {
+      if (s.connectionStatus === s.CONNECTION_STATUS.CONNECTED) {
         attemptReconnect()
       }
     }
   })
   
   App.addListener('backButton', ({ canGoBack }) => {
-    if (isConnected) {
+    if (s.isConnected) {
       disconnect()
-    } else if (currentRole) {
+    } else if (s.currentRole) {
       goBack()
     } else {
       App.exitApp()
@@ -3808,9 +633,39 @@ async function init() {
   window.addEventListener('orientationchange', handleOrientationChange)
   window.addEventListener('resize', handleOrientationChange)
   
-  setupKeyboardDrag()
+  window.addEventListener('keydown', (e) => {
+    if (s.isConnected && !e.target.matches('input, textarea')) {
+      e.preventDefault()
+      sendPhysicalKeyEvent('keydown', e)
+    }
+  })
   
-  console.log('初始化完成，设备ID:', myDeviceId)
+  window.addEventListener('keyup', (e) => {
+    if (s.isConnected && !e.target.matches('input, textarea')) {
+      e.preventDefault()
+      sendPhysicalKeyEvent('keyup', e)
+    }
+  })
+  
+  setupKeyboardDrag()
+  loadKeyboardSettings()
+  
+  const controlledModeSelect = document.getElementById('controlledConnectionMode')
+  const controllerModeSelect = document.getElementById('controllerConnectionMode')
+  
+  if (controlledModeSelect) {
+    controlledModeSelect.addEventListener('change', (e) => {
+      setConnectionMode(e.target.value)
+    })
+  }
+  
+  if (controllerModeSelect) {
+    controllerModeSelect.addEventListener('change', (e) => {
+      setConnectionMode(e.target.value)
+    })
+  }
+  
+  console.log('初始化完成，设备ID:', s.myDeviceId)
 }
 
 document.addEventListener('DOMContentLoaded', init)
@@ -3844,3 +699,13 @@ window.acceptConnection = acceptConnection
 window.rejectConnection = rejectConnection
 window.deleteFromHistory = deleteFromHistory
 window.reconnectFromHistory = reconnectFromHistory
+
+window.showIncomingConnectionDialog = showIncomingConnectionDialog
+window.startControllerConnection = startControllerConnection
+window.handleOffer = handleOffer
+window.handleAnswer = handleAnswer
+window.handleIceCandidate = handleIceCandidate
+window.showRemoteScreen = showRemoteScreen
+window.hideRemoteScreen = hideRemoteScreen
+window.updateScreenSize = updateScreenSize
+window.setupRemoteScreenInteraction = setupRemoteScreenInteraction
