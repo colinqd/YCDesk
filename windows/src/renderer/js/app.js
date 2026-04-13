@@ -378,6 +378,57 @@ function copyDeviceId() {
   uiManager.copyDeviceId(myDeviceId)
 }
 
+function showMessage(msg) {
+  const msgDiv = document.createElement('div')
+  msgDiv.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.8);color:white;padding:20px 40px;border-radius:8px;font-size:16px;z-index:10000;'
+  msgDiv.textContent = msg
+  document.body.appendChild(msgDiv)
+  setTimeout(() => msgDiv.remove(), 2000)
+}
+
+async function setCustomDeviceId() {
+  const customIdInput = document.getElementById('customDeviceId')
+  const customId = customIdInput.value.trim()
+  
+  if (!customId) {
+    showMessage('请输入设备ID')
+    return
+  }
+  
+  try {
+    const result = await window.electronAPI.setDeviceId(customId)
+    if (result.success) {
+      myDeviceId = result.deviceId
+      uiManager.setDeviceId(myDeviceId)
+      signalingManager.setDeviceId(myDeviceId)
+      directManager.setDeviceId(myDeviceId)
+      customIdInput.value = ''
+      showMessage('设备ID已设置为: ' + myDeviceId)
+    }
+  } catch (error) {
+    showMessage('设置失败: ' + error.message)
+  }
+}
+
+async function resetDeviceId() {
+  if (!confirm('确定要随机生成新的设备ID吗？')) {
+    return
+  }
+  
+  try {
+    const result = await window.electronAPI.resetDeviceId()
+    if (result.success) {
+      myDeviceId = result.deviceId
+      uiManager.setDeviceId(myDeviceId)
+      signalingManager.setDeviceId(myDeviceId)
+      directManager.setDeviceId(myDeviceId)
+      alert('设备ID已重置为: ' + myDeviceId)
+    }
+  } catch (error) {
+    alert('重置设备ID失败: ' + error.message)
+  }
+}
+
 function openRemoteWindow() {
   window.electronAPI.openRemoteWindow()
 }

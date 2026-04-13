@@ -31,6 +31,9 @@ const listenerRegistry = new Map()
 
 contextBridge.exposeInMainWorld('electronAPI', {
   getDeviceId: () => ipcRenderer.invoke('get-device-id'),
+  setDeviceId: (id) => ipcRenderer.invoke('set-device-id', id),
+  resetDeviceId: () => ipcRenderer.invoke('reset-device-id'),
+  validateDeviceId: (id) => ipcRenderer.invoke('validate-device-id', id),
   getSources: () => ipcRenderer.invoke('get-sources'),
   openRemoteWindow: () => ipcRenderer.invoke('open-remote-window'),
   getScreenSize: () => ipcRenderer.invoke('get-screen-size'),

@@ -3,6 +3,7 @@ import { Device } from '@capacitor/device';
 import { Network } from '@capacitor/network';
 import { registerPlugin } from '@capacitor/core';
 import './shared/config.js';
+import './shared/device-id-manager.js';
 
 import s from './modules/state.js';
 import { InputDispatcher, createGestureHandler, convertToInputCommand } from './modules/input.js';
@@ -18,6 +19,8 @@ const FloatingMouse = registerPlugin('FloatingMouse');
 const InputExecutor = registerPlugin('InputExecutor');
 const ScreenCapture = registerPlugin('ScreenCapture');
 
+let deviceIdManager = null;
+
 function log(message) {
   const timestamp = new Date().toLocaleTimeString()
   const logMessage = `[${timestamp}] ${message}`
@@ -31,15 +34,6 @@ function log(message) {
 }
 window.log = log
 
-function generateDeviceId() {
-  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
-  let id = ''
-  for (let i = 0; i < 9; i++) {
-    id += chars.charAt(Math.floor(Math.random() * chars.length))
-  }
-  return id
-}
-
 function getServerUrl() {
   const input = document.getElementById('controllerServerUrl')
   return input ? input.value.trim() : ''
@@ -48,6 +42,47 @@ function getServerUrl() {
 function getControlledServerUrl() {
   const input = document.getElementById('controlledServerUrl')
   return input ? input.value.trim() : ''
+}
+
+function updateDeviceIdDisplay() {
+  const deviceIdEl = document.getElementById('deviceId')
+  if (deviceIdEl) {
+    deviceIdEl.textContent = s.myDeviceId
+  }
+}
+
+async function setCustomDeviceId() {
+  const customIdInput = document.getElementById('customDeviceId')
+  const customId = customIdInput.value.trim()
+  
+  if (!customId) {
+    showToast('请输入设备ID')
+    return
+  }
+  
+  try {
+    deviceIdManager.setDeviceId(customId)
+    s.myDeviceId = deviceIdManager.getDeviceId()
+    updateDeviceIdDisplay()
+    customIdInput.value = ''
+    showToast('设备ID已设置为: ' + s.myDeviceId)
+  } catch (error) {
+    showToast('设置失败: ' + error.message)
+  }
+}
+
+async function resetDeviceId() {
+  if (!confirm('确定要随机生成新的设备ID吗？')) {
+    return
+  }
+  
+  try {
+    s.myDeviceId = deviceIdManager.resetDeviceId()
+    updateDeviceIdDisplay()
+    showToast('设备ID已重置为: ' + s.myDeviceId)
+  } catch (error) {
+    showToast('重置失败: ' + error.message)
+  }
 }
 
 function showToast(message, duration = 3000) {
@@ -598,6 +633,8 @@ function disconnect() {
 async function init() {
   console.log('YCDesk Android 初始化')
   
+  deviceIdManager = new DeviceIdManager(CONFIG)
+  
   try {
     const deviceInfo = await Device.getInfo()
     console.log('设备信息:', deviceInfo)
@@ -605,7 +642,7 @@ async function init() {
     console.log('获取设备信息失败')
   }
   
-  s.myDeviceId = generateDeviceId()
+  s.myDeviceId = deviceIdManager.getDeviceId()
   
   const networkStatus = await Network.getStatus()
   console.log('网络状态:', networkStatus)
@@ -699,6 +736,8 @@ window.acceptConnection = acceptConnection
 window.rejectConnection = rejectConnection
 window.deleteFromHistory = deleteFromHistory
 window.reconnectFromHistory = reconnectFromHistory
+window.setCustomDeviceId = setCustomDeviceId
+window.resetDeviceId = resetDeviceId
 
 window.showIncomingConnectionDialog = showIncomingConnectionDialog
 window.startControllerConnection = startControllerConnection

@@ -50,8 +50,15 @@ const CONFIG = {
   storage: {
     keys: {
       directHistory: 'ycdesk_direct_history',
-      signalingHistory: 'ycdesk_signaling_history'
+      signalingHistory: 'ycdesk_signaling_history',
+      deviceId: 'ycdesk_device_id'
     }
+  },
+  deviceId: {
+    minLength: 6,
+    maxLength: 16,
+    defaultLength: 9,
+    allowedChars: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
   },
   webrtc: {
     iceTransportPolicy: 'all',

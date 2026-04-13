@@ -20,6 +20,15 @@ class SignalingServer {
     this.logger = logger;
   }
 
+  updateDeviceId(newDeviceId) {
+    this.deviceId = newDeviceId;
+    this._log('info', '设备ID已更新:', newDeviceId);
+    if (this.socket && this.isConnected) {
+      this.socket.emit('register', this.deviceId);
+      this._log('info', '设备已重新注册:', this.deviceId);
+    }
+  }
+
   _log(level, message, data) {
     if (this.logger && typeof this.logger[level] === 'function') {
       this.logger[level](message, data);
