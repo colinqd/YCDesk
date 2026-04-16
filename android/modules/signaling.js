@@ -13,6 +13,48 @@ async function sendDirectMessage(clientId, message) {
   }
 }
 
+function extractHostname(url) {
+  let hostname = url.trim()
+  hostname = hostname.replace(/^wss?:\/\//i, '')
+  hostname = hostname.replace(/^https?:\/\//i, '')
+  hostname = hostname.replace(/^\/\//, '')
+  const slashIndex = hostname.indexOf('/')
+  if (slashIndex > 0) {
+    hostname = hostname.substring(0, slashIndex)
+  }
+  const colonIndex = hostname.lastIndexOf(':')
+  if (colonIndex > 0) {
+    hostname = hostname.substring(0, colonIndex)
+  }
+  return hostname
+}
+
+function isIpAddress(str) {
+  const ipv4Pattern = /^(\d{1,3}\.){3}\d{1,3}$/
+  const ipv6Pattern = /^\[?[0-9a-fA-F:]+\]?$/
+  return ipv4Pattern.test(str) || ipv6Pattern.test(str)
+}
+
+async function resolveHostname(hostname) {
+  const log = typeof window.log === 'function' ? window.log : console.log
+  
+  if (isIpAddress(hostname)) {
+    log('输入的是IP地址，无需DNS解析: ' + hostname)
+    return { success: true, ipAddress: hostname, hostname: hostname, isResolved: false }
+  }
+  
+  try {
+    const result = await TCPSocket.resolveDns({ hostname: hostname })
+    if (result.success) {
+      log('DNS解析成功: ' + hostname + ' -> ' + result.ipAddress)
+    }
+    return result
+  } catch (error) {
+    log('DNS解析失败: ' + error.message)
+    return { success: false, error: error.message, ipAddress: hostname, hostname: hostname }
+  }
+}
+
 function buildWsUrl(serverUrl) {
   let url = serverUrl.trim()
   url = url.replace(/^https:\/\//i, 'wss://')
@@ -89,8 +131,16 @@ function handleWsMessage(data) {
       s.incomingFromDeviceId = data.fromDeviceId
       s.currentSessionId = data.sessionId
       s.isController = false
-      if (typeof window.showIncomingConnectionDialog === 'function') {
-        window.showIncomingConnectionDialog(data.fromDeviceId)
+      const autoAccept = document.getElementById('autoAcceptConnection')?.checked
+      if (autoAccept) {
+        log('自动接受来自 ' + data.fromDeviceId + ' 的连接')
+        if (typeof window.acceptConnection === 'function') {
+          window.acceptConnection()
+        }
+      } else {
+        if (typeof window.showIncomingConnectionDialog === 'function') {
+          window.showIncomingConnectionDialog(data.fromDeviceId)
+        }
       }
       break
 
@@ -131,7 +181,7 @@ function handleWsMessage(data) {
   }
 }
 
-function connectToServer(serverUrl, role) {
+async function connectToServer(serverUrl, role) {
   const log = typeof window.log === 'function' ? window.log : console.log
   log('连接方式: ' + (s.connectionMode === 'websocket' ? '原始 WebSocket' : 'Socket.IO'))
   if (!serverUrl) {
@@ -145,6 +195,16 @@ function connectToServer(serverUrl, role) {
   log('normalize后: ' + serverUrl)
   if (originalUrl !== serverUrl) {
     log('自动修正服务器地址: ' + originalUrl + ' -> ' + serverUrl)
+  }
+  
+  const hostname = extractHostname(serverUrl)
+  log('提取主机名: ' + hostname)
+  
+  const dnsResult = await resolveHostname(hostname)
+  if (dnsResult.success && dnsResult.isResolved) {
+    log('域名解析结果: ' + hostname + ' -> ' + dnsResult.ipAddress)
+  } else if (!dnsResult.success) {
+    log('DNS解析失败，尝试直接连接: ' + dnsResult.error)
   }
   
   s.savedServerUrl = serverUrl
@@ -267,8 +327,16 @@ function _connectSocketIO(serverUrl) {
       s.incomingFromDeviceId = data.fromDeviceId
       s.currentSessionId = data.sessionId
       s.isController = false
-      if (typeof window.showIncomingConnectionDialog === 'function') {
-        window.showIncomingConnectionDialog(data.fromDeviceId)
+      const autoAccept = document.getElementById('autoAcceptConnection')?.checked
+      if (autoAccept) {
+        log('自动接受来自 ' + data.fromDeviceId + ' 的连接')
+        if (typeof window.acceptConnection === 'function') {
+          window.acceptConnection()
+        }
+      } else {
+        if (typeof window.showIncomingConnectionDialog === 'function') {
+          window.showIncomingConnectionDialog(data.fromDeviceId)
+        }
       }
     })
 
@@ -370,6 +438,9 @@ export {
   _connectWebSocket,
   _connectSocketIO,
   disconnectFromServer,
+  extractHostname,
+  isIpAddress,
+  resolveHostname,
   attemptReconnect,
   cancelReconnect
 }

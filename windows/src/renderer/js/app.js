@@ -34,10 +34,16 @@ function initializeApp() {
     uiManager: uiManager,
     config: CONFIG,
     onIncomingConnection: (fromDeviceId) => {
-      if (uiManager.showIncomingConnectionDialog(fromDeviceId)) {
+      const autoAccept = document.getElementById('autoAcceptConnection')?.checked
+      if (autoAccept) {
+        log('自动接受来自 ' + fromDeviceId + ' 的连接')
         acceptConnection()
       } else {
-        rejectConnection()
+        if (uiManager.showIncomingConnectionDialog(fromDeviceId)) {
+          acceptConnection()
+        } else {
+          rejectConnection()
+        }
       }
     }
   })
@@ -110,7 +116,7 @@ function reconnectFromHistory(type, index) {
     document.getElementById('controllerServerUrl').value = item.serverUrl
     document.getElementById('targetDeviceId').value = item.deviceId
 
-    if (!signalingManager.socket || !signalingManager.socket.connected) {
+    if (!signalingManager.signalingClient.isConnected()) {
       controllerConnectToServer()
     } else {
       connectDevice()
@@ -346,14 +352,10 @@ function controllerDisconnectFromServer() {
 function connectDevice() {
   const targetDeviceId = uiManager.getTargetDeviceId()
   if (!uiManager._validateDeviceId(targetDeviceId)) {
-    alert('请输入有效的设备 ID（需要 9 位字符）')
+    alert('请输入有效的设备 ID（需要 6-16 位字符）')
     return false
   }
-  if (targetDeviceId === myDeviceId) {
-    alert('不能连接自己')
-    return false
-  }
-  if (!signalingManager.socket || !signalingManager.socket.connected) {
+  if (!signalingManager.signalingClient.isConnected()) {
     alert('未连接到信令服务器，请先连接服务器')
     return false
   }
@@ -446,6 +448,20 @@ async function closeWindow() {
     await window.electronAPI.windowClose()
   } catch (e) {
     console.error('关闭失败:', e)
+  }
+}
+
+function toggleLogBox(boxId) {
+  const logBox = document.getElementById(boxId)
+  if (!logBox) return
+  
+  const btn = logBox.querySelector('.log-toggle-btn')
+  if (logBox.classList.contains('collapsed')) {
+    logBox.classList.remove('collapsed')
+    if (btn) btn.textContent = '收起'
+  } else {
+    logBox.classList.add('collapsed')
+    if (btn) btn.textContent = '展开'
   }
 }
 

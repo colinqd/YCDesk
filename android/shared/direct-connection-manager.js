@@ -54,8 +54,6 @@ class DirectConnectionManager extends BaseConnectionManager {
             this.emit('direct-mode-start', data)
         })
         
-        window.electronAPI.send('remote-window-ready', {})
-        
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 reject(new Error('等待直连模式启动超时'))

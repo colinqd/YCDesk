@@ -17,11 +17,15 @@ class BaseConnectionManager {
         this.lastFpsTime = performance.now()
         this.iceServers = [
             { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' }
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun.stunprotocol.org:3478' },
+            { urls: 'stun:stun.services.mozilla.com:3478' },
+            { urls: 'stun:global.stun.twilio.com:3478' },
+            { urls: 'stun:stunserver.org:3478' }
         ]
         this.connectionTimeout = 30000
-        this.resolutionTimeout = 5000
-        this.firstFrameTimeout = 10000
+        this.resolutionTimeout = 15000
+        this.firstFrameTimeout = 15000
     }
 
     log(message) {
@@ -271,6 +275,34 @@ class BaseConnectionManager {
             this.inputChannelReady = false
             this.error('输入数据通道错误:', error)
         }
+        
+        // 预创建辅助通道，避免后续重新协商导致视频断流
+        const auxiliaryConfigs = [
+            { name: 'clipboard', ordered: true }
+        ]
+        
+        auxiliaryConfigs.forEach(config => {
+            const channelName = `aux-${config.name}`
+            const channel = this.peerConnection.createDataChannel(channelName, {
+                ordered: config.ordered !== false
+            })
+            
+            channel.onopen = () => {
+                this.auxiliaryChannels.set(config.name, channel)
+                this.log(`辅助通道 ${config.name} 已打开`)
+                this.emit('auxiliary-channel-ready', { name: config.name })
+            }
+            
+            channel.onerror = (error) => {
+                this.error(`辅助通道 ${config.name} 错误:`, error)
+                this.emit('auxiliary-channel-error', { name: config.name, error })
+            }
+            
+            channel.onclose = () => {
+                this.auxiliaryChannels.delete(config.name)
+                this.log(`辅助通道 ${config.name} 已关闭`)
+            }
+        })
     }
 
     async waitForDataChannelOpen() {
@@ -298,7 +330,14 @@ class BaseConnectionManager {
         
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
-                reject(new Error('分辨率协商超时'))
+                this.dataChannelManager.setOnMessage(originalOnMessage)
+                this.log('分辨率协商超时，使用默认分辨率')
+                const defaultRemote = { width: 1920, height: 1080 }
+                if (this.matrixTransformer) {
+                    this.matrixTransformer.setRemoteScreenSize(defaultRemote.width, defaultRemote.height)
+                }
+                const displaySize = this.calculateOptimalSize(localWindowSize, defaultRemote)
+                resolve(displaySize)
             }, this.resolutionTimeout)
             
             const originalOnMessage = this.dataChannelManager.callbacks.onMessage
@@ -437,6 +476,14 @@ class BaseConnectionManager {
                 this.matrixTransformer.setRemoteScreenSize(this.videoElement.videoWidth, this.videoElement.videoHeight)
             }
             
+            const remoteSize = {
+                width: this.videoElement.videoWidth,
+                height: this.videoElement.videoHeight
+            }
+            const localSize = this.getLocalWindowSize()
+            const displaySize = this.calculateOptimalSize(localSize, remoteSize)
+            this.adjustVideoContainer(displaySize)
+            
             this.emit('video-metadata', {
                 width: this.videoElement.videoWidth,
                 height: this.videoElement.videoHeight
@@ -475,43 +522,14 @@ class BaseConnectionManager {
     loadAuxiliaryChannelsParallel() {
         this.log('第三阶段：辅助通道（并行）开始')
         
-        const channels = [
-            { name: 'clipboard', ordered: true }
-        ]
-        
-        channels.forEach(config => {
-            this.loadAuxiliaryChannel(config)
-                .then(channel => {
-                    this.auxiliaryChannels.set(config.name, channel)
-                    this.log(`辅助通道 ${config.name} 加载成功`)
-                    this.emit('auxiliary-channel-ready', { name: config.name })
-                })
-                .catch(error => {
-                    this.log(`辅助通道 ${config.name} 加载失败: ${error.message}`)
-                    this.emit('auxiliary-channel-error', { name: config.name, error })
-                })
-        })
-    }
-
-    async loadAuxiliaryChannel(config) {
-        const channelName = `aux-${config.name}`
-        const channel = this.peerConnection.createDataChannel(channelName, {
-            ordered: config.ordered !== false
-        })
-        
-        return new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
-                reject(new Error('辅助通道建立超时'))
-            }, 10000)
-            
-            channel.onopen = () => {
-                clearTimeout(timeout)
-                resolve(channel)
-            }
-            
-            channel.onerror = (error) => {
-                clearTimeout(timeout)
-                reject(error)
+        // 辅助通道已在 createDataChannel 阶段预创建，无需再次创建
+        // 此处仅确认通道状态
+        const channelNames = ['clipboard']
+        channelNames.forEach(name => {
+            if (this.auxiliaryChannels.has(name)) {
+                this.log(`辅助通道 ${name} 已就绪`)
+            } else {
+                this.log(`辅助通道 ${name} 等待打开中...`)
             }
         })
     }
@@ -563,11 +581,15 @@ class BaseConnectionManager {
         }
         
         if (!this.peerConnection || !this.peerConnection.remoteDescription) {
+            this.log('缓存ICE候选（远程描述未设置）')
             this.pendingIceCandidates.push(candidate)
             return
         }
         
         this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
+            .then(() => {
+                this.log('ICE候选添加成功')
+            })
             .catch(error => {
                 this.error('添加ICE候选失败:', error)
             })

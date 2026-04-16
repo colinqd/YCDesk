@@ -83,9 +83,15 @@
             <div class="input-group">
               <label>连接方式</label>
               <select id="controlledConnectionMode" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px;">
-                <option value="websocket" selected>原始 WebSocket（用于 android-server）</option>
-                <option value="socketio">Socket.IO（用于 server-gui）</option>
+                <option value="socketio" selected>Socket.IO（用于 server-gui）</option>
+                <option value="websocket">原始 WebSocket（用于 android-server）</option>
               </select>
+            </div>
+            <div class="input-group" style="margin-top: 10px;">
+              <label style="display: flex; align-items: center; gap: 8px;">
+                <input type="checkbox" id="autoAcceptConnection" style="width: auto; margin: 0;">
+                <span>自动接受连接（无需确认）</span>
+              </label>
             </div>
             <div class="input-group">
               <label>信令服务器地址</label>
@@ -103,8 +109,11 @@
           </div>
         </div>
 
-        <div class="log-box">
-          <div class="log-title">连接日志</div>
+        <div class="log-box" id="controlledLogBox">
+          <div class="log-header">
+            <div class="log-title">连接日志</div>
+            <button class="log-toggle-btn" onclick="toggleLogBox('controlledLogBox')">收起</button>
+          </div>
           <div class="log-content" id="connectionLog"></div>
         </div>
       </div>
@@ -149,8 +158,8 @@
             <div class="input-group">
               <label>连接方式</label>
               <select id="controllerConnectionMode" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px;">
-                <option value="websocket" selected>原始 WebSocket（用于 android-server）</option>
-                <option value="socketio">Socket.IO（用于 server-gui）</option>
+                <option value="socketio" selected>Socket.IO（用于 server-gui）</option>
+                <option value="websocket">原始 WebSocket（用于 android-server）</option>
               </select>
             </div>
             <div class="input-group">
@@ -161,14 +170,17 @@
             </div>
             <div class="input-group" style="margin-top: 20px;">
               <label>对方设备 ID</label>
-              <input type="text" id="targetDeviceId" placeholder="输入对方设备 ID" maxlength="9">
+              <input type="text" id="targetDeviceId" placeholder="输入对方设备 ID" maxlength="16">
               <button class="btn btn-primary" style="margin-top: 10px;" onclick="connectDevice()">连接</button>
             </div>
           </div>
         </div>
 
-        <div class="log-box">
-          <div class="log-title">连接日志</div>
+        <div class="log-box" id="controllerLogBox">
+          <div class="log-header">
+            <div class="log-title">连接日志</div>
+            <button class="log-toggle-btn" onclick="toggleLogBox('controllerLogBox')">收起</button>
+          </div>
           <div class="log-content" id="connectionLogController"></div>
         </div>
       </div>

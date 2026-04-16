@@ -92,6 +92,11 @@ class SignalingConnectionManager extends BaseConnectionManager {
     async connectAsController() {
         this.log('主控端连接流程开始')
         
+        this.peerConnection.addTransceiver('video', {
+            direction: 'recvonly'
+        })
+        this.log('已添加视频收发器(recvonly)')
+        
         await this.createDataChannel()
         
         const offer = await this.peerConnection.createOffer()
@@ -102,7 +107,7 @@ class SignalingConnectionManager extends BaseConnectionManager {
             offer: { type: offer.type, sdp: offer.sdp }
         })
         
-        this.log('已发送初始offer，等待answer...')
+        this.log('已发送初始offer(含视频)，等待answer...')
         
         await this.waitForDataChannelOpen()
         this.stateMachine.transition(ConnectionState.RESOLUTION_NEGOTIATING)
@@ -112,7 +117,7 @@ class SignalingConnectionManager extends BaseConnectionManager {
         
         this.stateMachine.transition(ConnectionState.WAITING_VIDEO)
         
-        await this.waitForRemoteOffer()
+        await this.waitForFirstFrame()
         
         this.stateMachine.transition(ConnectionState.DISPLAYING_FIRST_FRAME)
         this.log('首帧显示成功')

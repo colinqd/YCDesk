@@ -10,8 +10,10 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.UnknownHostException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -206,6 +208,48 @@ public class TCPSocketPlugin extends Plugin {
             JSObject result = new JSObject();
             result.put("success", true);
             call.resolve(result);
+        });
+    }
+
+    @PluginMethod
+    public void resolveDns(PluginCall call) {
+        String hostname = call.getString("hostname");
+        
+        if (hostname == null || hostname.isEmpty()) {
+            JSObject result = new JSObject();
+            result.put("success", false);
+            result.put("error", "Hostname is required");
+            call.resolve(result);
+            return;
+        }
+        
+        executor.execute(() -> {
+            try {
+                InetAddress address = InetAddress.getByName(hostname);
+                String ipAddress = address.getHostAddress();
+                String originalHost = address.getHostName();
+                
+                JSObject result = new JSObject();
+                result.put("success", true);
+                result.put("ipAddress", ipAddress);
+                result.put("hostname", originalHost);
+                result.put("isResolved", !ipAddress.equals(hostname));
+                call.resolve(result);
+                
+                Log.d(TAG, "DNS resolved: " + hostname + " -> " + ipAddress);
+            } catch (UnknownHostException e) {
+                JSObject result = new JSObject();
+                result.put("success", false);
+                result.put("error", "DNS resolution failed: " + e.getMessage());
+                call.resolve(result);
+                Log.e(TAG, "DNS resolution failed for " + hostname + ": " + e.getMessage());
+            } catch (Exception e) {
+                JSObject result = new JSObject();
+                result.put("success", false);
+                result.put("error", e.getMessage());
+                call.resolve(result);
+                Log.e(TAG, "Error resolving DNS: " + e.getMessage());
+            }
         });
     }
 

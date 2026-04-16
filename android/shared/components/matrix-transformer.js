@@ -658,4 +658,8 @@ class MatrixTransformer {
     }
 }
 
-export default MatrixTransformer
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = MatrixTransformer
+} else {
+    window.MatrixTransformer = MatrixTransformer
+}

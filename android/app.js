@@ -8,7 +8,7 @@ import './shared/device-id-manager.js';
 import s from './modules/state.js';
 import { InputDispatcher, createGestureHandler, convertToInputCommand } from './modules/input.js';
 import { handleReceivedInput, simulateMouseMove, simulateMouseDown, simulateMouseUp, simulateWheel, simulateKeyDown, simulateKeyUp } from './modules/input-executor.js';
-import { buildWsUrl, buildHttpUrl, setConnectionMode, startWsHeartbeat, stopWsHeartbeat, wsSend, isSocketConnected, handleWsMessage, connectToServer, disconnectFromServer, attemptReconnect, cancelReconnect, sendDirectMessage } from './modules/signaling.js';
+import { buildWsUrl, buildHttpUrl, setConnectionMode, startWsHeartbeat, stopWsHeartbeat, wsSend, isSocketConnected, handleWsMessage, connectToServer, disconnectFromServer, attemptReconnect, cancelReconnect, sendDirectMessage, extractHostname, isIpAddress, resolveHostname } from './modules/signaling.js';
 import { getIceConfig, startDirectControllerConnection, handleDirectOffer, handleDirectAnswer, handleRenegotiationAnswer, handleDirectIceCandidate, handleRenegotiationOffer, setupDataChannel, createPeerConnection, startControllerConnection, startControlledConnection, handleOffer, startAndroidScreenCapture, handleAnswer, addPendingIceCandidates, handleIceCandidate } from './modules/webrtc.js';
 import { updateVideoTransformGlobal, resetZoomAndPan, toggleMouseMode, toggleControlsHide, showControls, handleOrientationChange, showFloatingMouse, hideFloatingMouse, handleFloatingMouseEvent, toggleFullscreen, setupRemoteScreenInteraction } from './modules/ui.js';
 import { cycleKeyboardPosition, cycleKeyboardSize, cycleKeyboardOpacity, applyKeyboardPosition, ensureKeyboardInBounds, applyKeyboardSize, applyKeyboardOpacity, saveKeyboardSettings, loadKeyboardSettings, setupKeyboardDrag, toggleKeyboard, sendKey, toggleModifier } from './modules/keyboard.js';
@@ -35,7 +35,7 @@ function log(message) {
 window.log = log
 
 function getServerUrl() {
-  const input = document.getElementById('controllerServerUrl')
+  const input = document.getElementById('serverUrl')
   return input ? input.value.trim() : ''
 }
 
@@ -220,9 +220,11 @@ function selectRole(role) {
   
   if (role === 'controller') {
     document.getElementById('controllerPage').classList.add('active')
+    s.connectionLogDiv = document.getElementById('connectionLog')
     initController()
   } else {
     document.getElementById('controlledPage').classList.add('active')
+    s.connectionLogDiv = document.getElementById('connectionLogControlled')
     initControlled()
   }
 }
@@ -231,6 +233,20 @@ function goBack() {
   s.currentRole = null
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'))
   document.getElementById('rolePage').classList.add('active')
+}
+
+function toggleLogBox(boxId) {
+  const logBox = document.getElementById(boxId)
+  if (!logBox) return
+  
+  const btn = logBox.querySelector('.log-toggle-btn')
+  if (logBox.classList.contains('collapsed')) {
+    logBox.classList.remove('collapsed')
+    if (btn) btn.textContent = '收起'
+  } else {
+    logBox.classList.add('collapsed')
+    if (btn) btn.textContent = '展开'
+  }
 }
 
 function switchControllerMode(mode) {
@@ -281,12 +297,8 @@ async function connectDevice() {
     showToast('请输入设备 ID')
     return
   }
-  if (targetId.length !== 9) {
-    showToast('设备 ID 格式不正确（需要 9 位字符）')
-    return
-  }
-  if (targetId === s.myDeviceId) {
-    showToast('不能连接自己')
+  if (targetId.length < 6 || targetId.length > 16) {
+    showToast('设备 ID 格式不正确（需要 6-16 位字符）')
     return
   }
   if (!isSocketConnected()) {
@@ -373,7 +385,7 @@ async function connectDirect() {
   const remotePort = parseInt(document.getElementById('remotePort').value)
   
   if (!remoteIp) {
-    showToast('请输入对方IP地址')
+    showToast('请输入对方IP地址或域名')
     return
   }
   
@@ -402,12 +414,24 @@ async function connectDirect() {
   s.isDirectControllerMode = false
   s.isWaitingRenegotiation = false
   
+  let resolvedHost = remoteIp
+  if (!isIpAddress(remoteIp)) {
+    log('检测到域名，正在解析: ' + remoteIp)
+    const dnsResult = await resolveHostname(remoteIp)
+    if (dnsResult.success) {
+      resolvedHost = dnsResult.ipAddress
+      log('域名解析成功: ' + remoteIp + ' -> ' + resolvedHost)
+    } else {
+      log('域名解析失败，尝试直接连接: ' + dnsResult.error)
+    }
+  }
+  
   saveToHistory('direct', { ip: remoteIp, port: remotePort })
   
-  log('正在连接到 ' + remoteIp + ':' + remotePort + '...')
+  log('正在连接到 ' + remoteIp + (resolvedHost !== remoteIp ? ' (' + resolvedHost + ')' : '') + ':' + remotePort + '...')
   
   try {
-    const result = await TCPSocket.connect({ host: remoteIp, port: remotePort })
+    const result = await TCPSocket.connect({ host: resolvedHost, port: remotePort })
     
     if (result.success) {
       s.currentDirectClientId = result.clientId
@@ -728,6 +752,7 @@ window.toggleModifier = toggleModifier
 window.disconnect = disconnect
 window.manualConnectToServer = manualConnectToServer
 window.disconnectFromServer = disconnectFromServer
+window.toggleLogBox = toggleLogBox
 window.controlledConnectToServer = controlledConnectToServer
 window.controlledDisconnectFromServer = controlledDisconnectFromServer
 window.startListening = startListening

@@ -11,7 +11,11 @@ function getIceConfig() {
   const iceServers = []
   const stunServers = [
     'stun:stun.l.google.com:19302',
-    'stun:stun1.l.google.com:19302'
+    'stun:stun1.l.google.com:19302',
+    'stun:stun.stunprotocol.org:3478',
+    'stun:stun.services.mozilla.com:3478',
+    'stun:global.stun.twilio.com:3478',
+    'stun:stunserver.org:3478'
   ]
   stunServers.forEach(url => {
     iceServers.push({ urls: url })

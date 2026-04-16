@@ -138,6 +138,9 @@
       display: block;
       background: #000;
       cursor: crosshair;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
     }
 
     #placeholder {
@@ -512,9 +515,6 @@
       videoElement.style.display = 'block';
       
       if (videoElement.videoWidth && videoElement.videoHeight) {
-        videoElement.style.width = videoElement.videoWidth + 'px';
-        videoElement.style.height = videoElement.videoHeight + 'px';
-        
         document.getElementById('resolution').textContent = 
           `${videoElement.videoWidth}x${videoElement.videoHeight}`;
         
@@ -531,6 +531,14 @@
       
       if (videoWrapper) {
         videoWrapper.focus();
+      }
+      
+      if (connectionManager && connectionManager.dataChannelManager && 
+          connectionManager.dataChannelManager.isOpen()) {
+        const hideCursorCheckbox = document.getElementById('hideRemoteCursor');
+        if (hideCursorCheckbox && hideCursorCheckbox.checked) {
+          connectionManager.dataChannelManager.send({ type: 'hide-cursor', hide: true });
+        }
       }
     }
 
@@ -1057,6 +1065,12 @@
     }
 
     async function init() {
+      if (window.isInitialized) {
+        log('远程窗口已初始化，忽略重复调用');
+        return;
+      }
+      window.isInitialized = true;
+      
       videoElement = document.getElementById('screenVideo');
       videoContainer = document.getElementById('videoContainer');
       videoWrapper = document.getElementById('videoWrapper');
@@ -1070,6 +1084,10 @@
       setupPerformanceMonitor();
       
       window.electronAPI.on('signaling-mode-start', async (data) => {
+        if (connectionManager) {
+          log('连接管理器已存在，忽略重复的启动信号');
+          return;
+        }
         connectionMode = 'signaling';
         
         connectionManager = new SignalingConnectionManager();

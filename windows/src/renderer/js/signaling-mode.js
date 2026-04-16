@@ -26,21 +26,42 @@ class SignalingModeManager {
         alert('连接失败: ' + (data.reason === 'device-offline' ? '目标设备不在线' : data.reason))
       },
       onOffer: (data) => {
-        if (this.isController) {
+        if (data.fromDeviceId && data.fromDeviceId === this.myDeviceId) {
+          this.logFn('[自连接] 收到自己的offer回环，转发给被控端')
+          this.handleOffer(data)
+        } else if (this.isController) {
           window.electronAPI.sendToRemoteWindow('signaling-offer', data)
         } else {
           this.handleOffer(data)
         }
       },
       onAnswer: (data) => {
-        if (this.isController) {
+        if (data.fromDeviceId && data.fromDeviceId === this.myDeviceId) {
+          this.logFn('[自连接] 收到自己的answer回环，转发给远程窗口')
+          window.electronAPI.sendToRemoteWindow('signaling-answer', data)
+        } else if (this.isController) {
           window.electronAPI.sendToRemoteWindow('signaling-answer', data)
         } else if (this.peerConnection) {
           this.handleAnswer(data.answer)
         }
       },
       onIceCandidate: (data) => {
-        if (this.isController) {
+        var candidateKey = ''
+        if (data.candidate && data.candidate.candidate) {
+          candidateKey = data.candidate.candidate
+        }
+        if (data.fromDeviceId && data.fromDeviceId === this.myDeviceId) {
+          if (this.remoteWindowIceCandidateKeys.has(candidateKey)) {
+            this.remoteWindowIceCandidateKeys.delete(candidateKey)
+            this.logFn('[自连接] 收到远程窗口ICE候选回环，添加到被控端')
+            if (this.peerConnection) {
+              this.handleIceCandidate(data.candidate)
+            }
+          } else {
+            this.logFn('[自连接] 收到被控端ICE候选回环，转发给远程窗口')
+            window.electronAPI.sendToRemoteWindow('signaling-ice-candidate', data)
+          }
+        } else if (this.isController) {
           window.electronAPI.sendToRemoteWindow('signaling-ice-candidate', data)
         } else if (this.peerConnection) {
           this.handleIceCandidate(data.candidate)
@@ -80,10 +101,17 @@ class SignalingModeManager {
     
     this.peerConnection = null
     this.dataChannelManager = null
+    this.inputChannel = null
+    this.inputChannelReady = false
+    this.auxiliaryChannels = new Map()
     this.pendingIceCandidates = []
     this.pendingStartSignal = null
     this.serverUrl = ''
     this.role = ''
+    this.selfConnection = false
+    this.remoteWindowIceCandidateKeys = new Set()
+    
+    this._setupRemoteWindowListeners()
   }
 
   setDeviceId(deviceId) {
@@ -126,12 +154,8 @@ class SignalingModeManager {
       alert('请输入设备 ID')
       return false
     }
-    if (targetDeviceId.length !== 9) {
-      alert('设备 ID 格式不正确（需要 9 位字符）')
-      return false
-    }
-    if (targetDeviceId === this.myDeviceId) {
-      alert('不能连接自己')
+    if (targetDeviceId.length < 6 || targetDeviceId.length > 16) {
+      alert('设备 ID 格式不正确（需要 6-16 位字符）')
       return false
     }
     if (!this.signalingClient.isConnected()) {
@@ -140,6 +164,7 @@ class SignalingModeManager {
     }
 
     this.incomingFromDeviceId = targetDeviceId
+    this.selfConnection = (targetDeviceId === this.myDeviceId)
     this.signalingClient.send('connect-request', {
       fromDeviceId: this.myDeviceId,
       toDeviceId: targetDeviceId
@@ -159,6 +184,7 @@ class SignalingModeManager {
     })
     
     this.logFn('已接受连接，作为被控端在主窗口建立WebRTC连接')
+    this.selfConnection = (this.incomingFromDeviceId === this.myDeviceId)
     this.isController = false
     this.startControlledConnection()
   }
@@ -180,8 +206,10 @@ class SignalingModeManager {
     
     this.pendingStartSignal = {
       mode: 'controller',
+      role: 'controller',
       sessionId: this.currentSessionId,
-      targetDeviceId: this.incomingFromDeviceId
+      targetDeviceId: this.incomingFromDeviceId,
+      deviceId: this.myDeviceId
     }
     this.logFn('保存启动信号，等待远程窗口准备就绪: ' + JSON.stringify(this.pendingStartSignal))
   }
@@ -214,6 +242,9 @@ class SignalingModeManager {
 
     window.electronAPI.on('send-signaling-ice-candidate', (data) => {
       this.logFn('从远程窗口收到 ICE candidate，发送到信令服务器')
+      if (data.candidate && data.candidate.candidate) {
+        this.remoteWindowIceCandidateKeys.add(data.candidate.candidate)
+      }
       this.signalingClient.send('ice-candidate', {
         sessionId: data.sessionId || this.currentSessionId,
         candidate: data.candidate,
@@ -242,6 +273,23 @@ class SignalingModeManager {
         this.dataChannelManager.send({ type: 'pong', timestamp: data.timestamp })
       } else if (data.type === 'screen-size') {
         this.logFn('[信令模式] 收到屏幕尺寸: ' + data.width + 'x' + data.height)
+      } else if (data.type === 'resolution-request') {
+        this.logFn('[信令模式] 收到分辨率请求: ' + data.width + 'x' + data.height)
+        const screenW = this.config.screenCapture?.maxWidth || 1920
+        const screenH = this.config.screenCapture?.maxHeight || 1080
+        this.dataChannelManager.send({
+          type: 'resolution-response',
+          width: screenW,
+          height: screenH
+        })
+      } else if (data.type === 'resolution-change') {
+        this.logFn('[信令模式] 收到分辨率变更请求: ' + data.width + 'x' + data.height)
+      } else if (data.type === 'hide-cursor') {
+        if (data.hide) {
+          window.electronAPI.hideCursor()
+        } else {
+          window.electronAPI.showCursor()
+        }
       }
     })
 
@@ -282,15 +330,43 @@ class SignalingModeManager {
     }
 
     this.peerConnection.ondatachannel = (event) => {
-      this.logFn('[信令模式] 收到数据通道')
-      this.dataChannelManager.setDataChannel(event.channel)
+      const label = event.channel.label
+      this.logFn('[信令模式] 收到数据通道: ' + label)
+      
+      if (label === 'control') {
+        this.dataChannelManager.setDataChannel(event.channel)
+      } else if (label === 'input') {
+        this.inputChannel = event.channel
+        this.inputChannelReady = true
+        this.inputChannel.onmessage = (evt) => {
+          try {
+            const data = JSON.parse(evt.data)
+            if (data.type === 'input') {
+              window.electronAPI.send('remote-input', data)
+            }
+          } catch (e) {
+            this.logFn('[信令模式] 输入通道消息解析失败: ' + e.message)
+          }
+        }
+        this.inputChannel.onclose = () => {
+          this.inputChannelReady = false
+          this.logFn('[信令模式] 输入数据通道已关闭')
+        }
+        this.inputChannel.onerror = (error) => {
+          this.inputChannelReady = false
+          this.logFn('[信令模式] 输入数据通道错误: ' + error)
+        }
+        this.logFn('[信令模式] 输入数据通道已就绪')
+      } else if (label.startsWith('aux-')) {
+        const channelName = label.replace('aux-', '')
+        this.auxiliaryChannels.set(channelName, event.channel)
+        this.logFn('[信令模式] 辅助通道 ' + channelName + ' 已打开')
+      }
     }
     
     this.peerConnection.ontrack = (event) => {
       this.logFn('[信令模式] 收到远程媒体流，track数量: ' + event.tracks.length)
     }
-
-    this._setupRemoteWindowListeners()
   }
 
   async handleOffer(data) {
@@ -302,7 +378,11 @@ class SignalingModeManager {
     this.logFn('[信令模式] 收到offer')
 
     try {
-      await this.createPeerConnection()
+      if (!this.peerConnection) {
+        await this.createPeerConnection()
+      } else {
+        this.logFn('[信令模式] 复用已有PeerConnection')
+      }
       
       this.logFn('[信令模式] 设置远程描述...')
       await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer))

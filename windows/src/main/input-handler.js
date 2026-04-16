@@ -471,13 +471,33 @@ function hideCursor() {
     const { execSync } = require('child_process')
     const path = require('path')
     const os = require('os')
-    const scriptPath = path.join(os.tmpdir(), 'ycdesk_hide_cursor.ps1')
     const fs = require('fs')
+    const scriptPath = path.join(os.tmpdir(), 'ycdesk_hide_cursor.ps1')
     fs.writeFileSync(scriptPath, `
 Add-Type @'
-[DllImport("user32.dll")] public static extern int ShowCursor(bool bShow);
+[DllImport("user32.dll")] public static extern IntPtr LoadCursorFromFile(string lpFileName);
+[DllImport("user32.dll")] public static extern bool SetSystemCursor(IntPtr hcur, uint id);
+[DllImport("user32.dll")] public static extern bool DestroyCursor(IntPtr hcur);
 '@ -Name Win32 -Namespace API
-[API.Win32]::ShowCursor($false)
+
+$nullCursorPath = "$env:TEMP\\ycdesk_null.cur"
+if (-not (Test-Path $nullCursorPath)) {
+    $cursorBytes = [byte[]]::new(308)
+    $cursorBytes[2] = 2
+    $cursorBytes[4] = 1
+    $cursorBytes[6] = 1
+    $cursorBytes[8] = 1
+    $cursorBytes[10] = 1
+    $cursorBytes[12] = 0x20
+    $cursorBytes[13] = 1
+    [System.IO.File]::WriteAllBytes($nullCursorPath, $cursorBytes)
+}
+$hCur = [API.Win32]::LoadCursorFromFile($nullCursorPath)
+$cursors = @(32512, 32513, 32514, 32515, 32516, 32640, 32641, 32642, 32643, 32644, 32645, 32646, 32648, 32649, 32650)
+foreach ($id in $cursors) {
+    [API.Win32]::SetSystemCursor($hCur, $id)
+}
+[API.Win32]::DestroyCursor($hCur)
 `)
     execSync('powershell -ExecutionPolicy Bypass -File "' + scriptPath + '"', { windowsHide: true, timeout: 5000 })
     cursorHideCount++
@@ -498,17 +518,16 @@ function showCursor() {
     const { execSync } = require('child_process')
     const path = require('path')
     const os = require('os')
-    const scriptPath = path.join(os.tmpdir(), 'ycdesk_show_cursor.ps1')
     const fs = require('fs')
+    const scriptPath = path.join(os.tmpdir(), 'ycdesk_show_cursor.ps1')
     fs.writeFileSync(scriptPath, `
 Add-Type @'
-[DllImport("user32.dll")] public static extern int ShowCursor(bool bShow);
+[DllImport("user32.dll")] public static extern bool SystemParametersInfo(uint uiAction, uint uiParam, IntPtr pvParam, uint fWinIni);
 '@ -Name Win32 -Namespace API
-[API.Win32]::ShowCursor($true)
+
+[API.Win32]::SystemParametersInfo(87, 0, [IntPtr]::Zero, 3)
 `)
-    for (let i = 0; i < cursorHideCount; i++) {
-      execSync('powershell -ExecutionPolicy Bypass -File "' + scriptPath + '"', { windowsHide: true, timeout: 5000 })
-    }
+    execSync('powershell -ExecutionPolicy Bypass -File "' + scriptPath + '"', { windowsHide: true, timeout: 5000 })
     cursorHideCount = 0
     cursorHidden = false
   } catch (e) {

@@ -5,7 +5,7 @@ const s = {
 
   myDeviceId: '',
   socket: null,
-  connectionMode: 'websocket',
+  connectionMode: 'socketio',
   peerConnection: null,
   currentSessionId: null,
   incomingFromDeviceId: null,
