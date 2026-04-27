@@ -524,20 +524,22 @@
         });
 
         videoWrapperEl.addEventListener('wheel', (e) => {
-          e.preventDefault();
+          e.preventDefault()
           
-          if (e.deltaY !== 0) {
-            const rect = screenContainer.getBoundingClientRect();
-            const scaleFactor = e.deltaY > 0 ? 0.9 : 1.1;
-            const newScale = matrixTransformer.scale * scaleFactor;
-            matrixTransformer.updateScale(newScale, e.clientX, e.clientY, rect);
-            matrixTransformer.applyTransform(screenContainer);
+          if (e.ctrlKey || e.metaKey) {
+            // Ctrl + 滚轮：缩放远程屏幕
+            const rect = screenContainer.getBoundingClientRect()
+            const scaleFactor = e.deltaY > 0 ? 0.9 : 1.1
+            const newScale = matrixTransformer.scale * scaleFactor
+            matrixTransformer.updateScale(newScale, e.clientX, e.clientY, rect)
+            matrixTransformer.applyTransform(screenContainer)
           } else {
+            // 普通滚轮：发送到远程桌面
             sendInputEvent({
               inputType: 'wheel',
               deltaY: e.deltaY,
               deltaX: e.deltaX || 0
-            });
+            })
           }
         }, { passive: false });
 

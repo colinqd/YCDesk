@@ -37,17 +37,20 @@ function createMainWindow() {
     mainWindow.webContents.openDevTools({ mode: 'detach' })
   }
 
-  mainWindow.on('minimize', (event) => {
-    event.preventDefault()
-    mainWindow.hide()
-    if (tray) {
-      tray.displayBalloon({
-        iconType: 'info',
-        title: 'YCDesk',
-        content: '程序已最小化到系统托盘，双击图标可恢复窗口'
-      })
-    }
-  })
+  // 延迟设置 minimize 事件，避免初始化时误触发
+  setTimeout(() => {
+    mainWindow.on('minimize', (event) => {
+      event.preventDefault()
+      mainWindow.hide()
+      if (tray) {
+        tray.displayBalloon({
+          iconType: 'info',
+          title: 'YCDesk',
+          content: '程序已最小化到系统托盘，双击图标可恢复窗口'
+        })
+      }
+    })
+  }, 1000)
 
   mainWindow.on('close', (event) => {
   })
@@ -89,6 +92,9 @@ function createRemoteWindow() {
   })
 
   remoteWindow.loadFile('remote.html')
+
+  // 禁用 Electron 的默认缩放快捷键，避免和我们自定义的 Ctrl+滚轮冲突
+  remoteWindow.webContents.setVisualZoomLevelLimits(1, 1)
 
   remoteWindow.once('ready-to-show', () => {
     remoteWindow.show()
