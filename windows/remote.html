@@ -1036,17 +1036,23 @@
         connectionManager.sendInput(inputData);
       });
 
+      let isUnlockPanelOpen = false;
       videoWrapper.setAttribute('tabindex', '0');
       videoWrapper.focus();
       
-      // 确保 videoWrapper 持续保持焦点
+      // 确保 videoWrapper 持续保持焦点（但解锁面板打开时除外）
       videoWrapper.addEventListener('blur', () => {
         setTimeout(() => {
-          if (videoWrapper) {
+          if (videoWrapper && !isUnlockPanelOpen) {
             videoWrapper.focus();
           }
         }, 10);
       });
+      
+      // 暴露给 UnlockUI 使用的函数
+      window.setUnlockPanelState = function(open) {
+        isUnlockPanelOpen = open;
+      };
       
       // 点击时确保焦点在 videoWrapper
       videoWrapper.addEventListener('click', () => {
@@ -1585,7 +1591,16 @@
       
       showOverlay() {
         this.overlay.classList.remove('hidden');
-        this.passwordInput.focus();
+        
+        // 告诉 videoWrapper 不要强制抢焦点
+        if (window.setUnlockPanelState) {
+          window.setUnlockPanelState(true);
+        }
+        
+        // 稍微延迟一下再聚焦，确保 overlay 已经渲染
+        setTimeout(() => {
+          this.passwordInput.focus();
+        }, 50);
         
         if (this.savedPasswordAvailable) {
           this.autoBtn.style.display = 'block';
@@ -1598,6 +1613,11 @@
         this.overlay.classList.add('hidden');
         this.passwordInput.value = '';
         this.clearMessage();
+        
+        // 告诉 videoWrapper 可以恢复抢焦点了
+        if (window.setUnlockPanelState) {
+          window.setUnlockPanelState(false);
+        }
       }
       
       async handleManualUnlock() {
