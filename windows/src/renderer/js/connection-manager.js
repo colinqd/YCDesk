@@ -22,6 +22,8 @@ class ConnectionManager {
     this.savedConnectionInfo = null
     this.savedRole = null
     this.savedServerUrl = null
+    
+    this.loadConnectionState()
   }
 
   setStatus(status) {
@@ -50,15 +52,49 @@ class ConnectionManager {
 
   saveConnectionInfo(type, data) {
     this.savedConnectionInfo = { type, ...data }
+    this.saveConnectionState()
   }
 
   clearConnectionInfo() {
     this.savedConnectionInfo = null
+    this.saveConnectionState()
   }
 
   saveRoleAndServer(role, serverUrl) {
     this.savedRole = role
     this.savedServerUrl = serverUrl
+    this.saveConnectionState()
+  }
+
+  saveConnectionState() {
+    try {
+      const state = {
+        status: this.status,
+        savedConnectionInfo: this.savedConnectionInfo,
+        savedRole: this.savedRole,
+        savedServerUrl: this.savedServerUrl
+      }
+      localStorage.setItem('ycdesk_connection_state', JSON.stringify(state))
+      this.logFn('连接状态已保存')
+    } catch (error) {
+      this.logFn('保存连接状态失败: ' + error.message)
+    }
+  }
+
+  loadConnectionState() {
+    try {
+      const stored = localStorage.getItem('ycdesk_connection_state')
+      if (stored) {
+        const state = JSON.parse(stored)
+        this.status = state.status || CONNECTION_STATUS.DISCONNECTED
+        this.savedConnectionInfo = state.savedConnectionInfo
+        this.savedRole = state.savedRole
+        this.savedServerUrl = state.savedServerUrl
+        this.logFn('连接状态已加载')
+      }
+    } catch (error) {
+      this.logFn('加载连接状态失败: ' + error.message)
+    }
   }
 
   async attemptReconnect(reconnectFn, networkManager = null) {
@@ -138,6 +174,7 @@ class ConnectionManager {
     this.cancelReconnect()
     this.setStatus(CONNECTION_STATUS.DISCONNECTED)
     this.savedConnectionInfo = null
+    this.saveConnectionState()
   }
 
   isConnected() {

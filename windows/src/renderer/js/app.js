@@ -34,10 +34,16 @@ function initializeApp() {
     uiManager: uiManager,
     config: CONFIG,
     onIncomingConnection: (fromDeviceId) => {
-      if (uiManager.showIncomingConnectionDialog(fromDeviceId)) {
+      const autoAccept = document.getElementById('autoAcceptConnection')?.checked
+      if (autoAccept) {
+        log('自动接受来自 ' + fromDeviceId + ' 的连接')
         acceptConnection()
       } else {
-        rejectConnection()
+        if (uiManager.showIncomingConnectionDialog(fromDeviceId)) {
+          acceptConnection()
+        } else {
+          rejectConnection()
+        }
       }
     }
   })
@@ -110,7 +116,7 @@ function reconnectFromHistory(type, index) {
     document.getElementById('controllerServerUrl').value = item.serverUrl
     document.getElementById('targetDeviceId').value = item.deviceId
 
-    if (!signalingManager.socket || !signalingManager.socket.connected) {
+    if (!signalingManager.signalingClient.isConnected()) {
       controllerConnectToServer()
     } else {
       connectDevice()
@@ -245,6 +251,14 @@ async function initController() {
     })
   })
 
+  window.electronAPI.on('webrtc-answer', async (data) => {
+    log('收到远程窗口的answer，转发给被控端')
+    directManager.sendMessage({
+      type: 'answer',
+      answer: data.answer
+    })
+  })
+
   window.electronAPI.on('webrtc-ice-candidate', async (data) => {
     log('收到远程窗口的ICE候选，转发给被控端')
     directManager.sendMessage({
@@ -338,14 +352,10 @@ function controllerDisconnectFromServer() {
 function connectDevice() {
   const targetDeviceId = uiManager.getTargetDeviceId()
   if (!uiManager._validateDeviceId(targetDeviceId)) {
-    alert('请输入有效的设备 ID（需要 9 位字符）')
+    alert('请输入有效的设备 ID（需要 6-16 位字符）')
     return false
   }
-  if (targetDeviceId === myDeviceId) {
-    alert('不能连接自己')
-    return false
-  }
-  if (!signalingManager.socket || !signalingManager.socket.connected) {
+  if (!signalingManager.signalingClient.isConnected()) {
     alert('未连接到信令服务器，请先连接服务器')
     return false
   }
@@ -370,6 +380,57 @@ function copyDeviceId() {
   uiManager.copyDeviceId(myDeviceId)
 }
 
+function showMessage(msg) {
+  const msgDiv = document.createElement('div')
+  msgDiv.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.8);color:white;padding:20px 40px;border-radius:8px;font-size:16px;z-index:10000;'
+  msgDiv.textContent = msg
+  document.body.appendChild(msgDiv)
+  setTimeout(() => msgDiv.remove(), 2000)
+}
+
+async function setCustomDeviceId() {
+  const customIdInput = document.getElementById('customDeviceId')
+  const customId = customIdInput.value.trim()
+  
+  if (!customId) {
+    showMessage('请输入设备ID')
+    return
+  }
+  
+  try {
+    const result = await window.electronAPI.setDeviceId(customId)
+    if (result.success) {
+      myDeviceId = result.deviceId
+      uiManager.setDeviceId(myDeviceId)
+      signalingManager.setDeviceId(myDeviceId)
+      directManager.setDeviceId(myDeviceId)
+      customIdInput.value = ''
+      showMessage('设备ID已设置为: ' + myDeviceId)
+    }
+  } catch (error) {
+    showMessage('设置失败: ' + error.message)
+  }
+}
+
+async function resetDeviceId() {
+  if (!confirm('确定要随机生成新的设备ID吗？')) {
+    return
+  }
+  
+  try {
+    const result = await window.electronAPI.resetDeviceId()
+    if (result.success) {
+      myDeviceId = result.deviceId
+      uiManager.setDeviceId(myDeviceId)
+      signalingManager.setDeviceId(myDeviceId)
+      directManager.setDeviceId(myDeviceId)
+      alert('设备ID已重置为: ' + myDeviceId)
+    }
+  } catch (error) {
+    alert('重置设备ID失败: ' + error.message)
+  }
+}
+
 function openRemoteWindow() {
   window.electronAPI.openRemoteWindow()
 }
@@ -390,6 +451,35 @@ async function closeWindow() {
   }
 }
 
+function toggleLogBox(boxId) {
+  const logBox = document.getElementById(boxId)
+  if (!logBox) return
+  
+  const btn = logBox.querySelector('.log-toggle-btn')
+  if (logBox.classList.contains('collapsed')) {
+    logBox.classList.remove('collapsed')
+    if (btn) btn.textContent = '收起'
+  } else {
+    logBox.classList.add('collapsed')
+    if (btn) btn.textContent = '展开'
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   initializeApp()
+  
+  const controlledModeSelect = document.getElementById('controlledConnectionMode')
+  const controllerModeSelect = document.getElementById('controllerConnectionMode')
+  
+  if (controlledModeSelect) {
+    controlledModeSelect.addEventListener('change', (e) => {
+      signalingManager.setConnectionMode(e.target.value)
+    })
+  }
+  
+  if (controllerModeSelect) {
+    controllerModeSelect.addEventListener('change', (e) => {
+      signalingManager.setConnectionMode(e.target.value)
+    })
+  }
 })

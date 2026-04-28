@@ -1,8 +1,43 @@
 const { screen } = require('electron')
-const { validateInputCommand, parseInputCommand } = require('../../shared/input-protocol')
+const { validateInputCommand, parseInputCommand, INPUT_TYPES, isDeltaInputType, isBatchInputType } = require('../../shared/input-protocol')
 
-let lastMouseX = 0
-let lastMouseY = 0
+let robot = null
+let logger = null
+let initialized = false
+
+function initLogger(logInstance) {
+  logger = logInstance
+  if (!initialized) {
+    initialized = true
+    initRobot()
+  }
+}
+
+function log(level, message, data) {
+  if (logger && typeof logger[level] === 'function') {
+    logger[level](message, data)
+  } else if (level === 'error') {
+    console.error('[输入控制]', message, data || '')
+  }
+}
+
+function initRobot() {
+  log('info', '正在初始化输入控制...')
+  
+  try {
+    robot = require('robotjs')
+    log('info', 'robotjs 加载成功!')
+    const pos = robot.getMousePos()
+    currentMouseX = pos.x
+    currentMouseY = pos.y
+  } catch (e) {
+    log('error', '无法加载 robotjs:', e.message)
+    robot = null
+  }
+}
+
+let currentMouseX = 0
+let currentMouseY = 0
 let pressedModifiers = {
   Control: false,
   Shift: false,
@@ -14,6 +49,9 @@ let pressedButtons = {
   right: false,
   middle: false
 }
+let pressedKeys = new Set()
+let wheelAccumulatorY = 0
+let wheelAccumulatorX = 0
 
 const BUTTON_MAP = {
   0: 'left',
@@ -21,23 +59,63 @@ const BUTTON_MAP = {
   2: 'right'
 }
 
-/**
- * 处理远程输入命令
- * 
- * @param {Object} event - IPC 事件对象
- * @param {Object} inputData - 输入数据对象
- */
+const KEY_CODE_MAP = {
+  'KeyA': 'a', 'KeyB': 'b', 'KeyC': 'c', 'KeyD': 'd', 'KeyE': 'e',
+  'KeyF': 'f', 'KeyG': 'g', 'KeyH': 'h', 'KeyI': 'i', 'KeyJ': 'j',
+  'KeyK': 'k', 'KeyL': 'l', 'KeyM': 'm', 'KeyN': 'n', 'KeyO': 'o',
+  'KeyP': 'p', 'KeyQ': 'q', 'KeyR': 'r', 'KeyS': 's', 'KeyT': 't',
+  'KeyU': 'u', 'KeyV': 'v', 'KeyW': 'w', 'KeyX': 'x', 'KeyY': 'y', 'KeyZ': 'z',
+  'Digit0': '0', 'Digit1': '1', 'Digit2': '2', 'Digit3': '3', 'Digit4': '4',
+  'Digit5': '5', 'Digit6': '6', 'Digit7': '7', 'Digit8': '8', 'Digit9': '9',
+  'Space': 'space',
+  'Enter': 'enter',
+  'Backspace': 'backspace',
+  'Tab': 'tab',
+  'Escape': 'escape',
+  'Delete': 'delete',
+  'Insert': 'insert',
+  'ArrowUp': 'up',
+  'ArrowDown': 'down',
+  'ArrowLeft': 'left',
+  'ArrowRight': 'right',
+  'Home': 'home',
+  'End': 'end',
+  'PageUp': 'pageup',
+  'PageDown': 'pagedown',
+  'F1': 'f1', 'F2': 'f2', 'F3': 'f3', 'F4': 'f4', 'F5': 'f5', 'F6': 'f6',
+  'F7': 'f7', 'F8': 'f8', 'F9': 'f9', 'F10': 'f10', 'F11': 'f11', 'F12': 'f12',
+  'Minus': '-', 'Equal': '=',
+  'BracketLeft': '[', 'BracketRight': ']',
+  'Backslash': '\\', 'Semicolon': ';', 'Quote': "'",
+  'Comma': ',', 'Period': '.', 'Slash': '/',
+  'Backquote': '`',
+  'Numpad0': 'numpad_0', 'Numpad1': 'numpad_1', 'Numpad2': 'numpad_2',
+  'Numpad3': 'numpad_3', 'Numpad4': 'numpad_4', 'Numpad5': 'numpad_5',
+  'Numpad6': 'numpad_6', 'Numpad7': 'numpad_7', 'Numpad8': 'numpad_8',
+  'Numpad9': 'numpad_9',
+  'NumpadMultiply': 'numpad_multiply', 'NumpadAdd': 'numpad_add',
+  'NumpadSubtract': 'numpad_subtract', 'NumpadDecimal': 'numpad_decimal',
+  'NumpadDivide': 'numpad_divide', 'NumpadEnter': 'enter',
+  'ControlLeft': 'control', 'ControlRight': 'control',
+  'ShiftLeft': 'shift', 'ShiftRight': 'shift',
+  'AltLeft': 'alt', 'AltRight': 'alt',
+  'MetaLeft': 'command', 'MetaRight': 'command',
+  'CapsLock': 'caps_lock', 'NumLock': 'num_lock', 'ScrollLock': 'scroll_lock'
+}
+
 function handleRemoteInput(event, inputData) {
+  if (!robot) {
+    return
+  }
+  
   try {
     const validation = validateInputCommand(inputData)
     if (!validation.valid) {
-      console.error('[输入验证失败:', validation.errors)
       return
     }
     
     const input = parseInputCommand(inputData)
     if (!input) {
-      console.error('[输入解析失败]')
       return
     }
     
@@ -45,9 +123,13 @@ function handleRemoteInput(event, inputData) {
       inputType, 
       x, 
       y, 
+      dx,
+      dy,
       button, 
       deltaY, 
       deltaX,
+      accumulatedDeltaY,
+      accumulatedDeltaX,
       key, 
       code, 
       keyCode,
@@ -61,62 +143,55 @@ function handleRemoteInput(event, inputData) {
     const screenWidth = primaryDisplay.size.width
     const screenHeight = primaryDisplay.size.height
 
-    console.log('[远程输入] 类型:', inputType, { 
-      x, y, button, deltaY, deltaX, key, code, 
-      ctrlKey, shiftKey, altKey, metaKey 
-    })
-
     switch (inputType) {
-      case 'mousemove':
+      case INPUT_TYPES.MOUSE_MOVE:
         handleMouseMove(x, y, screenWidth, screenHeight)
         break
 
-      case 'mousedown':
+      case INPUT_TYPES.MOUSE_MOVE_DELTA:
+        handleMouseMoveDelta(dx, dy, screenWidth, screenHeight)
+        break
+
+      case INPUT_TYPES.MOUSE_DOWN:
         handleMouseDown(x, y, button, screenWidth, screenHeight)
         break
 
-      case 'mouseup':
+      case INPUT_TYPES.MOUSE_UP:
         handleMouseUp(x, y, button, screenWidth, screenHeight)
         break
 
-      case 'wheel':
-        handleMouseWheel(deltaY, deltaX)
+      case INPUT_TYPES.MOUSE_WHEEL:
+        handleMouseWheel(deltaY, deltaX, x, y, screenWidth, screenHeight)
         break
 
-      case 'keydown':
+      case INPUT_TYPES.MOUSE_WHEEL_BATCH:
+        handleMouseWheelBatch(accumulatedDeltaY, accumulatedDeltaX, screenWidth, screenHeight)
+        break
+
+      case INPUT_TYPES.KEY_DOWN:
         handleKeyDown(code, key, ctrlKey, shiftKey, altKey, metaKey)
         break
 
-      case 'keyup':
+      case INPUT_TYPES.KEY_UP:
         handleKeyUp(code, key, ctrlKey, shiftKey, altKey, metaKey)
         break
 
-      case 'click':
+      case INPUT_TYPES.MOUSE_CLICK:
         handleClick(x, y, button, screenWidth, screenHeight)
         break
 
-      case 'dblclick':
+      case INPUT_TYPES.MOUSE_DBLCLICK:
         handleDoubleClick(x, y, button, screenWidth, screenHeight)
         break
 
       default:
-        console.log('[远程输入] 未知的输入类型:', inputType)
+        log('warn', '未知的输入类型:', inputType)
     }
   } catch (error) {
-    console.error('[远程输入] 错误:', error)
+    log('error', '远程输入错误:', error.message)
   }
 }
 
-/**
- * 归一化并限制坐标值
- * 注意：输入已经是 0-1 归一化坐标，不需要再次归一化
- * 
- * @param {number} x - X 坐标（0-1 归一化）
- * @param {number} y - Y 坐标（0-1 归一化）
- * @param {number} screenWidth - 屏幕宽度
- * @param {number} screenHeight - 屏幕高度
- * @returns {Object} 包含 x 和 y 的对象
- */
 function normalizeAndClamp(x, y, screenWidth, screenHeight) {
   const normalizedX = Math.max(0, Math.min(1, x || 0))
   const normalizedY = Math.max(0, Math.min(1, y || 0))
@@ -130,179 +205,192 @@ function normalizeAndClamp(x, y, screenWidth, screenHeight) {
   }
 }
 
-/**
- * 处理鼠标移动事件
- */
 function handleMouseMove(x, y, screenWidth, screenHeight) {
   if (x !== undefined && y !== undefined) {
     const pos = normalizeAndClamp(x, y, screenWidth, screenHeight)
-    lastMouseX = pos.x
-    lastMouseY = pos.y
-    
-    console.log('[鼠标] 移动到:', lastMouseX, lastMouseY)
+    currentMouseX = pos.x
+    currentMouseY = pos.y
+    robot.moveMouse(pos.x, pos.y)
   }
 }
 
-/**
- * 处理鼠标按下事件
- */
+function handleMouseMoveDelta(dx, dy, screenWidth, screenHeight) {
+  if (dx === undefined || dy === undefined) return
+  
+  const targetX = currentMouseX + Math.round(dx)
+  const targetY = currentMouseY + Math.round(dy)
+  
+  currentMouseX = Math.max(0, Math.min(screenWidth, targetX))
+  currentMouseY = Math.max(0, Math.min(screenHeight, targetY))
+  
+  robot.moveMouse(currentMouseX, currentMouseY)
+}
+
 function handleMouseDown(x, y, button, screenWidth, screenHeight) {
   if (x !== undefined && y !== undefined) {
     const pos = normalizeAndClamp(x, y, screenWidth, screenHeight)
-    lastMouseX = pos.x
-    lastMouseY = pos.y
+    currentMouseX = pos.x
+    currentMouseY = pos.y
+    robot.moveMouse(pos.x, pos.y)
   }
   
   const mouseButton = getButtonName(button)
   
   if (!pressedButtons[mouseButton]) {
     pressedButtons[mouseButton] = true
-    console.log('[鼠标] 按下:', mouseButton, '位置:', lastMouseX, lastMouseY)
+    robot.mouseToggle('down', mouseButton)
   }
 }
 
-/**
- * 处理鼠标释放事件
- */
 function handleMouseUp(x, y, button, screenWidth, screenHeight) {
   if (x !== undefined && y !== undefined) {
     const pos = normalizeAndClamp(x, y, screenWidth, screenHeight)
-    lastMouseX = pos.x
-    lastMouseY = pos.y
+    currentMouseX = pos.x
+    currentMouseY = pos.y
+    robot.moveMouse(pos.x, pos.y)
   }
   
   const mouseButton = getButtonName(button)
   
   if (pressedButtons[mouseButton]) {
     pressedButtons[mouseButton] = false
-    console.log('[鼠标] 释放:', mouseButton, '位置:', lastMouseX, lastMouseY)
+    robot.mouseToggle('up', mouseButton)
   }
 }
 
-/**
- * 处理鼠标点击事件
- */
 function handleClick(x, y, button, screenWidth, screenHeight) {
   const pos = normalizeAndClamp(x, y, screenWidth, screenHeight)
-  lastMouseX = pos.x
-  lastMouseY = pos.y
+  currentMouseX = pos.x
+  currentMouseY = pos.y
+  
+  robot.moveMouse(pos.x, pos.y)
   
   const mouseButton = getButtonName(button)
-  
-  setTimeout(() => {
-    console.log('[鼠标] 单击:', mouseButton, '位置:', lastMouseX, lastMouseY)
-  }, 10)
+  robot.mouseClick(mouseButton)
 }
 
-/**
- * 处理鼠标双击事件
- */
 function handleDoubleClick(x, y, button, screenWidth, screenHeight) {
   const pos = normalizeAndClamp(x, y, screenWidth, screenHeight)
-  lastMouseX = pos.x
-  lastMouseY = pos.y
+  currentMouseX = pos.x
+  currentMouseY = pos.y
+  
+  robot.moveMouse(pos.x, pos.y)
   
   const mouseButton = getButtonName(button)
-  
-  setTimeout(() => {
-    console.log('[鼠标] 双击:', mouseButton, '位置:', lastMouseX, lastMouseY)
-  }, 10)
+  robot.mouseClick(mouseButton, true)
 }
 
-/**
- * 处理鼠标滚轮事件
- */
-function handleMouseWheel(deltaY, deltaX) {
+function handleMouseWheel(deltaY, deltaX, x, y, screenWidth, screenHeight) {
+  if (x !== undefined && y !== undefined) {
+    const pos = normalizeAndClamp(x, y, screenWidth, screenHeight)
+    robot.moveMouse(pos.x, pos.y)
+  }
+  
   if (deltaY) {
-    const scrollAmount = Math.round(deltaY / 120)
-    console.log('[鼠标] 滚轮垂直:', scrollAmount)
+    wheelAccumulatorY += deltaY
+    const scrollAmount = Math.trunc(wheelAccumulatorY / 40)
+    if (scrollAmount !== 0) {
+      robot.scrollMouse(0, -scrollAmount)
+      wheelAccumulatorY -= scrollAmount * 40
+    }
   }
   
   if (deltaX) {
-    const scrollAmountX = Math.round(deltaX / 120)
-    console.log('[鼠标] 滚轮水平:', scrollAmountX)
+    wheelAccumulatorX += deltaX
+    const scrollAmountX = Math.trunc(wheelAccumulatorX / 40)
+    if (scrollAmountX !== 0) {
+      robot.scrollMouse(-scrollAmountX, 0)
+      wheelAccumulatorX -= scrollAmountX * 40
+    }
   }
 }
 
-/**
- * 处理键盘按下事件
- */
-function handleKeyDown(code, key, ctrlKey, shiftKey, altKey, metaKey) {
-  if (!code) {
-    console.log('[键盘] 按下: 缺少code参数')
-    return
+function handleMouseWheelBatch(accumulatedDeltaY, accumulatedDeltaX, screenWidth, screenHeight) {
+  if (accumulatedDeltaY) {
+    const scrollAmount = Math.round(accumulatedDeltaY / 120)
+    robot.scrollMouse(0, -scrollAmount)
   }
+  
+  if (accumulatedDeltaX) {
+    const scrollAmountX = Math.round(accumulatedDeltaX / 120)
+    robot.scrollMouse(-scrollAmountX, 0)
+  }
+}
+
+function handleKeyDown(code, key, ctrlKey, shiftKey, altKey, metaKey) {
+  if (!code) return
   
   try {
     if (ctrlKey !== undefined && ctrlKey !== pressedModifiers.Control) {
       pressedModifiers.Control = ctrlKey
-      console.log('[键盘] Ctrl:', ctrlKey ? '按下' : '释放')
+      robot.keyToggle('control', ctrlKey ? 'down' : 'up')
     }
     
     if (shiftKey !== undefined && shiftKey !== pressedModifiers.Shift) {
       pressedModifiers.Shift = shiftKey
-      console.log('[键盘] Shift:', shiftKey ? '按下' : '释放')
+      robot.keyToggle('shift', shiftKey ? 'down' : 'up')
     }
     
     if (altKey !== undefined && altKey !== pressedModifiers.Alt) {
       pressedModifiers.Alt = altKey
-      console.log('[键盘] Alt:', altKey ? '按下' : '释放')
+      robot.keyToggle('alt', altKey ? 'down' : 'up')
     }
     
     if (metaKey !== undefined && metaKey !== pressedModifiers.Meta) {
       pressedModifiers.Meta = metaKey
-      console.log('[键盘] Meta:', metaKey ? '按下' : '释放')
+      robot.keyToggle('command', metaKey ? 'down' : 'up')
     }
     
     if (!isModifierKeyCode(code)) {
-      console.log('[键盘] 按下:', code, 'key:', key)
+      const robotKey = KEY_CODE_MAP[code] || key || code.toLowerCase()
+      
+      if (!pressedKeys.has(code)) {
+        pressedKeys.add(code)
+        robot.keyToggle(robotKey, 'down')
+      }
     }
   } catch (e) {
-    console.log('[键盘] 按下错误:', e)
+    log('error', 'keydown 错误:', e.message)
   }
 }
 
-/**
- * 处理键盘释放事件
- */
 function handleKeyUp(code, key, ctrlKey, shiftKey, altKey, metaKey) {
-  if (!code) {
-    console.log('[键盘] 释放: 缺少code参数')
-    return
-  }
+  if (!code) return
   
   try {
     if (!isModifierKeyCode(code)) {
-      console.log('[键盘] 释放:', code, 'key:', key)
+      const robotKey = KEY_CODE_MAP[code] || key || code.toLowerCase()
+      
+      if (pressedKeys.has(code)) {
+        pressedKeys.delete(code)
+        robot.keyToggle(robotKey, 'up')
+      }
     }
     
     if (ctrlKey === false && pressedModifiers.Control) {
       pressedModifiers.Control = false
-      console.log('[键盘] Ctrl: 释放')
+      robot.keyToggle('control', 'up')
     }
     
     if (shiftKey === false && pressedModifiers.Shift) {
       pressedModifiers.Shift = false
-      console.log('[键盘] Shift: 释放')
+      robot.keyToggle('shift', 'up')
     }
     
     if (altKey === false && pressedModifiers.Alt) {
       pressedModifiers.Alt = false
-      console.log('[键盘] Alt: 释放')
+      robot.keyToggle('alt', 'up')
     }
     
     if (metaKey === false && pressedModifiers.Meta) {
       pressedModifiers.Meta = false
-      console.log('[键盘] Meta: 释放')
+      robot.keyToggle('command', 'up')
     }
   } catch (e) {
-    console.log('[键盘] 释放错误:', e)
+    log('error', 'keyup 错误:', e.message)
   }
 }
 
-/**
- * 获取按钮名称
- */
 function getButtonName(button) {
   if (typeof button === 'string') {
     const lowerButton = button.toLowerCase()
@@ -316,47 +404,50 @@ function getButtonName(button) {
   return 'left'
 }
 
-/**
- * 判断是否为修饰键
- */
 function isModifierKeyCode(code) {
   return ['ControlLeft', 'ControlRight', 'ShiftLeft', 'ShiftRight',
           'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight',
           'CapsLock', 'NumLock', 'ScrollLock'].includes(code)
 }
 
-/**
- * 重置所有修饰键和鼠标按钮状态
- */
 function resetModifiers() {
+  log('info', '重置输入修饰键状态')
   try {
-    if (pressedModifiers.Control) {
-      console.log('[重置] Ctrl: 释放')
+    if (robot) {
+      if (pressedModifiers.Control) {
+        robot.keyToggle('control', 'up')
+      }
+      if (pressedModifiers.Shift) {
+        robot.keyToggle('shift', 'up')
+      }
+      if (pressedModifiers.Alt) {
+        robot.keyToggle('alt', 'up')
+      }
+      if (pressedModifiers.Meta) {
+        robot.keyToggle('command', 'up')
+      }
+      
+      if (pressedButtons.left) {
+        robot.mouseToggle('up', 'left')
+        pressedButtons.left = false
+      }
+      if (pressedButtons.right) {
+        robot.mouseToggle('up', 'right')
+        pressedButtons.right = false
+      }
+      if (pressedButtons.middle) {
+        robot.mouseToggle('up', 'middle')
+        pressedButtons.middle = false
+      }
+      
+      for (const code of pressedKeys) {
+        const robotKey = KEY_CODE_MAP[code] || code.toLowerCase()
+        robot.keyToggle(robotKey, 'up')
+      }
     }
-    if (pressedModifiers.Shift) {
-      console.log('[重置] Shift: 释放')
-    }
-    if (pressedModifiers.Alt) {
-      console.log('[重置] Alt: 释放')
-    }
-    if (pressedModifiers.Meta) {
-      console.log('[重置] Meta: 释放')
-    }
-    
-    if (pressedButtons.left) {
-      console.log('[重置] 左键: 释放')
-      pressedButtons.left = false
-    }
-    if (pressedButtons.right) {
-      console.log('[重置] 右键: 释放')
-      pressedButtons.right = false
-    }
-    if (pressedButtons.middle) {
-      console.log('[重置] 中键: 释放')
-      pressedButtons.middle = false
-    }
+    pressedKeys.clear()
   } catch (e) {
-    console.log('[重置] 错误:', e)
+    log('error', '重置错误:', e.message)
   }
   
   pressedModifiers = {
@@ -367,36 +458,26 @@ function resetModifiers() {
   }
 }
 
-/**
- * 重置所有输入状态（完整重置）
- * 在连接断开或发生错误时调用
- */
 function resetAllInputState() {
-  console.log('[重置] 所有输入状态...')
-  
-  try {
-    Object.keys(pressedModifiers).forEach(key => {
-      if (pressedModifiers[key]) {
-        console.log('[重置]', key, ': 释放')
-        pressedModifiers[key] = false
-      }
-    })
-    
-    Object.keys(pressedButtons).forEach(button => {
-      if (pressedButtons[button]) {
-        console.log('[重置]', button, '按钮: 释放')
-        pressedButtons[button] = false
-      }
-    })
-    
-    console.log('[重置] 所有输入状态已重置')
-  } catch (e) {
-    console.error('[重置] 错误:', e)
-  }
+  log('info', '重置所有输入状态')
+  resetModifiers()
+}
+
+function cleanup() {
+  resetAllInputState()
+  currentMouseX = 0
+  currentMouseY = 0
+  pressedKeys = new Set()
+  pressedButtons = { left: false, right: false, middle: false }
+  pressedModifiers = { Control: false, Shift: false, Alt: false, Meta: false }
+  log('info', '输入处理器已清理')
 }
 
 module.exports = {
   handleRemoteInput,
   resetModifiers,
-  resetAllInputState
+  resetAllInputState,
+  cleanup,
+  initLogger,
+  flushInterpolationQueue: () => {}
 }

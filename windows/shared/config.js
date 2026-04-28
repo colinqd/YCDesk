@@ -7,12 +7,20 @@ const isDevelopment = (() => {
 })();
 
 const CONFIG = {
-  defaultSignalingServer: 'http://localhost:3000',
+  defaultSignalingServer: 'ws://localhost:3000',
   stunServers: [
     'stun:stun.l.google.com:19302',
     'stun:stun1.l.google.com:19302',
     'stun:stun2.l.google.com:19302',
-    'stun:stun3.l.google.com:19302'
+    'stun:stun3.l.google.com:19302',
+    'stun:stun.stunprotocol.org:3478',
+    'stun:stun.voxgratia.org:3478',
+    'stun:stun.voip.eutelia.it:3478',
+    'stun:stun.services.mozilla.com:3478',
+    'stun:stunserver.org:3478',
+    'stun:stun.softjoys.com:3478',
+    'stun:stun.voipbuster.com:3478',
+    'stun:global.stun.twilio.com:3478'
   ],
   turnServers: [],
   defaultPort: 8080,
@@ -50,8 +58,15 @@ const CONFIG = {
   storage: {
     keys: {
       directHistory: 'ycdesk_direct_history',
-      signalingHistory: 'ycdesk_signaling_history'
+      signalingHistory: 'ycdesk_signaling_history',
+      deviceId: 'ycdesk_device_id'
     }
+  },
+  deviceId: {
+    minLength: 6,
+    maxLength: 16,
+    defaultLength: 9,
+    allowedChars: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
   },
   webrtc: {
     iceTransportPolicy: 'all',
@@ -140,8 +155,40 @@ function getVideoConstraints(customConstraints = {}) {
   }
 }
 
+function normalizeServerUrl(url, preferSecure = null) {
+  if (!url) {
+    return url
+  }
+  
+  let normalized = url.trim()
+  
+  normalized = normalized.replace(/^wws:\/\//i, 'wss://')
+  normalized = normalized.replace(/^wss:\/\//i, 'wss://')
+  normalized = normalized.replace(/^ws:\/\//i, 'ws://')
+  
+  if (normalized.match(/^wss?:\/\//i)) {
+    return normalized
+  }
+  
+  normalized = normalized.replace(/^https:\/\//i, 'wss://')
+  normalized = normalized.replace(/^http:\/\//i, 'ws://')
+  
+  if (normalized.match(/^wss?:\/\//i)) {
+    return normalized
+  }
+  
+  if (preferSecure === true) {
+    normalized = 'wss://' + normalized
+  } else {
+    normalized = 'ws://' + normalized
+  }
+  
+  return normalized
+}
+
 CONFIG.getIceConfig = getIceConfig
 CONFIG.getVideoConstraints = getVideoConstraints
+CONFIG.normalizeServerUrl = normalizeServerUrl
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = CONFIG
@@ -149,4 +196,5 @@ if (typeof module !== 'undefined' && module.exports) {
   window.CONFIG = CONFIG
   window.getIceConfig = getIceConfig
   window.getVideoConstraints = getVideoConstraints
+  window.normalizeServerUrl = normalizeServerUrl
 }

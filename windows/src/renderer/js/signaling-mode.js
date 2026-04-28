@@ -1,6 +1,93 @@
 class SignalingModeManager {
   constructor(options = {}) {
-    this.socket = null
+    this.signalingClient = new SignalingClient({
+      log: options.log || console.log,
+      maxReconnectAttempts: 5,
+      reconnectDelay: 2000,
+      onRegistered: (data) => {},
+      onIncomingConnection: (data) => {
+        this.incomingFromDeviceId = data.fromDeviceId
+        this.currentSessionId = data.sessionId
+        this.isController = false
+        if (typeof this.onIncomingConnection === 'function') {
+          this.onIncomingConnection(data.fromDeviceId)
+        }
+      },
+      onConnectionResult: (data) => {
+        if (data.accepted) {
+          this.currentSessionId = data.sessionId
+          this.incomingFromDeviceId = data.toDeviceId
+          this.startControllerConnection()
+        } else {
+          alert('对方拒绝了连接请求')
+        }
+      },
+      onConnectionFailed: (data) => {
+        alert('连接失败: ' + (data.reason === 'device-offline' ? '目标设备不在线' : data.reason))
+      },
+      onOffer: (data) => {
+        if (data.fromDeviceId && data.fromDeviceId === this.myDeviceId) {
+          this.logFn('[自连接] 收到自己的offer回环，转发给被控端')
+          this.handleOffer(data)
+        } else if (this.isController) {
+          window.electronAPI.sendToRemoteWindow('signaling-offer', data)
+        } else {
+          this.handleOffer(data)
+        }
+      },
+      onAnswer: (data) => {
+        if (data.fromDeviceId && data.fromDeviceId === this.myDeviceId) {
+          this.logFn('[自连接] 收到自己的answer回环，转发给远程窗口')
+          window.electronAPI.sendToRemoteWindow('signaling-answer', data)
+        } else if (this.isController) {
+          window.electronAPI.sendToRemoteWindow('signaling-answer', data)
+        } else if (this.peerConnection) {
+          this.handleAnswer(data.answer)
+        }
+      },
+      onIceCandidate: (data) => {
+        var candidateKey = ''
+        if (data.candidate && data.candidate.candidate) {
+          candidateKey = data.candidate.candidate
+        }
+        if (data.fromDeviceId && data.fromDeviceId === this.myDeviceId) {
+          if (this.remoteWindowIceCandidateKeys.has(candidateKey)) {
+            this.remoteWindowIceCandidateKeys.delete(candidateKey)
+            this.logFn('[自连接] 收到远程窗口ICE候选回环，添加到被控端')
+            if (this.peerConnection) {
+              this.handleIceCandidate(data.candidate)
+            }
+          } else {
+            this.logFn('[自连接] 收到被控端ICE候选回环，转发给远程窗口')
+            window.electronAPI.sendToRemoteWindow('signaling-ice-candidate', data)
+          }
+        } else if (this.isController) {
+          window.electronAPI.sendToRemoteWindow('signaling-ice-candidate', data)
+        } else if (this.peerConnection) {
+          this.handleIceCandidate(data.candidate)
+        }
+      },
+      onConnected: () => {
+        if (this.uiManager) {
+          this.uiManager.updateServerStatus('已连接', 'connected')
+        }
+      },
+      onDisconnected: () => {
+        if (this.uiManager) {
+          this.uiManager.updateServerStatus('已断开', 'disconnected')
+        }
+        if (typeof this.onDisconnectedCallback === 'function') {
+          this.onDisconnectedCallback()
+        }
+        window.electronAPI.sendToRemoteWindow('signaling-disconnected', { reason: 'connection closed' })
+      },
+      onError: () => {
+        if (this.uiManager) {
+          this.uiManager.updateServerStatus('连接失败', 'error')
+        }
+      }
+    })
+
     this.currentSessionId = null
     this.incomingFromDeviceId = null
     this.isController = false
@@ -9,75 +96,60 @@ class SignalingModeManager {
     this.uiManager = options.uiManager
     this.config = options.config || {}
     this.onConnected = options.onConnected || null
-    this.onDisconnected = options.onDisconnected || null
+    this.onDisconnectedCallback = options.onDisconnected || null
     this.onIncomingConnection = options.onIncomingConnection || null
     
     this.peerConnection = null
     this.dataChannelManager = null
+    this.inputChannel = null
+    this.inputChannelReady = false
+    this.auxiliaryChannels = new Map()
     this.pendingIceCandidates = []
     this.pendingStartSignal = null
+    this.serverUrl = ''
+    this.role = ''
+    this.selfConnection = false
+    this.remoteWindowIceCandidateKeys = new Set()
+    this.videoFrameTransmitter = null
+    this.useOptimizedTransfer = options.useOptimizedTransfer !== false
+    this.OPTIMIZED_VIDEO_CHANNEL = 'optimized-video'
+    this.optimizedVideoChannel = null
+    
+    this._setupRemoteWindowListeners()
   }
 
   setDeviceId(deviceId) {
     this.myDeviceId = deviceId
+    this.signalingClient.setDeviceId(deviceId)
+  }
+
+  setConnectionMode(mode) {
+    this.signalingClient.setConnectionMode(mode)
   }
 
   async connect(serverUrl, role) {
-    // 自动修正 URL（如 wws:// -> wss://），保留用户输入的协议
-    let normalizedUrl = serverUrl
+    this.serverUrl = serverUrl
+    this.role = role
+
+    let normalizedUrl = serverUrl.trim()
+    this.logFn('原始地址: ' + serverUrl)
+    
     if (window.CONFIG && window.CONFIG.normalizeServerUrl) {
-      const originalUrl = serverUrl
-      normalizedUrl = window.CONFIG.normalizeServerUrl(serverUrl)
-      if (originalUrl !== normalizedUrl) {
-        this.logFn('自动修正服务器地址: ' + originalUrl + ' -> ' + normalizedUrl)
-      }
-    } else {
-      normalizedUrl = serverUrl
+      normalizedUrl = window.CONFIG.normalizeServerUrl(normalizedUrl)
+      this.logFn('normalize后: ' + normalizedUrl)
     }
     
-    // 显示连接协议信息
-    const protocol = normalizedUrl.startsWith('wss://') || normalizedUrl.startsWith('https://') ? 'HTTPS/WSS (安全)' : 'HTTP/WS (非安全)'
-    this.logFn('正在连接信令服务器 [' + protocol + ']: ' + normalizedUrl)
     if (this.uiManager) {
-      this.uiManager.updateServerStatus('连接中... (' + protocol + ')', 'connecting')
+      this.uiManager.updateServerStatus('连接中...', 'connecting')
     }
 
-    try {
-      if (this.socket) {
-        this.socket.disconnect()
-      }
-
-      this.socket = io(normalizedUrl, {
-        transports: ['websocket', 'polling'],
-        reconnection: true,
-        reconnectionAttempts: this.config.maxReconnectAttempts || 10,
-        reconnectionDelay: this.config.reconnectDelay || 1000,
-        timeout: 10000,
-        rejectUnauthorized: false
-      })
-
-      this._setupSocketListeners(role, normalizedUrl)
-    } catch (error) {
-      this.logFn('✗ 连接初始化错误: ' + error.message)
-      this.logFn('提示: 如果使用 HTTPS/WSS，确保证书已正确安装')
-      this.logFn('提示: 如果不想使用证书，可以尝试用 http:// 或 ws:// 开头的地址')
-      if (this.uiManager) {
-        this.uiManager.updateServerStatus('连接失败', 'error')
-      }
-      throw error
-    }
+    this.signalingClient.connect(normalizedUrl)
   }
 
   disconnect() {
-    if (this.socket) {
-      this.socket.disconnect()
-      this.socket = null
-      this.logFn('已手动断开服务器连接')
-      if (this.uiManager) {
-        this.uiManager.updateServerStatus('已断开', 'disconnected')
-      }
-    } else {
-      this.logFn('未连接到服务器')
+    this.signalingClient.disconnect()
+    if (this.uiManager) {
+      this.uiManager.updateServerStatus('已断开', 'disconnected')
     }
   }
 
@@ -86,21 +158,18 @@ class SignalingModeManager {
       alert('请输入设备 ID')
       return false
     }
-    if (targetDeviceId.length !== 9) {
-      alert('设备 ID 格式不正确（需要 9 位字符）')
+    if (targetDeviceId.length < 6 || targetDeviceId.length > 16) {
+      alert('设备 ID 格式不正确（需要 6-16 位字符）')
       return false
     }
-    if (targetDeviceId === this.myDeviceId) {
-      alert('不能连接自己')
-      return false
-    }
-    if (!this.socket || !this.socket.connected) {
+    if (!this.signalingClient.isConnected()) {
       alert('未连接到信令服务器，请先连接服务器')
       return false
     }
 
     this.incomingFromDeviceId = targetDeviceId
-    this.socket.emit('connect-request', {
+    this.selfConnection = (targetDeviceId === this.myDeviceId)
+    this.signalingClient.send('connect-request', {
       fromDeviceId: this.myDeviceId,
       toDeviceId: targetDeviceId
     })
@@ -110,8 +179,8 @@ class SignalingModeManager {
   }
 
   acceptConnection() {
-    if (!this.socket) return
-    this.socket.emit('connection-response', {
+    if (!this.signalingClient.isConnected()) return
+    this.signalingClient.send('connection-response', {
       sessionId: this.currentSessionId,
       accepted: true,
       fromDeviceId: this.incomingFromDeviceId,
@@ -119,15 +188,14 @@ class SignalingModeManager {
     })
     
     this.logFn('已接受连接，作为被控端在主窗口建立WebRTC连接')
+    this.selfConnection = (this.incomingFromDeviceId === this.myDeviceId)
     this.isController = false
-    
-    // 被控端直接在主窗口处理WebRTC连接，不打开远程窗口
     this.startControlledConnection()
   }
 
   rejectConnection() {
-    if (!this.socket) return
-    this.socket.emit('connection-response', {
+    if (!this.signalingClient.isConnected()) return
+    this.signalingClient.send('connection-response', {
       sessionId: this.currentSessionId,
       accepted: false,
       fromDeviceId: this.incomingFromDeviceId,
@@ -140,148 +208,52 @@ class SignalingModeManager {
     this.isController = true
     window.electronAPI.openRemoteWindow()
     
-    // 保存启动信号，等待远程窗口准备好
     this.pendingStartSignal = {
       mode: 'controller',
+      role: 'controller',
       sessionId: this.currentSessionId,
-      targetDeviceId: this.incomingFromDeviceId
+      targetDeviceId: this.incomingFromDeviceId,
+      deviceId: this.myDeviceId
     }
     this.logFn('保存启动信号，等待远程窗口准备就绪: ' + JSON.stringify(this.pendingStartSignal))
   }
 
   async startControlledConnection() {
-    this.logFn('作为被控端建立连接，等待接收Offer...')
+    this.logFn('作为被控端建立连接，在主窗口创建PeerConnection')
     this.isController = false
-    // 被控端会等待来自主控端的Offer，无需立即创建PeerConnection
-    this.logFn('已准备好接收WebRTC Offer')
+    await this.createPeerConnection()
+    this.logFn('被控端 PeerConnection 已创建，等待接收Offer...')
   }
 
-  _setupSocketListeners(role, serverUrl) {
-    this.socket.on('connect', () => {
-      this.logFn('✓ 已连接到信令服务器，Socket ID: ' + this.socket.id)
-      this.logFn('正在注册设备 ID: ' + this.myDeviceId)
-      this.socket.emit('register', this.myDeviceId)
-      if (this.uiManager) {
-        this.uiManager.updateServerStatus('已连接', 'connected')
-      }
-    })
-
-    this.socket.on('disconnect', (reason) => {
-      this.logFn('与信令服务器断开连接，原因: ' + reason)
-      if (this.uiManager) {
-        this.uiManager.updateServerStatus('已断开', 'disconnected')
-      }
-      if (typeof this.onDisconnected === 'function') {
-        this.onDisconnected()
-      }
-      
-      window.electronAPI.sendToRemoteWindow('signaling-disconnected', { reason })
-    })
-
-    this.socket.on('connect_error', (error) => {
-      this.logFn('✗ 连接错误: ' + (error.message || error))
-      if (this.uiManager) {
-        this.uiManager.updateServerStatus('连接失败', 'error')
-      }
-    })
-
-    this.socket.on('reconnect_attempt', (attemptNumber) => {
-      this.logFn('正在尝试重连... (第 ' + attemptNumber + ' 次)')
-    })
-
-    this.socket.on('reconnect_failed', () => {
-      this.logFn('✗ 重连失败，请检查服务器地址和网络连接')
-      if (this.uiManager) {
-        this.uiManager.updateServerStatus('重连失败', 'error')
-      }
-    })
-
-    this.socket.on('incoming-connection', (data) => {
-      this.logFn('收到连接请求: ' + JSON.stringify(data))
-      this.incomingFromDeviceId = data.fromDeviceId
-      this.currentSessionId = data.sessionId
-      this.isController = false
-      
-      if (typeof this.onIncomingConnection === 'function') {
-        this.onIncomingConnection(data.fromDeviceId)
-      }
-    })
-
-    this.socket.on('connection-result', async (data) => {
-      this.logFn('连接结果: ' + JSON.stringify(data))
-      if (data.accepted) {
-        this.currentSessionId = data.sessionId
-        this.incomingFromDeviceId = data.toDeviceId
-        await this.startControllerConnection()
-      } else {
-        alert('对方拒绝了连接请求')
-      }
-    })
-
-    this.socket.on('offer', async (data) => {
-      this.logFn('收到 offer')
-      if (this.isController) {
-        this.logFn('作为主控端，转发到远程窗口')
-        window.electronAPI.sendToRemoteWindow('signaling-offer', data)
-      } else {
-        this.logFn('作为被控端，直接处理offer')
-        await this.handleOffer(data)
-      }
-    })
-
-    this.socket.on('answer', async (data) => {
-      this.logFn('收到 answer')
-      if (this.isController) {
-        this.logFn('作为主控端，转发到远程窗口')
-        window.electronAPI.sendToRemoteWindow('signaling-answer', data)
-      } else if (this.peerConnection) {
-        this.logFn('作为被控端，直接处理answer')
-        await this.handleAnswer(data.answer)
-      }
-    })
-
-    this.socket.on('ice-candidate', async (data) => {
-      this.logFn('收到 ICE candidate')
-      if (this.isController) {
-        this.logFn('作为主控端，转发到远程窗口')
-        window.electronAPI.sendToRemoteWindow('signaling-ice-candidate', data)
-      } else {
-        this.logFn('作为被控端，直接处理ICE candidate')
-        await this.handleIceCandidate(data.candidate)
-      }
-    })
-
+  _setupRemoteWindowListeners() {
     window.electronAPI.on('send-signaling-offer', (data) => {
       this.logFn('从远程窗口收到 offer，发送到信令服务器')
-      if (this.socket) {
-        this.socket.emit('offer', {
-          sessionId: data.sessionId || this.currentSessionId,
-          offer: data.offer,
-          toDeviceId: data.targetDeviceId || this.incomingFromDeviceId
-        })
-      }
+      this.signalingClient.send('offer', {
+        sessionId: data.sessionId || this.currentSessionId,
+        offer: data.offer,
+        toDeviceId: data.targetDeviceId || this.incomingFromDeviceId
+      })
     })
 
     window.electronAPI.on('send-signaling-answer', (data) => {
       this.logFn('从远程窗口收到 answer，发送到信令服务器')
-      if (this.socket) {
-        this.socket.emit('answer', {
-          sessionId: data.sessionId || this.currentSessionId,
-          answer: data.answer,
-          toDeviceId: data.targetDeviceId || this.incomingFromDeviceId
-        })
-      }
+      this.signalingClient.send('answer', {
+        sessionId: data.sessionId || this.currentSessionId,
+        answer: data.answer,
+        toDeviceId: data.targetDeviceId || this.incomingFromDeviceId
+      })
     })
 
     window.electronAPI.on('send-signaling-ice-candidate', (data) => {
       this.logFn('从远程窗口收到 ICE candidate，发送到信令服务器')
-      if (this.socket) {
-        this.socket.emit('ice-candidate', {
-          sessionId: data.sessionId || this.currentSessionId,
-          candidate: data.candidate,
-          toDeviceId: data.targetDeviceId || this.incomingFromDeviceId
-        })
+      if (data.candidate && data.candidate.candidate) {
+        this.remoteWindowIceCandidateKeys.add(data.candidate.candidate)
       }
+      this.signalingClient.send('ice-candidate', {
+        sessionId: data.sessionId || this.currentSessionId,
+        candidate: data.candidate,
+        toDeviceId: data.targetDeviceId || this.incomingFromDeviceId
+      })
     })
   }
 
@@ -305,6 +277,17 @@ class SignalingModeManager {
         this.dataChannelManager.send({ type: 'pong', timestamp: data.timestamp })
       } else if (data.type === 'screen-size') {
         this.logFn('[信令模式] 收到屏幕尺寸: ' + data.width + 'x' + data.height)
+      } else if (data.type === 'resolution-request') {
+        this.logFn('[信令模式] 收到分辨率请求: ' + data.width + 'x' + data.height)
+        const screenW = this.config.screenCapture?.maxWidth || 1920
+        const screenH = this.config.screenCapture?.maxHeight || 1080
+        this.dataChannelManager.send({
+          type: 'resolution-response',
+          width: screenW,
+          height: screenH
+        })
+      } else if (data.type === 'resolution-change') {
+        this.logFn('[信令模式] 收到分辨率变更请求: ' + data.width + 'x' + data.height)
       }
     })
 
@@ -319,7 +302,7 @@ class SignalingModeManager {
     this.peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
         this.logFn('[信令模式] 发送ICE候选')
-        const candidateData = {
+        this.signalingClient.send('ice-candidate', {
           sessionId: this.currentSessionId,
           candidate: {
             candidate: event.candidate.candidate,
@@ -327,10 +310,7 @@ class SignalingModeManager {
             sdpMLineIndex: event.candidate.sdpMLineIndex
           },
           toDeviceId: this.incomingFromDeviceId
-        }
-        if (this.socket) {
-          this.socket.emit('ice-candidate', candidateData)
-        }
+        })
       }
     }
 
@@ -340,7 +320,6 @@ class SignalingModeManager {
 
     this.peerConnection.onconnectionstatechange = () => {
       this.logFn('[信令模式] 连接状态: ' + this.peerConnection.connectionState)
-
       if (this.peerConnection.connectionState === 'connected') {
         this.logFn('[信令模式] WebRTC连接已建立')
       } else if (this.peerConnection.connectionState === 'failed') {
@@ -349,13 +328,67 @@ class SignalingModeManager {
     }
 
     this.peerConnection.ondatachannel = (event) => {
-      this.logFn('[信令模式] 收到数据通道')
-      this.dataChannelManager.setDataChannel(event.channel)
+      const label = event.channel.label
+      this.logFn('[信令模式] 收到数据通道: ' + label)
+      
+      if (label === 'control') {
+        this.dataChannelManager.setDataChannel(event.channel)
+      } else if (label === 'input') {
+        this.inputChannel = event.channel
+        this.inputChannelReady = true
+        this.inputChannel.onmessage = (evt) => {
+          try {
+            const data = JSON.parse(evt.data)
+            if (data.type === 'input') {
+              window.electronAPI.send('remote-input', data)
+            }
+          } catch (e) {
+            this.logFn('[信令模式] 输入通道消息解析失败: ' + e.message)
+          }
+        }
+        this.inputChannel.onclose = () => {
+          this.inputChannelReady = false
+          this.logFn('[信令模式] 输入数据通道已关闭')
+        }
+        this.inputChannel.onerror = (error) => {
+          this.inputChannelReady = false
+          this.logFn('[信令模式] 输入数据通道错误: ' + error)
+        }
+        this.logFn('[信令模式] 输入数据通道已就绪')
+      } else if (label.startsWith('aux-')) {
+        const channelName = label.replace('aux-', '')
+        this.auxiliaryChannels.set(channelName, event.channel)
+        this.logFn('[信令模式] 辅助通道 ' + channelName + ' 已打开')
+      } else if (label === this.OPTIMIZED_VIDEO_CHANNEL) {
+        this.logFn('[信令模式] 收到优化视频通道')
+        this.optimizedVideoChannel = event.channel
+      }
     }
     
     this.peerConnection.ontrack = (event) => {
       this.logFn('[信令模式] 收到远程媒体流，track数量: ' + event.tracks.length)
     }
+
+    if (this.useOptimizedTransfer) {
+      this.videoFrameTransmitter = new VideoFrameTransmitter({
+        logger: { log: this.logFn.bind(this), error: console.error }
+      })
+
+      this.videoFrameTransmitter.onStatsUpdate = (stats) => {
+        this.logFn('[信令模式][传输统计] 帧:' + stats.framesSent +
+          ' 关键帧:' + stats.keyFramesSent +
+          ' 差异帧:' + stats.deltaFramesSent +
+          ' 平均脏区域:' + stats.avgDirtyRegions.toFixed(1))
+      }
+
+      this.videoFrameTransmitter.onFallbackToStandard = () => {
+        this.logFn('[信令模式] 优化传输回退到标准模式')
+      }
+
+      this.logFn('[信令模式] 优化视频传输模式已初始化')
+    }
+
+    this.setupInputEventListeners()
   }
 
   async handleOffer(data) {
@@ -367,7 +400,11 @@ class SignalingModeManager {
     this.logFn('[信令模式] 收到offer')
 
     try {
-      await this.createPeerConnection()
+      if (!this.peerConnection) {
+        await this.createPeerConnection()
+      } else {
+        this.logFn('[信令模式] 复用已有PeerConnection')
+      }
       
       this.logFn('[信令模式] 设置远程描述...')
       await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer))
@@ -383,16 +420,14 @@ class SignalingModeManager {
       await this.peerConnection.setLocalDescription(answer)
       this.logFn('[信令模式] 本地描述设置成功')
 
-      if (this.socket) {
-        this.socket.emit('answer', {
-          sessionId: data.sessionId || this.currentSessionId,
-          answer: {
-            type: answer.type,
-            sdp: answer.sdp
-          },
-          toDeviceId: data.fromDeviceId || this.incomingFromDeviceId
-        })
-      }
+      this.signalingClient.send('answer', {
+        sessionId: data.sessionId || this.currentSessionId,
+        answer: {
+          type: answer.type,
+          sdp: answer.sdp
+        },
+        toDeviceId: data.fromDeviceId || this.incomingFromDeviceId
+      })
 
       this.logFn('[信令模式] 已发送answer')
     } catch (error) {
@@ -417,19 +452,14 @@ class SignalingModeManager {
   }
 
   async handleIceCandidate(candidate) {
-    if (!candidate) {
-      return
-    }
+    if (!candidate) return
 
     try {
-      if (candidate.sdpMid === null && candidate.sdpMLineIndex === null) {
-        return
-      }
+      if (candidate.sdpMid === null && candidate.sdpMLineIndex === null) return
 
       if (!this.peerConnection || !this.peerConnection.remoteDescription) {
         const MAX_ICE_CANDIDATES = 50
         if (this.pendingIceCandidates.length >= MAX_ICE_CANDIDATES) {
-          this.logFn('[信令模式] ICE 候选缓存已满，丢弃最早的候选')
           this.pendingIceCandidates.shift()
         }
         this.logFn('[信令模式] 缓存 ICE 候选（远程描述未设置）')
@@ -462,14 +492,28 @@ class SignalingModeManager {
       this.logFn('[信令模式] 可用屏幕源: ' + sources.length + ' 个')
 
       if (sources.length > 0) {
+        var maxWidth = this.config.screenCapture?.maxWidth || 1920
+        var maxHeight = this.config.screenCapture?.maxHeight || 1080
+
+        if (this.useOptimizedTransfer && this.videoFrameTransmitter && this.optimizedVideoChannel && this.optimizedVideoChannel.readyState === 'open') {
+          this.logFn('[信令模式] 使用优化传输模式捕获屏幕')
+          this.videoFrameTransmitter.initialize(this.optimizedVideoChannel, maxWidth, maxHeight)
+          var resolution = await this.videoFrameTransmitter.start(sources[0].id, maxWidth, maxHeight)
+          if (resolution) {
+            this.logFn('[信令模式] 优化屏幕捕获成功，分辨率: ' + resolution.width + 'x' + resolution.height)
+            return
+          }
+          this.logFn('[信令模式] 优化传输启动失败，回退到标准模式')
+        }
+
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: false,
           video: {
             mandatory: {
               chromeMediaSource: 'desktop',
               chromeMediaSourceId: sources[0].id,
-              maxWidth: this.config.screenCapture?.maxWidth || 1920,
-              maxHeight: this.config.screenCapture?.maxHeight || 1080,
+              maxWidth: maxWidth,
+              maxHeight: maxHeight,
               maxFrameRate: this.config.screenCapture?.maxFrameRate || 30,
               minFrameRate: this.config.screenCapture?.minFrameRate || 15
             }
@@ -480,8 +524,21 @@ class SignalingModeManager {
         this.logFn('[信令模式] 获取到 ' + tracks.length + ' 个媒体轨道')
 
         tracks.forEach(track => {
-          this.peerConnection.addTrack(track, stream)
+          var sender = this.peerConnection.addTrack(track, stream)
           this.logFn('[信令模式] 已添加媒体轨道: ' + track.kind + ', label: ' + track.label)
+
+          try {
+            var parameters = sender.getParameters()
+            if (!parameters.encodings || parameters.encodings.length === 0) {
+              parameters.encodings = [{}]
+            }
+            parameters.encodings[0].maxBitrate = 2000000
+            parameters.encodings[0].maxFramerate = 20
+            sender.setParameters(parameters)
+            this.logFn('[信令模式] 已设置视频编码参数: maxBitrate=2Mbps, maxFramerate=20')
+          } catch (e) {
+            this.logFn('[信令模式] 设置视频编码参数失败: ' + e.message)
+          }
         })
 
         this.logFn('[信令模式] 屏幕捕获成功，分辨率: ' + 
@@ -496,11 +553,25 @@ class SignalingModeManager {
     }
   }
 
+  setupInputEventListeners() {
+    window.electronAPI.on('remote-input', (data) => {
+      if (this.videoFrameTransmitter && data.x !== undefined && data.y !== undefined) {
+        var inputType = data.type || data.inputType || 'unknown'
+        this.videoFrameTransmitter.markInputRegion(data.x, data.y, inputType)
+      }
+    })
+  }
+
   reset() {
     this.currentSessionId = null
     this.incomingFromDeviceId = null
     this.isController = false
     this.pendingIceCandidates = []
+
+    if (this.videoFrameTransmitter) {
+      this.videoFrameTransmitter.reset()
+      this.videoFrameTransmitter = null
+    }
 
     if (this.dataChannelManager) {
       try {

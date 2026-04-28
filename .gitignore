@@ -5,6 +5,7 @@ server/node_modules/
 # Electron
 out/
 dist/
+dist-v2/
 dist_debug/
 dist_fixed*/
 dist_optimized/
@@ -27,3 +28,8 @@ npm-debug.log*
 *.exe
 *.dmg
 *.AppImage
+
+# Android
+android-server/.gradle/
+android-server/app/build/
+android-server/local.properties

@@ -1,0 +1,18 @@
+<resources>
+    <color name="primary_start">#667eea</color>
+    <color name="primary_end">#764ba2</color>
+    <color name="status_green">#28a745</color>
+    <color name="status_red">#dc3545</color>
+    <color name="text_primary">#333333</color>
+    <color name="text_secondary">#495057</color>
+    <color name="text_hint">#666666</color>
+    <color name="card_bg">#f8f9fa</color>
+    <color name="card_selected_bg">#F0F0FF</color>
+    <color name="card_border">#e9ecef</color>
+    <color name="card_selected_border">#667eea</color>
+    <color name="log_bg">#1e1e1e</color>
+    <color name="log_text">#98c379</color>
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+    <color name="ic_launcher_background">#667eea</color>
+</resources>

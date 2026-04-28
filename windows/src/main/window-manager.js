@@ -37,20 +37,17 @@ function createMainWindow() {
     mainWindow.webContents.openDevTools({ mode: 'detach' })
   }
 
-  // 延迟设置 minimize 事件，避免初始化时误触发
-  setTimeout(() => {
-    mainWindow.on('minimize', (event) => {
-      event.preventDefault()
-      mainWindow.hide()
-      if (tray) {
-        tray.displayBalloon({
-          iconType: 'info',
-          title: 'YCDesk',
-          content: '程序已最小化到系统托盘，双击图标可恢复窗口'
-        })
-      }
-    })
-  }, 1000)
+  mainWindow.on('minimize', (event) => {
+    event.preventDefault()
+    mainWindow.hide()
+    if (tray) {
+      tray.displayBalloon({
+        iconType: 'info',
+        title: 'YCDesk',
+        content: '程序已最小化到系统托盘，双击图标可恢复窗口'
+      })
+    }
+  })
 
   mainWindow.on('close', (event) => {
   })
@@ -88,17 +85,22 @@ function createRemoteWindow() {
     title: 'YCDesk - 远程控制中',
     icon: path.join(__dirname, '../../assets/icon.png'),
     show: false,
-    backgroundColor: '#1a1a2e'
+    backgroundColor: '#1a1a2e',
+    fullscreen: true
   })
 
   remoteWindow.loadFile('remote.html')
 
-  // 禁用 Electron 的默认缩放快捷键，避免和我们自定义的 Ctrl+滚轮冲突
-  remoteWindow.webContents.setVisualZoomLevelLimits(1, 1)
-
   remoteWindow.once('ready-to-show', () => {
     remoteWindow.show()
   })
+
+  remoteWindow.webContents.on('zoom-changed', (event, zoomDirection) => {
+    event.preventDefault()
+  })
+
+  remoteWindow.webContents.setZoomLevel(0)
+  remoteWindow.webContents.setVisualZoomLevelLimits(1, 1)
 
   if (process.argv.includes('--dev') || process.env.NODE_ENV === 'development') {
     remoteWindow.webContents.openDevTools({ mode: 'detach' })
@@ -121,10 +123,15 @@ function createTray() {
     path.join(__dirname, '../../build/icon.ico')
   ]
   
+  console.log('尝试加载托盘图标，路径列表:', iconPaths)
+  
   for (const iconPath of iconPaths) {
     try {
+      console.log('检查图标路径:', iconPath)
       if (require('fs').existsSync(iconPath)) {
+        console.log('图标文件存在，尝试加载:', iconPath)
         icon = nativeImage.createFromPath(iconPath)
+        console.log('加载后图标是否为空:', icon.isEmpty())
         if (!icon.isEmpty()) {
           console.log('托盘图标加载成功:', iconPath)
           break
@@ -136,8 +143,24 @@ function createTray() {
   }
   
   if (!icon || icon.isEmpty()) {
+    console.log('所有图标加载失败，尝试使用内置图标')
+    try {
+      const builtInIconPath = path.join(process.resourcesPath, 'assets/icon.png')
+      console.log('尝试内置图标路径:', builtInIconPath)
+      if (require('fs').existsSync(builtInIconPath)) {
+        icon = nativeImage.createFromPath(builtInIconPath)
+        if (!icon.isEmpty()) {
+          console.log('内置托盘图标加载成功')
+        }
+      }
+    } catch (e) {
+      console.log('加载内置图标失败:', e.message)
+    }
+  }
+  
+  if (!icon || icon.isEmpty()) {
+    console.log('使用默认图标')
     icon = nativeImage.createEmpty()
-    console.log('使用空图标作为托盘图标')
   }
 
   tray = new Tray(icon)

@@ -1,7 +1,39 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
+const SEND_CHANNELS = Object.freeze([
+  'remote-input',
+  'remote-window-ready',
+  'send-signaling-offer',
+  'send-signaling-answer',
+  'send-signaling-ice-candidate'
+])
+
+const RECEIVE_CHANNELS = Object.freeze([
+  'webrtc-answer',
+  'webrtc-ice-candidate',
+  'webrtc-offer',
+  'signaling-mode-start',
+  'signaling-offer',
+  'signaling-answer',
+  'signaling-ice-candidate',
+  'signaling-disconnected',
+  'direct-mode-start',
+  'direct-incoming-connection',
+  'direct-message',
+  'direct-connection-closed',
+  'remote-window-ready',
+  'send-signaling-offer',
+  'send-signaling-answer',
+  'send-signaling-ice-candidate'
+])
+
+const listenerRegistry = new Map()
+
 contextBridge.exposeInMainWorld('electronAPI', {
   getDeviceId: () => ipcRenderer.invoke('get-device-id'),
+  setDeviceId: (id) => ipcRenderer.invoke('set-device-id', id),
+  resetDeviceId: () => ipcRenderer.invoke('reset-device-id'),
+  validateDeviceId: (id) => ipcRenderer.invoke('validate-device-id', id),
   getSources: () => ipcRenderer.invoke('get-sources'),
   openRemoteWindow: () => ipcRenderer.invoke('open-remote-window'),
   getScreenSize: () => ipcRenderer.invoke('get-screen-size'),
@@ -12,54 +44,54 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sendToMainWindow: (channel, data) => ipcRenderer.invoke('send-to-main-window', channel, data),
   executeInRemoteWindow: (code) => ipcRenderer.invoke('execute-in-remote-window', code),
   
-  // 远程窗口发送信令消息到主窗口
   sendSignalingMessage: (channel, data) => {
-    const validChannels = [
-      'send-signaling-offer', 'send-signaling-answer', 'send-signaling-ice-candidate'
-    ]
-    if (validChannels.includes(channel)) {
-      console.log('[Preload] sendSignalingMessage 发送消息:', channel, JSON.stringify(data).substring(0, 200))
+    if (SEND_CHANNELS.includes(channel)) {
       ipcRenderer.send(channel, data)
-      console.log('[Preload] sendSignalingMessage 发送完成')
-    } else {
-      console.log('[Preload] sendSignalingMessage 无效通道:', channel)
     }
   },
   
   send: (channel, data) => {
-    const validChannels = [
-      'toMain', 'fromMain', 'remote-input',
-      'send-signaling-offer', 'send-signaling-answer', 'send-signaling-ice-candidate',
-      'remote-window-ready'
-    ]
-    if (validChannels.includes(channel)) {
+    if (SEND_CHANNELS.includes(channel)) {
       ipcRenderer.send(channel, data)
     }
   },
   
   on: (channel, callback) => {
-    const validChannels = [
-      'toMain', 'fromMain', 'remote-stream', 
-      'direct-incoming-connection', 'direct-message', 'direct-connection-closed', 
-      'webrtc-answer', 'webrtc-ice-candidate', 'webrtc-offer',
-      'signaling-mode-start', 'signaling-offer', 'signaling-answer', 
-      'signaling-ice-candidate', 'signaling-disconnected',
-      'direct-mode-start',
-      'remote-window-ready',
-      'send-signaling-offer', 'send-signaling-answer', 'send-signaling-ice-candidate'
-    ]
-    if (validChannels.includes(channel)) {
-      ipcRenderer.on(channel, (event, ...args) => {
-        console.log('[Preload] Received IPC event:', channel)
-        callback(...args)
-      })
-    } else {
-      console.log('[Preload] Invalid channel:', channel)
+    if (!RECEIVE_CHANNELS.includes(channel)) {
+      return
+    }
+    
+    const handler = (event, ...args) => callback(...args)
+    
+    if (!listenerRegistry.has(channel)) {
+      listenerRegistry.set(channel, new Set())
+    }
+    listenerRegistry.get(channel).add(handler)
+    
+    ipcRenderer.on(channel, handler)
+  },
+  
+  removeListener: (channel, callback) => {
+    const handlers = listenerRegistry.get(channel)
+    if (handlers) {
+      for (const handler of handlers) {
+        if (handler === callback || handler.callback === callback) {
+          ipcRenderer.removeListener(channel, handler)
+          handlers.delete(handler)
+          break
+        }
+      }
     }
   },
   
   removeAllListeners: (channel) => {
-    ipcRenderer.removeAllListeners(channel)
+    const handlers = listenerRegistry.get(channel)
+    if (handlers) {
+      for (const handler of handlers) {
+        ipcRenderer.removeListener(channel, handler)
+      }
+      handlers.clear()
+    }
   },
   
   getLocalIps: () => ipcRenderer.invoke('get-local-ips'),
@@ -84,5 +116,3 @@ contextBridge.exposeInMainWorld('electronAPI', {
   windowClose: () => ipcRenderer.invoke('window-close'),
   setTrayIcon: (visible) => ipcRenderer.invoke('set-tray-icon', visible)
 })
-
-console.log('YCDesk Preload 脚本已加载')

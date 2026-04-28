@@ -41,6 +41,7 @@ class SignalingServer {
     try {
       this._createServer();
       this._setupMiddleware();
+      this._setupWebSocket();
       this._setupSocketIO();
       this._startServer();
       this._startCleanup();
@@ -107,7 +108,6 @@ class SignalingServer {
     this.app.use(cors());
     this.app.use(express.json());
 
-    // 服务器管理页面
     this.app.get('/', (req, res) => {
       res.send(`
 <!DOCTYPE html>
@@ -137,6 +137,204 @@ class SignalingServer {
 </body>
 </html>`);
     });
+  }
+
+  _setupWebSocket() {
+    const WebSocket = require('ws');
+    const wss = new WebSocket.Server({ noServer: true });
+    
+    this.server.on('upgrade', (request, socket, head) => {
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit('connection', ws, request);
+      });
+    });
+    
+    wss.on('connection', (ws, req) => {
+      this.log('原始 WebSocket 连接: ' + req.socket.remoteAddress, 'info');
+      
+      ws.on('message', (message) => {
+        try {
+          const data = JSON.parse(message);
+          this._handleWebSocketMessage(ws, data);
+        } catch (e) {
+          this.log('解析消息失败: ' + e.message, 'error');
+        }
+      });
+      
+      ws.on('close', () => {
+        this.log('原始 WebSocket 断开', 'info');
+        for (const [deviceId, device] of this.devices.entries()) {
+          if (device.socket === ws) {
+            this.devices.delete(deviceId);
+            break;
+          }
+        }
+      });
+    });
+  }
+
+  _findDeviceBySocket(ws) {
+    for (const [deviceId, device] of this.devices.entries()) {
+      if (device.socket === ws) {
+        return deviceId;
+      }
+    }
+    return null;
+  }
+
+  _handleWebSocketMessage(ws, data) {
+    const type = data.type;
+    const senderDeviceId = this._findDeviceBySocket(ws);
+    
+    switch (type) {
+      case 'register': {
+        const { deviceId } = data;
+        this.devices.set(deviceId, {
+          socket: ws,
+          socketId: ws._socket.remoteAddress,
+          deviceId: deviceId,
+          lastSeen: new Date()
+        });
+        this.log('设备注册: ' + deviceId, 'info');
+        ws.send(JSON.stringify({ type: 'registered', deviceId }));
+        break;
+      }
+      case 'connect-request': {
+        const { fromDeviceId, toDeviceId } = data;
+        const sessionId = this._generateSessionId();
+        this.sessions.set(sessionId, {
+          fromDeviceId,
+          toDeviceId,
+          status: 'pending',
+          createdAt: new Date()
+        });
+
+        const toDevice = this.devices.get(toDeviceId);
+        if (toDevice) {
+          if (toDevice.socket) {
+            toDevice.socket.send(JSON.stringify({
+              type: 'incoming-connection',
+              fromDeviceId,
+              sessionId
+            }));
+          } else if (toDevice.socketId) {
+            this.io.to(toDevice.socketId).emit('incoming-connection', {
+              fromDeviceId,
+              sessionId
+            });
+          }
+          this.log('连接请求: ' + fromDeviceId + ' -> ' + toDeviceId, 'info');
+        } else {
+          this.log('目标设备不在线: ' + toDeviceId, 'warning');
+          ws.send(JSON.stringify({
+            type: 'connection-failed',
+            reason: 'device-offline',
+            toDeviceId
+          }));
+        }
+        break;
+      }
+      case 'connection-response': {
+        const { sessionId, accepted, fromDeviceId, toDeviceId } = data;
+        const session = this.sessions.get(sessionId);
+        if (session) {
+          session.status = accepted ? 'accepted' : 'rejected';
+          const fromDevice = this.devices.get(session.fromDeviceId);
+          if (fromDevice) {
+            if (fromDevice.socket) {
+              fromDevice.socket.send(JSON.stringify({
+                type: 'connection-result',
+                accepted,
+                sessionId,
+                fromDeviceId: session.fromDeviceId,
+                toDeviceId: session.toDeviceId
+              }));
+            } else if (fromDevice.socketId) {
+              this.io.to(fromDevice.socketId).emit('connection-result', {
+                accepted,
+                sessionId,
+                fromDeviceId: session.fromDeviceId,
+                toDeviceId: session.toDeviceId
+              });
+            }
+          }
+          this.log('连接响应: ' + sessionId + ' -> ' + (accepted ? 'accepted' : 'rejected'), 'info');
+        }
+        break;
+      }
+      case 'offer': {
+        const { sessionId, offer, toDeviceId } = data;
+        const fromDeviceId = data.fromDeviceId || senderDeviceId;
+        const toDevice = this.devices.get(toDeviceId);
+        if (toDevice) {
+          if (toDevice.socket) {
+            toDevice.socket.send(JSON.stringify({
+              type: 'offer',
+              sessionId,
+              offer,
+              fromDeviceId
+            }));
+          } else if (toDevice.socketId) {
+            this.io.to(toDevice.socketId).emit('offer', {
+              sessionId,
+              offer,
+              fromDeviceId
+            });
+          }
+          this.log('转发Offer: ' + sessionId + ' ' + fromDeviceId + ' -> ' + toDeviceId, 'info');
+        }
+        break;
+      }
+      case 'answer': {
+        const { sessionId, answer, toDeviceId } = data;
+        const fromDeviceId = data.fromDeviceId || senderDeviceId;
+        const toDevice = this.devices.get(toDeviceId);
+        if (toDevice) {
+          if (toDevice.socket) {
+            toDevice.socket.send(JSON.stringify({
+              type: 'answer',
+              sessionId,
+              answer,
+              fromDeviceId
+            }));
+          } else if (toDevice.socketId) {
+            this.io.to(toDevice.socketId).emit('answer', {
+              sessionId,
+              answer,
+              fromDeviceId
+            });
+          }
+          this.log('转发Answer: ' + sessionId + ' ' + fromDeviceId + ' -> ' + toDeviceId, 'info');
+        }
+        break;
+      }
+      case 'ice-candidate': {
+        const { sessionId, candidate, toDeviceId } = data;
+        const fromDeviceId = data.fromDeviceId || senderDeviceId;
+        const toDevice = this.devices.get(toDeviceId);
+        if (toDevice) {
+          if (toDevice.socket) {
+            toDevice.socket.send(JSON.stringify({
+              type: 'ice-candidate',
+              sessionId,
+              candidate,
+              fromDeviceId
+            }));
+          } else if (toDevice.socketId) {
+            this.io.to(toDevice.socketId).emit('ice-candidate', {
+              sessionId,
+              candidate,
+              fromDeviceId
+            });
+          }
+        }
+        break;
+      }
+      case 'ping': {
+        ws.send(JSON.stringify({ type: 'pong', timestamp: data.timestamp }));
+        break;
+      }
+    }
   }
 
   _setupSocketIO() {
@@ -173,10 +371,18 @@ class SignalingServer {
 
         const toDevice = this.devices.get(toDeviceId);
         if (toDevice) {
-          this.io.to(toDevice.socketId).emit('incoming-connection', {
-            fromDeviceId,
-            sessionId
-          });
+          if (toDevice.socket) {
+            toDevice.socket.send(JSON.stringify({
+              type: 'incoming-connection',
+              fromDeviceId,
+              sessionId
+            }));
+          } else if (toDevice.socketId) {
+            this.io.to(toDevice.socketId).emit('incoming-connection', {
+              fromDeviceId,
+              sessionId
+            });
+          }
           this.log('连接请求: ' + fromDeviceId + ' -> ' + toDeviceId, 'info');
         } else {
           this.log('目标设备不在线: ' + toDeviceId, 'warning');
@@ -194,12 +400,22 @@ class SignalingServer {
           session.status = accepted ? 'accepted' : 'rejected';
           const fromDevice = this.devices.get(session.fromDeviceId);
           if (fromDevice) {
-            this.io.to(fromDevice.socketId).emit('connection-result', {
-              accepted,
-              sessionId,
-              fromDeviceId: session.fromDeviceId,
-              toDeviceId: session.toDeviceId
-            });
+            if (fromDevice.socket) {
+              fromDevice.socket.send(JSON.stringify({
+                type: 'connection-result',
+                accepted,
+                sessionId,
+                fromDeviceId: session.fromDeviceId,
+                toDeviceId: session.toDeviceId
+              }));
+            } else if (fromDevice.socketId) {
+              this.io.to(fromDevice.socketId).emit('connection-result', {
+                accepted,
+                sessionId,
+                fromDeviceId: session.fromDeviceId,
+                toDeviceId: session.toDeviceId
+              });
+            }
           }
           this.log('连接响应: ' + sessionId + ' -> ' + (accepted ? 'accepted' : 'rejected'), 'info');
         }
@@ -207,27 +423,69 @@ class SignalingServer {
 
       socket.on('offer', (data) => {
         const { sessionId, offer, toDeviceId } = data;
+        const fromDeviceId = this._findDeviceBySocketId(socket.id);
         const toDevice = this.devices.get(toDeviceId);
         if (toDevice) {
-          this.io.to(toDevice.socketId).emit('offer', { sessionId, offer });
-          this.log('转发Offer: ' + sessionId + ' -> ' + toDeviceId, 'info');
+          if (toDevice.socket) {
+            toDevice.socket.send(JSON.stringify({
+              type: 'offer',
+              sessionId,
+              offer,
+              fromDeviceId
+            }));
+          } else if (toDevice.socketId) {
+            this.io.to(toDevice.socketId).emit('offer', {
+              sessionId,
+              offer,
+              fromDeviceId
+            });
+          }
+          this.log('转发Offer: ' + sessionId + ' ' + fromDeviceId + ' -> ' + toDeviceId, 'info');
         }
       });
 
       socket.on('answer', (data) => {
         const { sessionId, answer, toDeviceId } = data;
+        const fromDeviceId = this._findDeviceBySocketId(socket.id);
         const toDevice = this.devices.get(toDeviceId);
         if (toDevice) {
-          this.io.to(toDevice.socketId).emit('answer', { sessionId, answer });
-          this.log('转发Answer: ' + sessionId + ' -> ' + toDeviceId, 'info');
+          if (toDevice.socket) {
+            toDevice.socket.send(JSON.stringify({
+              type: 'answer',
+              sessionId,
+              answer,
+              fromDeviceId
+            }));
+          } else if (toDevice.socketId) {
+            this.io.to(toDevice.socketId).emit('answer', {
+              sessionId,
+              answer,
+              fromDeviceId
+            });
+          }
+          this.log('转发Answer: ' + sessionId + ' ' + fromDeviceId + ' -> ' + toDeviceId, 'info');
         }
       });
 
       socket.on('ice-candidate', (data) => {
         const { sessionId, candidate, toDeviceId } = data;
+        const fromDeviceId = this._findDeviceBySocketId(socket.id);
         const toDevice = this.devices.get(toDeviceId);
         if (toDevice) {
-          this.io.to(toDevice.socketId).emit('ice-candidate', { sessionId, candidate });
+          if (toDevice.socket) {
+            toDevice.socket.send(JSON.stringify({
+              type: 'ice-candidate',
+              sessionId,
+              candidate,
+              fromDeviceId
+            }));
+          } else if (toDevice.socketId) {
+            this.io.to(toDevice.socketId).emit('ice-candidate', {
+              sessionId,
+              candidate,
+              fromDeviceId
+            });
+          }
         }
       });
 
@@ -241,6 +499,15 @@ class SignalingServer {
         }
       });
     });
+  }
+
+  _findDeviceBySocketId(socketId) {
+    for (const [deviceId, device] of this.devices.entries()) {
+      if (device.socketId === socketId) {
+        return deviceId;
+      }
+    }
+    return null;
   }
 
   _startServer() {

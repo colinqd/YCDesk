@@ -185,7 +185,7 @@ class UIManager {
 
   _validateDeviceId(deviceId) {
     if (!deviceId || typeof deviceId !== 'string') return false
-    return deviceId.length === 9
+    return deviceId.length >= 6 && deviceId.length <= 16
   }
 
   getTargetDeviceId() {

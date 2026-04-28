@@ -296,7 +296,7 @@
       font-family: 'Consolas', 'Courier New', monospace;
     }
 
-    .input-group input {
+    .input-group input.uppercase {
       text-transform: uppercase;
       letter-spacing: 1px;
     }
@@ -365,15 +365,42 @@
       background: #1a1a2e;
       border-radius: 8px;
       padding: 10px;
-      max-height: 90px;
       overflow-y: auto;
+    }
+
+    .log-box.collapsed .log-content {
+      display: none;
+    }
+
+    .log-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 5px;
+    }
+
+    .log-box.collapsed .log-header {
+      margin-bottom: 0;
     }
 
     .log-title {
       color: #94a3b8;
       font-size: 10px;
-      margin-bottom: 5px;
       font-weight: 600;
+    }
+
+    .log-toggle-btn {
+      background: transparent;
+      border: 1px solid #4a5568;
+      color: #94a3b8;
+      font-size: 9px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .log-toggle-btn:hover {
+      background: #2d3748;
     }
 
     .log-content {
@@ -381,6 +408,8 @@
       font-family: 'Consolas', 'Courier New', monospace;
       font-size: 9px;
       line-height: 1.4;
+      max-height: 70px;
+      overflow-y: auto;
     }
 
     .ip-list {
@@ -544,6 +573,7 @@
       object-fit: contain;
       background: transparent;
       border-radius: 8px;
+      image-rendering: -webkit-optimize-contrast;
     }
 
     .remote-video.fullscreen {
@@ -1024,7 +1054,7 @@
       }
     }
 
-    .toast {
+    .toast-message {
       position: fixed;
       top: 15px;
       left: 50%;
@@ -1038,9 +1068,10 @@
       transition: transform 0.3s ease;
       max-width: 80%;
       text-align: center;
+      pointer-events: none;
     }
 
-    .toast.show {
+    .toast-message.show {
       transform: translateX(-50%) translateY(0);
     }
 
@@ -1103,8 +1134,8 @@
             </div>
             <div class="two-col">
               <div class="input-group">
-                <label>对方 IP 地址</label>
-                <input type="text" id="remoteIp" placeholder="例如: 192.168.1.100">
+                <label>对方 IP/域名</label>
+                <input type="text" id="remoteIp" placeholder="例如: 192.168.1.100 或 example.com">
               </div>
               <div class="input-group">
                 <label>对方端口</label>
@@ -1122,16 +1153,15 @@
               </div>
             </div>
             <div class="input-group">
+              <label>连接方式</label>
+              <select id="controllerConnectionMode" style="width: 100%; padding: 12px 10px; font-size: 14px; border: 2px solid #e2e8f0; border-radius: 10px; background: white; font-weight: 600; color: #4a5568;">
+                <option value="socketio" selected>Socket.IO（用于 server-gui）</option>
+                <option value="websocket">原始 WebSocket（用于 android-server）</option>
+              </select>
+            </div>
+            <div class="input-group">
               <label>信令服务器地址</label>
-              <div style="display: flex; gap: 8px;">
-                <select id="controllerProtocolSelect" style="flex: 0 0 100px; padding: 10px 8px; font-size: 12px; border: 2px solid #e2e8f0; border-radius: 10px; background: white; font-weight: 600; color: #4a5568;">
-                  <option value="ws://" selected>ws:// (非安全)</option>
-                  <option value="wss://">wss:// (安全)</option>
-                  <option value="https://">https:// (安全)</option>
-                  <option value="http://">http:// (非安全)</option>
-                </select>
-                <input type="text" id="serverUrl" placeholder="your-server.com:3000" value="10.0.2.2:3000" style="flex: 1;">
-              </div>
+              <input type="text" id="serverUrl" placeholder="例如: 192.168.1.100:3000 或 example.com:3000" value="10.0.2.2:3000" style="width: 100%;">
             </div>
             <div class="btn-group" style="margin-top: 10px;">
               <button class="btn btn-secondary" onclick="manualConnectToServer()">连接服务器</button>
@@ -1139,13 +1169,16 @@
             </div>
             <div class="input-group" style="margin-top: 15px;">
               <label>对方设备 ID</label>
-              <input type="text" id="targetDeviceId" placeholder="输入对方设备 ID" maxlength="9">
+              <input type="text" id="targetDeviceId" placeholder="输入对方设备 ID" maxlength="16" class="uppercase">
             </div>
             <button class="btn btn-primary" style="margin-top: 10px;" onclick="connectDevice()">连接</button>
           </div>
           
-          <div class="log-box">
-            <div class="log-title">连接日志</div>
+          <div class="log-box" id="controllerLogBox">
+            <div class="log-header">
+              <div class="log-title">连接日志</div>
+              <button class="log-toggle-btn" onclick="toggleLogBox('controllerLogBox')">收起</button>
+            </div>
             <div id="connectionLog" class="log-content"></div>
           </div>
         </div>
@@ -1162,7 +1195,15 @@
               加载中...
             </div>
           </div>
-          <div class="status-badge" id="serverStatus">
+          <div class="input-group" style="margin-top: 12px;">
+            <label>自定义设备 ID (6-16位字母数字)</label>
+            <input type="text" id="customDeviceId" placeholder="输入自定义设备ID" maxlength="16" class="uppercase">
+          </div>
+          <div class="btn-group" style="margin-top: 10px;">
+            <button class="btn btn-secondary" onclick="setCustomDeviceId()">设置ID</button>
+            <button class="btn btn-danger" onclick="resetDeviceId()">随机生成</button>
+          </div>
+          <div class="status-badge" id="serverStatus" style="margin-top: 12px;">
             <span class="status-dot"></span>
             <span id="serverStatusText">就绪</span>
           </div>
@@ -1186,16 +1227,21 @@
           
           <div id="controlledSignalingMode" class="mode-content">
             <div class="input-group">
+              <label>连接方式</label>
+              <select id="controlledConnectionMode" style="width: 100%; padding: 12px 10px; font-size: 14px; border: 2px solid #e2e8f0; border-radius: 10px; background: white; font-weight: 600; color: #4a5568;">
+                <option value="socketio" selected>Socket.IO（用于 server-gui）</option>
+                <option value="websocket">原始 WebSocket（用于 android-server）</option>
+              </select>
+            </div>
+            <div class="input-group" style="margin-top: 10px;">
+              <label style="display: flex; align-items: center; gap: 8px;">
+                <input type="checkbox" id="autoAcceptConnection" style="width: auto; margin: 0; height: auto; min-height: auto; font-size: 14px;">
+                <span>自动接受连接（无需确认）</span>
+              </label>
+            </div>
+            <div class="input-group">
               <label>信令服务器地址</label>
-              <div style="display: flex; gap: 8px;">
-                <select id="controlledProtocolSelect" style="flex: 0 0 100px; padding: 10px 8px; font-size: 12px; border: 2px solid #e2e8f0; border-radius: 10px; background: white; font-weight: 600; color: #4a5568;">
-                  <option value="ws://" selected>ws:// (非安全)</option>
-                  <option value="wss://">wss:// (安全)</option>
-                  <option value="https://">https:// (安全)</option>
-                  <option value="http://">http:// (非安全)</option>
-                </select>
-                <input type="text" id="controlledServerUrl" placeholder="your-server.com:3000" value="10.0.2.2:3000" style="flex: 1;">
-              </div>
+              <input type="text" id="controlledServerUrl" placeholder="例如: 192.168.1.100:3000 或 example.com:3000" value="10.0.2.2:3000" style="width: 100%;">
             </div>
             <div class="btn-group" style="margin-top: 10px;">
               <button class="btn btn-secondary" onclick="controlledConnectToServer()">连接服务器</button>
@@ -1210,8 +1256,11 @@
             </div>
           </div>
           
-          <div class="log-box">
-            <div class="log-title">连接日志</div>
+          <div class="log-box" id="controlledLogBox">
+            <div class="log-header">
+              <div class="log-title">连接日志</div>
+              <button class="log-toggle-btn" onclick="toggleLogBox('controlledLogBox')">收起</button>
+            </div>
             <div id="connectionLogControlled" class="log-content"></div>
           </div>
         </div>

@@ -11,6 +11,12 @@ class DirectModeManager {
     this.uiManager = options.uiManager
     this.config = options.config || {}
     this.onMessage = options.onMessage || null
+    this.auxiliaryChannels = new Map()
+    this.currentStream = null
+    this.videoFrameTransmitter = null
+    this.useOptimizedTransfer = options.useOptimizedTransfer !== false
+    this.OPTIMIZED_VIDEO_CHANNEL = 'optimized-video'
+    this.optimizedVideoChannel = null
   }
 
   setDeviceId(deviceId) {
@@ -106,18 +112,19 @@ class DirectModeManager {
   }
 
   async handleMessage(clientId, message) {
-    this.logFn('收到消息: ' + message.type + ', 内容: ' + JSON.stringify(message).substring(0, 200))
-
     try {
       switch (message.type) {
         case 'offer':
-          this.logFn('offer内容: ' + (message.offer ? '存在' : '为空'))
-          await this.handleOffer(clientId, message.offer)
+          if (this.isDirectController) {
+            this.logFn('主控端收到 offer，转发给远程窗口')
+            window.electronAPI.sendToRemoteWindow('webrtc-offer', { offer: message.offer })
+          } else {
+            await this.handleOffer(clientId, message.offer)
+          }
           break
         case 'answer':
-          this.logFn('answer内容: ' + (message.answer ? '存在' : '为空'))
           if (this.isDirectController) {
-            this.logFn('转发answer到远程窗口')
+            this.logFn('主控端收到 answer，转发给远程窗口')
             window.electronAPI.sendToRemoteWindow('webrtc-answer', { answer: message.answer })
           } else {
             await this.handleAnswer(clientId, message.answer)
@@ -125,7 +132,7 @@ class DirectModeManager {
           break
         case 'ice-candidate':
           if (this.isDirectController) {
-            this.logFn('转发ICE候选到远程窗口')
+            this.logFn('主控端收到 ICE 候选，转发给远程窗口')
             window.electronAPI.sendToRemoteWindow('webrtc-ice-candidate', { candidate: message.candidate })
           } else {
             await this.handleIceCandidate(clientId, message.candidate)
@@ -133,7 +140,6 @@ class DirectModeManager {
           break
       }
     } catch (error) {
-      this.logFn('处理消息失败: ' + error.message)
       console.error('处理消息详细错误:', error)
     }
   }
@@ -155,6 +161,23 @@ class DirectModeManager {
     this.currentDirectClientId = clientId
     this.isDirectController = false
     await this.createPeerConnection(clientId)
+    
+    this.logFn('被控端: 等待主控端发送 offer...')
+  }
+
+  async createAndSendOffer() {
+    this.logFn('创建 offer...')
+    const offer = await this.directPeerConnection.createOffer()
+    await this.directPeerConnection.setLocalDescription(offer)
+    
+    this.logFn('发送 offer 给主控端')
+    this.sendMessage({
+      type: 'offer',
+      offer: {
+        type: offer.type,
+        sdp: offer.sdp
+      }
+    })
   }
 
   async createPeerConnection(clientId) {
@@ -170,12 +193,10 @@ class DirectModeManager {
 
     this.dataChannelManager.setOnMessage((data) => {
       if (data.type === 'input') {
-        this.logFn('收到输入命令: ' + data.inputType + ', x=' + data.x + ', y=' + data.y)
+        this.logFn('收到输入，转发到主进程: ' + JSON.stringify(data))
         window.electronAPI.send('remote-input', data)
       } else if (data.type === 'ping') {
         this.dataChannelManager.send({ type: 'pong', timestamp: data.timestamp })
-      } else if (data.type === 'screen-size') {
-        this.logFn('收到屏幕尺寸: ' + data.width + 'x' + data.height)
       }
     })
 
@@ -210,15 +231,61 @@ class DirectModeManager {
 
       if (this.directPeerConnection.connectionState === 'connected') {
         this.logFn('WebRTC连接已建立')
-      } else if (this.directPeerConnection.connectionState === 'failed') {
-        this.logFn('WebRTC连接失败')
+      } else if (this.directPeerConnection.connectionState === 'failed' || 
+                 this.directPeerConnection.connectionState === 'disconnected' ||
+                 this.directPeerConnection.connectionState === 'closed') {
       }
     }
 
     this.directPeerConnection.ondatachannel = (event) => {
-      this.logFn('收到数据通道')
-      this.dataChannelManager.setDataChannel(event.channel)
+      const channel = event.channel
+      this.logFn('收到数据通道: ' + channel.label)
+      
+      if (channel.label === 'control') {
+        this.dataChannelManager.setDataChannel(channel)
+      } else if (channel.label === this.OPTIMIZED_VIDEO_CHANNEL) {
+        this.logFn('收到优化视频通道')
+        this.optimizedVideoChannel = channel
+      } else if (channel.label === 'input') {
+        channel.onmessage = (e) => {
+          try {
+            const data = JSON.parse(e.data)
+            if (data.type === 'input') {
+              window.electronAPI.send('remote-input', data)
+            }
+          } catch (err) {
+            this.logFn('input通道消息解析失败: ' + err.message)
+          }
+        }
+        channel.onopen = () => {
+          this.logFn('input数据通道已打开')
+        }
+      } else if (channel.label.startsWith('aux-')) {
+        const channelType = channel.label.replace('aux-', '')
+        this.setupAuxiliaryChannel(channelType, channel)
+      }
     }
+
+    if (this.useOptimizedTransfer) {
+      this.videoFrameTransmitter = new VideoFrameTransmitter({
+        logger: { log: this.logFn.bind(this), error: console.error }
+      })
+
+      this.videoFrameTransmitter.onStatsUpdate = (stats) => {
+        this.logFn('[传输统计] 帧:' + stats.framesSent +
+          ' 关键帧:' + stats.keyFramesSent +
+          ' 差异帧:' + stats.deltaFramesSent +
+          ' 平均脏区域:' + stats.avgDirtyRegions.toFixed(1))
+      }
+
+      this.videoFrameTransmitter.onFallbackToStandard = () => {
+        this.logFn('优化传输回退到标准模式')
+      }
+
+      this.logFn('优化视频传输模式已初始化')
+    }
+
+    this.setupInputEventListeners()
   }
 
   async handleOffer(clientId, offer) {
@@ -236,10 +303,7 @@ class DirectModeManager {
 
       await this.addPendingIceCandidates()
 
-      this.logFn('开始捕获屏幕...')
-      await this.startScreenCapture()
-
-      this.logFn('创建answer...')
+      this.logFn('创建初始answer（不含视频）...')
       const answer = await this.directPeerConnection.createAnswer()
       await this.directPeerConnection.setLocalDescription(answer)
       this.logFn('本地描述设置成功')
@@ -252,11 +316,101 @@ class DirectModeManager {
         }
       })
 
-      this.logFn('已发送answer')
+      this.logFn('已发送初始answer，等待数据通道打开...')
+      
+      await this.waitForDataChannelOpen()
+      
+      this.logFn('数据通道已打开，等待分辨率请求...')
+      const resolution = await this.waitForResolutionRequest()
+      
+      this.logFn('收到分辨率请求: ' + resolution.width + 'x' + resolution.height)
+      this.logFn('根据客户端窗口尺寸调整虚拟显示器分辨率...')
+      
+      const targetWidth = resolution.width || 1920
+      const targetHeight = resolution.height || 1080
+      
+      this.logFn('目标捕获分辨率: ' + targetWidth + 'x' + targetHeight)
+      
+      this.logFn('开始捕获屏幕...')
+      const actualResolution = await this.startScreenCapture(targetWidth, targetHeight)
+      
+      this.logFn('创建renegotiation offer（含视频）...')
+      const renegotiateOffer = await this.directPeerConnection.createOffer()
+      await this.directPeerConnection.setLocalDescription(renegotiateOffer)
+      
+      this.sendMessage({
+        type: 'offer',
+        offer: {
+          type: renegotiateOffer.type,
+          sdp: renegotiateOffer.sdp
+        }
+      })
+      
+      this.dataChannelManager.send({
+        type: 'resolution-response',
+        width: actualResolution.width,
+        height: actualResolution.height
+      })
+      
+      this.logFn('已发送renegotiation offer和分辨率响应: ' + actualResolution.width + 'x' + actualResolution.height)
     } catch (error) {
       this.logFn('处理offer失败: ' + error.message)
       console.error('处理offer详细错误:', error)
     }
+  }
+  
+  waitForDataChannelOpen() {
+    return new Promise((resolve, reject) => {
+      if (this.dataChannelManager && this.dataChannelManager.isOpen()) {
+        this.logFn('数据通道已经打开')
+        resolve()
+        return
+      }
+      
+      const timeout = setTimeout(() => {
+        reject(new Error('等待数据通道打开超时'))
+      }, 15000)
+      
+      const checkInterval = setInterval(() => {
+        if (this.dataChannelManager && this.dataChannelManager.isOpen()) {
+          clearTimeout(timeout)
+          clearInterval(checkInterval)
+          resolve()
+        }
+      }, 100)
+    })
+  }
+  
+  waitForResolutionRequest() {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('等待分辨率请求超时'))
+      }, 15000)
+      
+      const originalOnMessage = this.dataChannelManager.callbacks ? this.dataChannelManager.callbacks.onMessage : null
+      this.dataChannelManager.setOnMessage((data) => {
+        if (data.type === 'resolution-request') {
+          clearTimeout(timeout)
+          this.dataChannelManager.setOnMessage(originalOnMessage)
+          resolve(data)
+        } else if (originalOnMessage) {
+          originalOnMessage(data)
+        }
+      })
+    })
+  }
+  
+  handleResolutionRequest(data) {
+    this.logFn('收到分辨率请求: ' + data.width + 'x' + data.height)
+    this.logFn('根据客户端窗口尺寸调整虚拟显示器分辨率...')
+    
+    this.dataChannelManager.send({
+      type: 'resolution-response',
+      width: this.config.screenCapture?.maxWidth || 1920,
+      height: this.config.screenCapture?.maxHeight || 1080
+    })
+    
+    this.logFn('已发送分辨率响应')
   }
 
   async handleAnswer(clientId, answer) {
@@ -315,47 +469,172 @@ class DirectModeManager {
     this.pendingIceCandidates = []
   }
 
-  async startScreenCapture() {
+  async startScreenCapture(targetWidth, targetHeight) {
     try {
+      this.stopScreenCapture()
+      
       const sources = await window.electronAPI.getSources()
       this.logFn('可用屏幕源: ' + sources.length + ' 个')
 
       if (sources.length > 0) {
-        const stream = await navigator.mediaDevices.getUserMedia({
+        const maxWidth = targetWidth || 1920
+        const maxHeight = targetHeight || 1080
+
+        if (this.useOptimizedTransfer && this.videoFrameTransmitter && this.optimizedVideoChannel && this.optimizedVideoChannel.readyState === 'open') {
+          this.logFn('使用优化传输模式捕获屏幕')
+          this.videoFrameTransmitter.initialize(this.optimizedVideoChannel, maxWidth, maxHeight)
+          const resolution = await this.videoFrameTransmitter.start(sources[0].id, maxWidth, maxHeight)
+          if (resolution) {
+            this.logFn('优化屏幕捕获成功，分辨率: ' + resolution.width + 'x' + resolution.height)
+            return resolution
+          }
+          this.logFn('优化传输启动失败，回退到标准模式')
+        }
+        
+        this.currentStream = await navigator.mediaDevices.getUserMedia({
           audio: false,
           video: {
             mandatory: {
               chromeMediaSource: 'desktop',
               chromeMediaSourceId: sources[0].id,
-              maxWidth: this.config.screenCapture?.maxWidth || 1920,
-              maxHeight: this.config.screenCapture?.maxHeight || 1080,
+              maxWidth: maxWidth,
+              maxHeight: maxHeight,
               maxFrameRate: this.config.screenCapture?.maxFrameRate || 30
             }
           }
         })
 
-        const tracks = stream.getTracks()
+        const tracks = this.currentStream.getVideoTracks()
         this.logFn('获取到 ' + tracks.length + ' 个媒体轨道')
 
         tracks.forEach(track => {
-          this.directPeerConnection.addTrack(track, stream)
+          const sender = this.directPeerConnection.addTrack(track, this.currentStream)
           this.logFn('已添加媒体轨道: ' + track.kind + ', label: ' + track.label)
+          
+          try {
+            const parameters = sender.getParameters()
+            if (!parameters.encodings || parameters.encodings.length === 0) {
+              parameters.encodings = [{}]
+            }
+            parameters.encodings[0].maxBitrate = 2000000
+            parameters.encodings[0].maxFramerate = 20
+            sender.setParameters(parameters)
+            this.logFn('已设置视频编码参数: maxBitrate=2Mbps, maxFramerate=20')
+          } catch (e) {
+            this.logFn('设置视频编码参数失败: ' + e.message)
+          }
         })
 
-        this.logFn('屏幕捕获成功，分辨率: ' + stream.getVideoTracks()[0].getSettings().width + 'x' + stream.getVideoTracks()[0].getSettings().height)
+        const settings = tracks[0].getSettings()
+        const actualResolution = {
+          width: settings.width || maxWidth,
+          height: settings.height || maxHeight
+        }
+        
+        this.logFn('屏幕捕获成功，分辨率: ' + actualResolution.width + 'x' + actualResolution.height)
+        return actualResolution
       } else {
         this.logFn('没有找到可用的屏幕源')
+        return { width: 1920, height: 1080 }
       }
     } catch (error) {
       this.logFn('屏幕捕获失败: ' + error.message)
       console.error('屏幕捕获详细错误:', error)
+      return { width: 1920, height: 1080 }
     }
+  }
+
+  stopScreenCapture() {
+    if (this.videoFrameTransmitter) {
+      this.videoFrameTransmitter.stop()
+    }
+
+    if (this.currentStream) {
+      this.currentStream.getTracks().forEach(track => {
+        track.stop()
+      })
+      this.currentStream = null
+    }
+    
+    if (this.directPeerConnection) {
+      const senders = this.directPeerConnection.getSenders()
+      senders.forEach(sender => {
+        if (sender.track) {
+          try { this.directPeerConnection.removeTrack(sender) } catch (e) {}
+        }
+      })
+    }
+  }
+
+  setupAuxiliaryChannel(channelType, channel) {
+    this.logFn('设置辅助通道: ' + channelType)
+    this.auxiliaryChannels.set(channelType, channel)
+    
+    channel.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        this.handleAuxiliaryMessage(channelType, data)
+      } catch (e) {
+        this.logFn('辅助通道消息解析错误: ' + e.message)
+      }
+    }
+    
+    channel.onclose = () => {
+      this.logFn('辅助通道关闭: ' + channelType)
+      this.auxiliaryChannels.delete(channelType)
+    }
+  }
+  
+  handleAuxiliaryMessage(channelType, data) {
+    if (channelType === 'clipboard') {
+      if (data.action === 'sync' && data.content) {
+        navigator.clipboard.writeText(data.content).then(() => {
+          this.logFn('剪贴板内容已同步到本地')
+        }).catch(err => {
+          this.logFn('剪贴板同步失败: ' + err.message)
+        })
+      } else if (data.action === 'request') {
+        navigator.clipboard.readText().then(content => {
+          const channel = this.auxiliaryChannels.get('clipboard')
+          if (channel && channel.readyState === 'open') {
+            channel.send(JSON.stringify({
+              action: 'sync',
+              content: content || '',
+              timestamp: Date.now()
+            }))
+          }
+        }).catch(err => {
+          this.logFn('读取剪贴板失败: ' + err.message)
+        })
+      }
+    }
+  }
+  
+  setupInputEventListeners() {
+    window.electronAPI.on('remote-input', (data) => {
+      if (this.videoFrameTransmitter && data.x !== undefined && data.y !== undefined) {
+        var inputType = data.type || data.inputType || 'unknown'
+        this.videoFrameTransmitter.markInputRegion(data.x, data.y, inputType)
+      }
+    })
   }
 
   reset() {
     this.currentDirectClientId = null
     this.isDirectController = false
     this.pendingIceCandidates = []
+    
+    this.stopScreenCapture()
+
+    if (this.videoFrameTransmitter) {
+      this.videoFrameTransmitter.reset()
+      this.videoFrameTransmitter = null
+    }
+    
+    this.auxiliaryChannels.forEach((channel) => {
+      try { channel.close() } catch (e) {}
+    })
+    this.auxiliaryChannels.clear()
 
     if (this.dataChannelManager) {
       try {

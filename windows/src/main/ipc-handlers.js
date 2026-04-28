@@ -9,24 +9,95 @@ const {
   showMainWindow,
   createTray
 } = require('./window-manager')
-const { handleRemoteInput, resetModifiers } = require('./input-handler')
+const inputHandler = require('./input-handler')
 const {
   getLocalIps,
   startDirectServerImpl,
   stopDirectServerImpl,
   connectDirectClientImpl,
   sendDirectMessageImpl,
-  closeDirectConnectionImpl
+  closeDirectConnectionImpl,
+  initLogger: initDirectServerLogger,
+  cleanup: cleanupDirectServer
 } = require('./direct-server')
 const signalingServer = require('./signaling-server')
 const authManager = require('./auth-manager')
+const path = require('path')
+const fs = require('fs')
+const os = require('os')
 
 let deviceId = null
 let remoteStreamInfo = null
 let logger = null
+const deviceIdFilePath = path.join(os.homedir(), '.ycdesk_device_id')
 
 function generateDeviceId() {
-  return Math.random().toString(36).substr(2, 9).toUpperCase()
+  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+  let id = ''
+  for (let i = 0; i < 9; i++) {
+    id += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  return id.toUpperCase()
+}
+
+function validateDeviceId(id) {
+  if (!id || typeof id !== 'string') {
+    return { valid: false, message: '设备ID不能为空' }
+  }
+  const trimmedId = id.trim()
+  if (trimmedId.length < 6 || trimmedId.length > 16) {
+    return { valid: false, message: '设备ID长度必须在6-16个字符之间' }
+  }
+  const allowedChars = /^[a-zA-Z0-9]+$/
+  if (!allowedChars.test(trimmedId)) {
+    return { valid: false, message: '设备ID只能包含字母和数字' }
+  }
+  return { valid: true, message: '设备ID格式正确' }
+}
+
+function loadDeviceId() {
+  try {
+    if (fs.existsSync(deviceIdFilePath)) {
+      const storedId = fs.readFileSync(deviceIdFilePath, 'utf8').trim()
+      const validation = validateDeviceId(storedId)
+      if (validation.valid) {
+        return storedId.toUpperCase()
+      }
+    }
+  } catch (e) {
+    console.error('读取设备ID失败:', e)
+  }
+  const newId = generateDeviceId()
+  saveDeviceId(newId)
+  return newId
+}
+
+function saveDeviceId(id) {
+  const validation = validateDeviceId(id)
+  if (!validation.valid) {
+    throw new Error(validation.message)
+  }
+  try {
+    fs.writeFileSync(deviceIdFilePath, id.trim().toUpperCase(), 'utf8')
+    return true
+  } catch (e) {
+    console.error('保存设备ID失败:', e)
+    throw new Error('保存设备ID失败')
+  }
+}
+
+function resetDeviceId() {
+  const newId = generateDeviceId()
+  saveDeviceId(newId)
+  return newId
+}
+
+function log(level, message, data) {
+  if (logger && typeof logger[level] === 'function') {
+    logger[level](message, data)
+  } else if (level === 'error') {
+    console.error(`[IPC Error] ${message}`, data || '')
+  }
 }
 
 function safeIpcHandler(handler, handlerName) {
@@ -34,11 +105,7 @@ function safeIpcHandler(handler, handlerName) {
     try {
       return await handler(event, ...args)
     } catch (error) {
-      if (logger) {
-        logger.error(`[IPC Error] ${handlerName}`, { error: error.message })
-      } else {
-        console.error(`[IPC Error] ${handlerName}:`, error)
-      }
+      log('error', `${handlerName}`, { error: error.message })
       throw error
     }
   }
@@ -48,39 +115,44 @@ function init(deviceIdParam, loggerParam) {
   deviceId = deviceIdParam
   logger = loggerParam
   
-  if (logger) {
-    logger.info('IPC 处理器初始化', { deviceId })
-  } else {
-    console.log('IPC 处理器初始化，设备ID:', deviceId)
-  }
+  inputHandler.initLogger(logger)
+  initDirectServerLogger(logger)
+  
+  log('info', 'IPC 处理器初始化', { deviceId })
   
   signalingServer.init(deviceId, logger)
   createTray()
   
-  ipcMain.handle('get-device-id', safeIpcHandler(() => {
-    return deviceId
-  }, 'get-device-id'))
+  ipcMain.handle('get-device-id', safeIpcHandler(() => deviceId, 'get-device-id'))
+
+  ipcMain.handle('set-device-id', safeIpcHandler((event, id) => {
+    saveDeviceId(id)
+    deviceId = id.trim().toUpperCase()
+    signalingServer.updateDeviceId(deviceId)
+    log('info', '设备ID已更新', { deviceId })
+    return { success: true, deviceId }
+  }, 'set-device-id'))
+
+  ipcMain.handle('reset-device-id', safeIpcHandler(() => {
+    deviceId = resetDeviceId()
+    signalingServer.updateDeviceId(deviceId)
+    log('info', '设备ID已重置', { deviceId })
+    return { success: true, deviceId }
+  }, 'reset-device-id'))
+
+  ipcMain.handle('validate-device-id', safeIpcHandler((event, id) => {
+    return validateDeviceId(id)
+  }, 'validate-device-id'))
 
   ipcMain.handle('get-sources', safeIpcHandler(async () => {
-    if (logger) {
-      logger.info('正在获取屏幕源...')
-    } else {
-      console.log('正在获取屏幕源...')
-    }
+    log('info', '正在获取屏幕源...')
     const sources = await desktopCapturer.getSources({
       types: ['window', 'screen'],
-      thumbnailSize: {
-        width: 320,
-        height: 240
-      },
+      thumbnailSize: { width: 320, height: 240 },
       fetchWindowIcons: true
     })
     
-    if (logger) {
-      logger.info(`找到 ${sources.length} 个屏幕源`)
-    } else {
-      console.log(`找到 ${sources.length} 个屏幕源`)
-    }
+    log('info', `找到 ${sources.length} 个屏幕源`)
     
     return sources.map(source => ({
       id: source.id,
@@ -91,54 +163,41 @@ function init(deviceIdParam, loggerParam) {
   }, 'get-sources'))
 
   ipcMain.handle('open-remote-window', safeIpcHandler(() => {
-    console.log('打开远程控制窗口')
+    log('info', '打开远程控制窗口')
     createRemoteWindow()
     return true
   }, 'open-remote-window'))
 
   ipcMain.handle('get-screen-size', safeIpcHandler(() => {
     const primaryDisplay = screen.getPrimaryDisplay()
-    const result = {
+    return {
       width: primaryDisplay.size.width,
       height: primaryDisplay.size.height,
       scaleFactor: primaryDisplay.scaleFactor,
       workArea: primaryDisplay.workArea
     }
-    console.log('屏幕尺寸:', result)
-    return result
   }, 'get-screen-size'))
 
-  ipcMain.handle('get-platform', safeIpcHandler(() => {
-    return {
-      platform: process.platform,
-      arch: process.arch,
-      electron: process.versions.electron,
-      node: process.versions.node
-    }
-  }, 'get-platform'))
+  ipcMain.handle('get-platform', safeIpcHandler(() => ({
+    platform: process.platform,
+    arch: process.arch,
+    electron: process.versions.electron,
+    node: process.versions.node
+  }), 'get-platform'))
 
   ipcMain.handle('set-remote-stream-info', safeIpcHandler((event, info) => {
     remoteStreamInfo = info
-    console.log('设置远程流信息:', info)
     return true
   }, 'set-remote-stream-info'))
 
-  ipcMain.handle('get-remote-stream-info', safeIpcHandler(() => {
-    console.log('获取远程流信息:', remoteStreamInfo)
-    return remoteStreamInfo
-  }, 'get-remote-stream-info'))
+  ipcMain.handle('get-remote-stream-info', safeIpcHandler(() => remoteStreamInfo, 'get-remote-stream-info'))
 
   ipcMain.handle('send-to-remote-window', safeIpcHandler((event, channel, data) => {
-    console.log('[send-to-remote-window] 收到请求:', channel, '数据长度:', JSON.stringify(data).length)
     const remoteWindow = getRemoteWindow()
     if (remoteWindow) {
-      console.log('[send-to-remote-window] 远程窗口存在，发送消息到远程窗口')
-      console.log('[send-to-remote-window] 发送频道:', channel)
       remoteWindow.webContents.send(channel, data)
-      console.log('[send-to-remote-window] 消息已发送')
       return true
     }
-    console.warn('[send-to-remote-window] 远程窗口不存在，无法发送消息')
     return false
   }, 'send-to-remote-window'))
 
@@ -148,156 +207,97 @@ function init(deviceIdParam, loggerParam) {
       remoteWindow.webContents.executeJavaScript(code)
       return true
     }
-    console.warn('远程窗口不存在，无法执行代码')
     return false
   }, 'execute-in-remote-window'))
 
   ipcMain.handle('send-to-main-window', safeIpcHandler((event, channel, data) => {
-    console.log('[send-to-main-window] 收到请求:', channel)
     const mainWindow = getMainWindow()
     if (mainWindow) {
-      console.log('[send-to-main-window] 转发消息到主窗口:', channel)
       mainWindow.webContents.send(channel, data)
       return true
     }
-    console.warn('[send-to-main-window] 主窗口不存在，无法发送消息')
     return false
   }, 'send-to-main-window'))
 
-  // 处理远程窗口发送的信令消息，转发到主窗口
-  console.log('[主进程] 注册 send-signaling-offer 监听器')
   ipcMain.on('send-signaling-offer', (event, data) => {
-    console.log('[主进程] 收到远程窗口的 offer，转发到主窗口')
-    console.log('[主进程] offer 数据:', JSON.stringify(data).substring(0, 200))
+    log('debug', '收到远程窗口的 offer，转发到主窗口')
     const mainWindow = getMainWindow()
     if (mainWindow) {
-      console.log('[主进程] 主窗口存在，发送消息')
       mainWindow.webContents.send('send-signaling-offer', data)
-    } else {
-      console.warn('[主进程] 主窗口不存在，无法转发 offer')
     }
   })
 
-  console.log('[主进程] 注册 send-signaling-answer 监听器')
   ipcMain.on('send-signaling-answer', (event, data) => {
-    console.log('[主进程] 收到远程窗口的 answer，转发到主窗口')
+    log('debug', '收到远程窗口的 answer，转发到主窗口')
     const mainWindow = getMainWindow()
     if (mainWindow) {
       mainWindow.webContents.send('send-signaling-answer', data)
-    } else {
-      console.warn('[主进程] 主窗口不存在，无法转发 answer')
     }
   })
 
-  console.log('[主进程] 注册 send-signaling-ice-candidate 监听器')
   ipcMain.on('send-signaling-ice-candidate', (event, data) => {
-    console.log('[主进程] 收到远程窗口的 ICE candidate，转发到主窗口')
+    log('debug', '收到远程窗口的 ICE candidate，转发到主窗口')
     const mainWindow = getMainWindow()
     if (mainWindow) {
       mainWindow.webContents.send('send-signaling-ice-candidate', data)
-    } else {
-      console.warn('[主进程] 主窗口不存在，无法转发 ICE candidate')
     }
   })
 
   ipcMain.on('remote-input', (event, inputData) => {
-    try {
-      handleRemoteInput(event, inputData)
-    } catch (error) {
-      console.error('[IPC Error] remote-input:', error)
-    }
+    inputHandler.handleRemoteInput(event, inputData)
   })
 
-  // 远程窗口准备就绪，转发到主窗口
   ipcMain.on('remote-window-ready', (event) => {
-    console.log('[主进程] 收到远程窗口准备就绪信号')
+    log('debug', '收到远程窗口准备就绪信号')
     const mainWindow = getMainWindow()
     if (mainWindow) {
-      console.log('[主进程] 转发准备就绪信号到主窗口')
       mainWindow.webContents.send('remote-window-ready', {})
-    } else {
-      console.warn('[主进程] 主窗口不存在，无法转发准备就绪信号')
     }
   })
 
   ipcMain.handle('reset-input-modifiers', safeIpcHandler(() => {
-    resetModifiers()
-    logger?.info('已重置输入修饰键状态')
+    inputHandler.resetModifiers()
     return { success: true }
   }, 'reset-input-modifiers'))
 
-  ipcMain.handle('get-local-ips', safeIpcHandler(() => {
-    return getLocalIps()
-  }, 'get-local-ips'))
+  ipcMain.handle('get-local-ips', safeIpcHandler(() => getLocalIps(), 'get-local-ips'))
   
-  ipcMain.handle('start-direct-server', safeIpcHandler((event, port) => {
-    return startDirectServerImpl(port)
-  }, 'start-direct-server'))
+  ipcMain.handle('start-direct-server', safeIpcHandler((event, port) => startDirectServerImpl(port), 'start-direct-server'))
   
-  ipcMain.handle('stop-direct-server', safeIpcHandler(() => {
-    return stopDirectServerImpl()
-  }, 'stop-direct-server'))
+  ipcMain.handle('stop-direct-server', safeIpcHandler(() => stopDirectServerImpl(), 'stop-direct-server'))
   
-  ipcMain.handle('connect-direct-client', safeIpcHandler((event, params) => {
-    return connectDirectClientImpl(params.host, params.port)
-  }, 'connect-direct-client'))
+  ipcMain.handle('connect-direct-client', safeIpcHandler((event, params) => connectDirectClientImpl(params.host, params.port), 'connect-direct-client'))
   
-  ipcMain.handle('send-direct-message', safeIpcHandler((event, params) => {
-    return sendDirectMessageImpl(params.clientId, params.message)
-  }, 'send-direct-message'))
+  ipcMain.handle('send-direct-message', safeIpcHandler((event, params) => sendDirectMessageImpl(params.clientId, params.message), 'send-direct-message'))
   
-  ipcMain.handle('close-direct-connection', safeIpcHandler((event, clientId) => {
-    return closeDirectConnectionImpl(clientId)
-  }, 'close-direct-connection'))
+  ipcMain.handle('close-direct-connection', safeIpcHandler((event, clientId) => closeDirectConnectionImpl(clientId), 'close-direct-connection'))
 
-  ipcMain.handle('set-connection-password', safeIpcHandler((event, password) => {
-    return authManager.setPassword(password)
-  }, 'set-connection-password'))
+  ipcMain.handle('set-connection-password', safeIpcHandler((event, password) => authManager.setPassword(password), 'set-connection-password'))
   
-  ipcMain.handle('get-connection-password', safeIpcHandler(() => {
-    return authManager.getPassword()
-  }, 'get-connection-password'))
+  ipcMain.handle('get-connection-password', safeIpcHandler(() => authManager.getPassword(), 'get-connection-password'))
   
-  ipcMain.handle('has-connection-password', safeIpcHandler(() => {
-    return authManager.hasPassword()
-  }, 'has-connection-password'))
+  ipcMain.handle('has-connection-password', safeIpcHandler(() => authManager.hasPassword(), 'has-connection-password'))
   
   ipcMain.handle('clear-connection-password', safeIpcHandler(() => {
     authManager.clearPassword()
     return { success: true }
   }, 'clear-connection-password'))
   
-  ipcMain.handle('verify-connection-password', safeIpcHandler((event, password) => {
-    return authManager.verifyPassword(password)
-  }, 'verify-connection-password'))
+  ipcMain.handle('verify-connection-password', safeIpcHandler((event, password) => authManager.verifyPassword(password), 'verify-connection-password'))
   
-  ipcMain.handle('encrypt-data', safeIpcHandler((event, params) => {
-    return authManager.encrypt(params.data, params.password)
-  }, 'encrypt-data'))
+  ipcMain.handle('encrypt-data', safeIpcHandler((event, params) => authManager.encrypt(params.data, params.password), 'encrypt-data'))
   
-  ipcMain.handle('decrypt-data', safeIpcHandler((event, params) => {
-    return authManager.decrypt(params.encryptedData, params.password)
-  }, 'decrypt-data'))
+  ipcMain.handle('decrypt-data', safeIpcHandler((event, params) => authManager.decrypt(params.encryptedData, params.password), 'decrypt-data'))
 
-  ipcMain.handle('window-minimize', safeIpcHandler(() => {
-    return minimizeMainWindow()
-  }, 'window-minimize'))
+  ipcMain.handle('window-minimize', safeIpcHandler(() => minimizeMainWindow(), 'window-minimize'))
 
-  ipcMain.handle('window-maximize', safeIpcHandler(() => {
-    return maximizeMainWindow()
-  }, 'window-maximize'))
+  ipcMain.handle('window-maximize', safeIpcHandler(() => maximizeMainWindow(), 'window-maximize'))
 
-  ipcMain.handle('window-close', safeIpcHandler(() => {
-    return closeMainWindow()
-  }, 'window-close'))
+  ipcMain.handle('window-close', safeIpcHandler(() => closeMainWindow(), 'window-close'))
 
-  ipcMain.handle('show-main-window', safeIpcHandler(() => {
-    return showMainWindow()
-  }, 'show-main-window'))
+  ipcMain.handle('show-main-window', safeIpcHandler(() => showMainWindow(), 'show-main-window'))
 
-  ipcMain.handle('set-tray-icon', safeIpcHandler((event, visible) => {
-    return { success: true }
-  }, 'set-tray-icon'))
+  ipcMain.handle('set-tray-icon', safeIpcHandler(() => ({ success: true }), 'set-tray-icon'))
 
   ipcMain.handle('connect-signaling-server', safeIpcHandler(async (event, serverUrl) => {
     return await signalingServer.connect(serverUrl)
@@ -328,9 +328,7 @@ function init(deviceIdParam, loggerParam) {
     return signalingServer.sendIceCandidate(sessionId, candidate, toDeviceId)
   }, 'send-ice-candidate'))
 
-  ipcMain.handle('get-signaling-status', safeIpcHandler(() => {
-    return signalingServer.getConnectionStatus()
-  }, 'get-signaling-status'))
+  ipcMain.handle('get-signaling-status', safeIpcHandler(() => signalingServer.getConnectionStatus(), 'get-signaling-status'))
 
   signalingServer.onIncomingConnection((data) => {
     const mainWindow = getMainWindow()
@@ -368,7 +366,17 @@ function init(deviceIdParam, loggerParam) {
   })
 }
 
+function cleanup() {
+  log('info', '清理 IPC 处理器')
+  remoteStreamInfo = null
+  inputHandler.cleanup()
+  cleanupDirectServer()
+  signalingServer.disconnect()
+}
+
 module.exports = {
   init,
-  generateDeviceId
+  generateDeviceId,
+  loadDeviceId,
+  cleanup
 }

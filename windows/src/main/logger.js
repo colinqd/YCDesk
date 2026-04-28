@@ -174,17 +174,9 @@ function createLogger(options = {}) {
   return loggerInstance
 }
 
-function getLogger() {
-  if (!loggerInstance) {
-    return createLogger()
-  }
-  return loggerInstance
-}
-
 module.exports = {
   Logger,
   createLogger,
-  getLogger,
   LOG_LEVELS,
   LOG_LEVEL_NAMES
 }

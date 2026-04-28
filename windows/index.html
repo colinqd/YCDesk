@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>YCDesk - 远程桌面控制</title>
   <link rel="stylesheet" href="src/renderer/css/styles.css">
-  <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+  <script src="node_modules/socket.io-client/dist/socket.io.min.js"></script>
 </head>
 <body>
   <div class="container">
@@ -49,7 +49,15 @@
               加载中...
             </div>
           </div>
-          <div class="status-badge" id="serverStatus">
+          <div class="input-group" style="margin-top: 12px;">
+            <label>自定义设备 ID (6-16位字母数字)</label>
+            <input type="text" id="customDeviceId" placeholder="输入自定义设备ID" maxlength="16" style="width: 100%; text-transform: uppercase;">
+          </div>
+          <div class="btn-group" style="margin-top: 10px;">
+            <button class="btn btn-secondary" onclick="setCustomDeviceId()">设置ID</button>
+            <button class="btn btn-danger" onclick="resetDeviceId()">随机生成</button>
+          </div>
+          <div class="status-badge" id="serverStatus" style="margin-top: 12px;">
             <span class="status-dot"></span>
             <span id="serverStatusText">就绪</span>
           </div>
@@ -73,16 +81,21 @@
           
           <div id="controlledSignalingMode" class="mode-content">
             <div class="input-group">
+              <label>连接方式</label>
+              <select id="controlledConnectionMode" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px;">
+                <option value="socketio" selected>Socket.IO（用于 server-gui）</option>
+                <option value="websocket">原始 WebSocket（用于 android-server）</option>
+              </select>
+            </div>
+            <div class="input-group" style="margin-top: 10px;">
+              <label style="display: flex; align-items: center; gap: 8px;">
+                <input type="checkbox" id="autoAcceptConnection" style="width: auto; margin: 0;">
+                <span>自动接受连接（无需确认）</span>
+              </label>
+            </div>
+            <div class="input-group">
               <label>信令服务器地址</label>
-              <div style="display: flex; gap: 10px;">
-                <select id="controlledProtocolSelect" style="flex: 0 0 120px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px;">
-                  <option value="ws://" selected>ws:// (非安全)</option>
-                  <option value="wss://">wss:// (安全)</option>
-                  <option value="http://">http:// (非安全)</option>
-                  <option value="https://">https:// (安全)</option>
-                </select>
-                <input type="text" id="controlledServerUrl" placeholder="localhost:3000" value="localhost:3000" style="flex: 1;">
-              </div>
+              <input type="text" id="controlledServerUrl" placeholder="例如: 192.168.1.100:3000" value="localhost:3000" style="width: 100%;">
               <button class="btn btn-primary" onclick="controlledConnectToServer()">连接服务器</button>
               <button class="btn btn-danger" onclick="controlledDisconnectFromServer()">断开连接</button>
             </div>
@@ -96,8 +109,11 @@
           </div>
         </div>
 
-        <div class="log-box">
-          <div class="log-title">连接日志</div>
+        <div class="log-box" id="controlledLogBox">
+          <div class="log-header">
+            <div class="log-title">连接日志</div>
+            <button class="log-toggle-btn" onclick="toggleLogBox('controlledLogBox')">收起</button>
+          </div>
           <div class="log-content" id="connectionLog"></div>
         </div>
       </div>
@@ -140,29 +156,31 @@
               </div>
             </div>
             <div class="input-group">
+              <label>连接方式</label>
+              <select id="controllerConnectionMode" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px;">
+                <option value="socketio" selected>Socket.IO（用于 server-gui）</option>
+                <option value="websocket">原始 WebSocket（用于 android-server）</option>
+              </select>
+            </div>
+            <div class="input-group">
               <label>信令服务器地址</label>
-              <div style="display: flex; gap: 10px;">
-                <select id="controllerProtocolSelect" style="flex: 0 0 120px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px;">
-                  <option value="ws://" selected>ws:// (非安全)</option>
-                  <option value="wss://">wss:// (安全)</option>
-                  <option value="http://">http:// (非安全)</option>
-                  <option value="https://">https:// (安全)</option>
-                </select>
-                <input type="text" id="controllerServerUrl" placeholder="localhost:3000" value="localhost:3000" style="flex: 1;">
-              </div>
+              <input type="text" id="controllerServerUrl" placeholder="例如: 192.168.1.100:3000" value="localhost:3000" style="width: 100%;">
               <button class="btn btn-secondary" style="margin-top: 10px;" onclick="controllerConnectToServer()">连接服务器</button>
               <button class="btn btn-danger" style="margin-top: 10px;" onclick="controllerDisconnectFromServer()">断开连接</button>
             </div>
             <div class="input-group" style="margin-top: 20px;">
               <label>对方设备 ID</label>
-              <input type="text" id="targetDeviceId" placeholder="输入对方设备 ID" maxlength="9">
+              <input type="text" id="targetDeviceId" placeholder="输入对方设备 ID" maxlength="16" oninput="this.value = this.value.toUpperCase()">
               <button class="btn btn-primary" style="margin-top: 10px;" onclick="connectDevice()">连接</button>
             </div>
           </div>
         </div>
 
-        <div class="log-box">
-          <div class="log-title">连接日志</div>
+        <div class="log-box" id="controllerLogBox">
+          <div class="log-header">
+            <div class="log-title">连接日志</div>
+            <button class="log-toggle-btn" onclick="toggleLogBox('controllerLogBox')">收起</button>
+          </div>
           <div class="log-content" id="connectionLogController"></div>
         </div>
       </div>
@@ -174,7 +192,13 @@
   </div>
 
   <script src="shared/config.js"></script>
+  <script src="shared/device-id-manager.js"></script>
+  <script src="shared/signaling-client.js"></script>
   <script src="shared/data-channel-manager.js"></script>
+  <script src="src/renderer/js/frame-capturer.js"></script>
+  <script src="src/renderer/js/dirty-region-detector.js"></script>
+  <script src="src/renderer/js/frame-differ.js"></script>
+  <script src="src/renderer/js/video-frame-transmitter.js"></script>
   <script src="src/renderer/js/ui-manager.js"></script>
   <script src="src/renderer/js/history-manager.js"></script>
   <script src="src/renderer/js/connection-manager.js"></script>

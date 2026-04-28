@@ -2,7 +2,7 @@ const { app } = require('electron')
 const path = require('path')
 const os = require('os')
 const { createMainWindow, createRemoteWindow } = require('./window-manager')
-const { init: initIpcHandlers, generateDeviceId } = require('./ipc-handlers')
+const { init: initIpcHandlers, generateDeviceId, loadDeviceId } = require('./ipc-handlers')
 const { createLogger } = require('./logger')
 
 const isDevelopment = process.env.NODE_ENV === 'development'
@@ -13,7 +13,7 @@ const logger = createLogger({
 
 const instanceId = Math.random().toString(36).substr(2, 8)
 const userDataPath = path.join(os.tmpdir(), `ycdesk-${instanceId}`)
-const deviceId = generateDeviceId()
+const deviceId = loadDeviceId()
 
 app.setPath('userData', userDataPath)
 app.setAppUserModelId(`com.ycdesk.desktop.${instanceId}`)

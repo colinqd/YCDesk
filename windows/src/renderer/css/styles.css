@@ -392,15 +392,42 @@ body {
   background: #1a1a2e;
   border-radius: 10px;
   padding: 15px;
-  max-height: 180px;
   overflow-y: auto;
+}
+
+.log-box.collapsed .log-content {
+  display: none;
+}
+
+.log-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.log-box.collapsed .log-header {
+  margin-bottom: 0;
 }
 
 .log-title {
   color: #94a3b8;
   font-size: 12px;
-  margin-bottom: 8px;
   font-weight: 600;
+}
+
+.log-toggle-btn {
+  background: transparent;
+  border: 1px solid #4a5568;
+  color: #94a3b8;
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.log-toggle-btn:hover {
+  background: #2d3748;
 }
 
 .log-content {
@@ -408,6 +435,8 @@ body {
   font-family: 'Consolas', 'Courier New', monospace;
   font-size: 11px;
   line-height: 1.6;
+  max-height: 150px;
+  overflow-y: auto;
 }
 
 .log-content .error {

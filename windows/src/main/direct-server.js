@@ -4,30 +4,38 @@ const { getMainWindow } = require('./window-manager')
 
 let directServer = null
 let directClientConnections = new Map()
+let logger = null
+
+function initLogger(logInstance) {
+  logger = logInstance
+}
+
+function log(level, message, data) {
+  if (logger && typeof logger[level] === 'function') {
+    logger[level](message, data)
+  } else if (level === 'error') {
+    console.error(`[DirectServer] ${message}`, data || '')
+  }
+}
 
 function getLocalIps() {
   try {
     const interfaces = os.networkInterfaces()
     const ipList = []
     
-    console.log('开始获取本地IP地址...')
-    
     for (const name of Object.keys(interfaces)) {
       for (const iface of interfaces[name]) {
         if (iface.family === 'IPv4' && !iface.internal) {
-          console.log('找到IPv4地址:', name, iface.address)
           ipList.push({ address: iface.address, family: 'IPv4', name: name })
         } else if (iface.family === 'IPv6' && !iface.internal && iface.scopeid === 0) {
-          console.log('找到IPv6地址:', name, iface.address)
           ipList.push({ address: iface.address, family: 'IPv6', name: name })
         }
       }
     }
     
-    console.log('获取到的IP列表:', ipList)
     return ipList
   } catch (error) {
-    console.error('获取本地IP地址失败:', error)
+    log('error', '获取本地IP地址失败:', error.message)
     return []
   }
 }
@@ -66,7 +74,7 @@ function setupClientSocket(clientSocket, clientId) {
             }
           }
         } catch (e) {
-          console.error('解析消息失败:', e)
+          log('error', '解析消息失败:', e.message)
         }
       }
     }
@@ -75,7 +83,7 @@ function setupClientSocket(clientSocket, clientId) {
   clientSocket.on('close', () => {
     cleanup()
     directClientConnections.delete(clientId)
-    console.log('客户端连接关闭:', clientId)
+    log('debug', '客户端连接关闭:', clientId)
     const mainWindow = getMainWindow()
     if (mainWindow) {
       mainWindow.webContents.send('direct-connection-closed', { clientId: clientId })
@@ -84,17 +92,17 @@ function setupClientSocket(clientSocket, clientId) {
   
   clientSocket.on('error', (err) => {
     cleanup()
-    console.error('客户端连接错误:', err)
+    log('error', '客户端连接错误:', err.message)
   })
   
   heartbeatInterval = setInterval(() => {
     const now = Date.now()
-    if (now - lastHeartbeat > 15000) {
-      console.log('客户端心跳超时，断开连接:', clientId)
+    if (now - lastHeartbeat > 30000) {
+      log('debug', '客户端心跳超时，断开连接:', clientId)
       clientSocket.destroy()
       cleanup()
     }
-  }, 10000)
+  }, 15000)
 }
 
 async function startDirectServerImpl(port) {
@@ -111,7 +119,7 @@ async function startDirectServerImpl(port) {
       const clientId = Math.random().toString(36).substr(2, 8)
       directClientConnections.set(clientId, clientSocket)
       
-      console.log('新客户端连接:', clientId, clientSocket.remoteAddress, clientSocket.remotePort)
+      log('info', '新客户端连接:', { clientId, address: clientSocket.remoteAddress, port: clientSocket.remotePort })
       
       const mainWindow = getMainWindow()
       if (mainWindow) {
@@ -126,12 +134,12 @@ async function startDirectServerImpl(port) {
     })
     
     directServer.on('error', (err) => {
-      console.error('直连服务器错误:', err)
+      log('error', '直连服务器错误:', err.message)
       reject(err)
     })
     
     directServer.listen(port, '0.0.0.0', () => {
-      console.log('直连服务器已启动，监听端口:', port)
+      log('info', '直连服务器已启动，监听端口:', port)
       resolve({ success: true, port: port })
     })
   })
@@ -143,7 +151,7 @@ async function stopDirectServerImpl() {
       directServer.close(() => {
         directServer = null
         directClientConnections.clear()
-        console.log('直连服务器已停止')
+        log('info', '直连服务器已停止')
         resolve({ success: true })
       })
     } else {
@@ -159,13 +167,13 @@ async function connectDirectClientImpl(host, port) {
     const clientId = Math.random().toString(36).substr(2, 8)
     
     clientSocket.on('error', (err) => {
-      console.error('连接错误:', err)
+      log('error', '连接错误:', err.message)
       reject(err)
     })
     
     clientSocket.connect(port, host, () => {
       directClientConnections.set(clientId, clientSocket)
-      console.log('成功连接到服务器:', host, port)
+      log('info', '成功连接到服务器:', { host, port })
       setupClientSocket(clientSocket, clientId)
       resolve({ success: true, clientId: clientId })
     })
@@ -192,11 +200,20 @@ async function closeDirectConnectionImpl(clientId) {
     directClientConnections.delete(clientId)
   }
   
-  // 重置所有输入状态
   const { resetAllInputState } = require('./input-handler')
   resetAllInputState()
   
   return { success: true }
+}
+
+function cleanup() {
+  if (directServer) {
+    directServer.close()
+    directServer = null
+  }
+  directClientConnections.forEach((socket) => socket.destroy())
+  directClientConnections.clear()
+  log('info', '直连服务器已清理')
 }
 
 module.exports = {
@@ -205,5 +222,7 @@ module.exports = {
   stopDirectServerImpl,
   connectDirectClientImpl,
   sendDirectMessageImpl,
-  closeDirectConnectionImpl
+  closeDirectConnectionImpl,
+  initLogger,
+  cleanup
 }
