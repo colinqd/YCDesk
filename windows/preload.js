@@ -114,5 +114,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   windowMinimize: () => ipcRenderer.invoke('window-minimize'),
   windowMaximize: () => ipcRenderer.invoke('window-maximize'),
   windowClose: () => ipcRenderer.invoke('window-close'),
-  setTrayIcon: (visible) => ipcRenderer.invoke('set-tray-icon', visible)
+  setTrayIcon: (visible) => ipcRenderer.invoke('set-tray-icon', visible),
+
+  // 解锁设置相关
+  getUnlockStatus: () => ipcRenderer.invoke('auto-unlock-get-status'),
+  saveUnlockPassword: (password) => ipcRenderer.invoke('auto-unlock-save-password', password),
+  clearUnlockPassword: () => ipcRenderer.invoke('auto-unlock-clear-password')
 })

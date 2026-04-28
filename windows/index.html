@@ -109,6 +109,29 @@
           </div>
         </div>
 
+        <div class="section" id="unlockSettingsSection">
+          <div class="section-title">远程解锁设置</div>
+          <div class="unlock-settings">
+            <div class="unlock-status-box">
+              <div id="unlockPasswordStatus">
+                <span class="status-icon">⚠️</span>
+                <span class="status-text">未设置解锁密码</span>
+              </div>
+            </div>
+            <div class="input-group" style="margin-top: 10px;">
+              <label>解锁密码</label>
+              <div class="password-input-wrapper">
+                <input type="password" id="unlockPasswordInput" placeholder="输入解锁密码" style="flex: 1;">
+                <button class="toggle-password-btn" onclick="toggleUnlockPasswordVisibility()" id="toggleUnlockPasswordBtn">👁️</button>
+              </div>
+            </div>
+            <div class="btn-group" style="margin-top: 12px;">
+              <button class="btn btn-primary" onclick="saveUnlockPassword()">保存密码</button>
+              <button class="btn btn-danger" onclick="clearUnlockPassword()">清除密码</button>
+            </div>
+          </div>
+        </div>
+
         <div class="log-box" id="controlledLogBox">
           <div class="log-header">
             <div class="log-title">连接日志</div>

@@ -465,6 +465,91 @@ function toggleLogBox(boxId) {
   }
 }
 
+// 解锁设置相关函数
+let unlockPasswordVisible = false
+
+async function loadUnlockPasswordStatus() {
+  try {
+    const status = await window.electronAPI.getUnlockStatus()
+    updateUnlockStatusDisplay(status.hasSavedPassword)
+  } catch (e) {
+    console.error('加载解锁状态失败:', e)
+  }
+}
+
+function updateUnlockStatusDisplay(hasPassword) {
+  const statusBox = document.querySelector('.unlock-status-box')
+  const statusDiv = document.getElementById('unlockPasswordStatus')
+  
+  if (hasPassword) {
+    statusBox.classList.add('has-password')
+    statusDiv.innerHTML = `
+      <span class="status-icon">✅</span>
+      <span class="status-text">已设置解锁密码</span>
+    `
+  } else {
+    statusBox.classList.remove('has-password')
+    statusDiv.innerHTML = `
+      <span class="status-icon">⚠️</span>
+      <span class="status-text">未设置解锁密码</span>
+    `
+  }
+}
+
+function toggleUnlockPasswordVisibility() {
+  const input = document.getElementById('unlockPasswordInput')
+  const btn = document.getElementById('toggleUnlockPasswordBtn')
+  unlockPasswordVisible = !unlockPasswordVisible
+  
+  if (unlockPasswordVisible) {
+    input.type = 'text'
+    btn.textContent = '👁️‍🗨️'
+  } else {
+    input.type = 'password'
+    btn.textContent = '👁️'
+  }
+}
+
+async function saveUnlockPassword() {
+  const password = document.getElementById('unlockPasswordInput').value
+  
+  if (!password) {
+    showMessage('请输入解锁密码')
+    return
+  }
+  
+  try {
+    const result = await window.electronAPI.saveUnlockPassword(password)
+    if (result.success) {
+      showMessage('解锁密码保存成功')
+      document.getElementById('unlockPasswordInput').value = ''
+      loadUnlockPasswordStatus()
+    } else {
+      showMessage('保存失败: ' + (result.message || '未知错误'))
+    }
+  } catch (e) {
+    console.error('保存密码失败:', e)
+    showMessage('保存失败: ' + e.message)
+  }
+}
+
+async function clearUnlockPassword() {
+  if (!confirm('确定要清除解锁密码吗？')) {
+    return
+  }
+  
+  try {
+    const result = await window.electronAPI.clearUnlockPassword()
+    if (result.success) {
+      showMessage('解锁密码已清除')
+      loadUnlockPasswordStatus()
+    }
+  } catch (e) {
+    console.error('清除密码失败:', e)
+    showMessage('清除失败: ' + e.message)
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   initializeApp()
   
@@ -482,4 +567,9 @@ document.addEventListener('DOMContentLoaded', () => {
       signalingManager.setConnectionMode(e.target.value)
     })
   }
+  
+  // 加载解锁密码状态
+  setTimeout(() => {
+    loadUnlockPasswordStatus()
+  }, 500)
 })

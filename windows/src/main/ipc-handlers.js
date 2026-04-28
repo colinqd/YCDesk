@@ -10,6 +10,8 @@ const {
   createTray
 } = require('./window-manager')
 const inputHandler = require('./input-handler')
+const credentialsManager = require('./credentials-manager')
+const autoUnlockService = require('./auto-unlock-service')
 const {
   getLocalIps,
   startDirectServerImpl,
@@ -364,6 +366,22 @@ function init(deviceIdParam, loggerParam) {
       mainWindow.webContents.send('ice-candidate', data)
     }
   })
+
+  // 解锁设置相关的 IPC 处理
+  ipcMain.handle('auto-unlock-get-status', safeIpcHandler(async () => {
+    const passwordResult = await credentialsManager.getUnlockPassword()
+    return {
+      hasSavedPassword: passwordResult.success && passwordResult.password !== null
+    }
+  }, 'auto-unlock-get-status'))
+
+  ipcMain.handle('auto-unlock-save-password', safeIpcHandler(async (event, password) => {
+    return await credentialsManager.saveUnlockPassword(password, true)
+  }, 'auto-unlock-save-password'))
+
+  ipcMain.handle('auto-unlock-clear-password', safeIpcHandler(async () => {
+    return await credentialsManager.clearUnlockPassword()
+  }, 'auto-unlock-clear-password'))
 }
 
 function cleanup() {
