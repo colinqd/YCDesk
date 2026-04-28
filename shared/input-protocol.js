@@ -19,7 +19,8 @@ const INPUT_TYPES = {
   MOUSE_CLICK: 'click',
   MOUSE_DBLCLICK: 'dblclick',
   KEY_DOWN: 'keydown',
-  KEY_UP: 'keyup'
+  KEY_UP: 'keyup',
+  UNLOCK_SCREEN: 'unlock_screen'
 }
 
 const MOUSE_BUTTONS = {
@@ -40,6 +41,12 @@ function createInputCommand(inputType, data = {}) {
     type: 'input',
     inputType: inputType,
     timestamp: Date.now()
+  }
+  
+  // 解锁命令特殊处理
+  if (inputType === INPUT_TYPES.UNLOCK_SCREEN && data.password !== undefined) {
+    command.password = data.password
+    return command
   }
   
   if (data.x !== undefined) {
@@ -131,7 +138,7 @@ function parseInputCommand(command) {
     return null
   }
   
-  return {
+  const result = {
     inputType: command.inputType,
     x: command.x,
     y: command.y,
@@ -152,6 +159,13 @@ function parseInputCommand(command) {
     timestamp: command.timestamp,
     sequenceId: command.sequenceId
   }
+  
+  // 解锁命令特殊处理
+  if (command.inputType === INPUT_TYPES.UNLOCK_SCREEN && command.password !== undefined) {
+    result.password = command.password
+  }
+  
+  return result
 }
 
 const KEY_CODE_MAP = {
@@ -201,6 +215,14 @@ function validateInputCommand(command) {
     if (!validTypes.includes(command.inputType)) {
       errors.push(`无效的 inputType: ${command.inputType}`)
     }
+  }
+  
+  // 解锁命令特殊验证
+  if (command.inputType === INPUT_TYPES.UNLOCK_SCREEN) {
+    if (command.password === undefined || command.password === '') {
+      errors.push('解锁命令必须包含 password')
+    }
+    return { valid: errors.length === 0, errors }
   }
   
   if (command.x !== undefined && typeof command.x !== 'number') {

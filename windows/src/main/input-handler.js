@@ -1,5 +1,6 @@
 const { screen } = require('electron')
 const { validateInputCommand, parseInputCommand, INPUT_TYPES, isDeltaInputType, isBatchInputType } = require('../../shared/input-protocol')
+const credentialsManager = require('./credentials-manager')
 
 let robot = null
 let logger = null
@@ -103,7 +104,7 @@ const KEY_CODE_MAP = {
   'CapsLock': 'caps_lock', 'NumLock': 'num_lock', 'ScrollLock': 'scroll_lock'
 }
 
-function handleRemoteInput(event, inputData) {
+async function handleRemoteInput(event, inputData) {
   if (!robot) {
     return
   }
@@ -116,6 +117,12 @@ function handleRemoteInput(event, inputData) {
     
     const input = parseInputCommand(inputData)
     if (!input) {
+      return
+    }
+    
+    // 处理解锁命令
+    if (input.inputType === INPUT_TYPES.UNLOCK_SCREEN) {
+      await handleUnlockScreen(input.password)
       return
     }
     
@@ -461,6 +468,52 @@ function resetModifiers() {
 function resetAllInputState() {
   log('info', '重置所有输入状态')
   resetModifiers()
+}
+
+async function handleUnlockScreen(password) {
+  if (!robot || !password) {
+    log('error', '解锁失败: robot未初始化或密码为空')
+    return
+  }
+  
+  log('info', '开始执行远程解锁')
+  
+  try {
+    // 1. 先按ESC键唤醒登录界面
+    robot.keyTap('escape')
+    await sleep(300)
+    
+    // 2. 点击屏幕中央（确保激活输入框）
+    const primaryDisplay = screen.getPrimaryDisplay()
+    const centerX = Math.floor(primaryDisplay.size.width / 2)
+    const centerY = Math.floor(primaryDisplay.size.height / 2)
+    
+    robot.moveMouse(centerX, centerY)
+    await sleep(100)
+    robot.mouseClick()
+    await sleep(200)
+    
+    // 3. 再按ESC确保在正确界面
+    robot.keyTap('escape')
+    await sleep(200)
+    
+    // 4. 输入密码
+    log('info', '输入解锁密码')
+    robot.typeString(password)
+    await sleep(200)
+    
+    // 5. 按Enter键确认
+    log('info', '按Enter键确认')
+    robot.keyTap('enter')
+    
+    log('info', '远程解锁执行完成')
+  } catch (e) {
+    log('error', '远程解锁出错:', e.message)
+  }
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
 }
 
 function cleanup() {

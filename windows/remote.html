@@ -1220,6 +1220,7 @@
         connectionManager = new SignalingConnectionManager();
         connectionManager.isController = (data.role === 'controller');
         connectionManager.targetDeviceId = data.targetDeviceId;
+        window.connectionManager = connectionManager;
         setupConnectionManagerEvents();
         
         connectionManager.setVideoElements(videoElement, videoContainer, videoWrapper, remoteScreenEl);
@@ -1270,6 +1271,7 @@
           connectionManager = new DirectConnectionManager();
           
           connectionManager.setModeData(data);
+          window.connectionManager = connectionManager;
           
           setupConnectionManagerEvents();
           
@@ -1545,10 +1547,10 @@
         this.messageEl = document.getElementById('unlockMessage');
         this.autoUnlockEnabled = false;
         this.savedPasswordAvailable = false;
+        this.savedPassword = null;
         
         this.setupEventListeners();
-        this.initIPC();
-        this.checkState();
+        this.loadSavedPassword();
       }
       
       setupEventListeners() {
@@ -1566,40 +1568,27 @@
         });
       }
       
-      initIPC() {
-        if (typeof ipcRenderer !== 'undefined') {
-          ipcRenderer.on('unlock-state-changed', (event, data) => {
-            this.updateState(data.isLocked, data.autoUnlockEnabled);
-          });
+      loadSavedPassword() {
+        // 尝试从localStorage读取保存的密码
+        try {
+          const saved = localStorage.getItem('ycdesk_unlock_password');
+          if (saved) {
+            this.savedPassword = saved;
+            this.savedPasswordAvailable = true;
+            this.rememberCheckbox.checked = true;
+          }
+        } catch (e) {
+          console.error('读取保存的密码失败', e);
         }
       }
       
-      async checkState() {
-        if (typeof ipcRenderer !== 'undefined') {
-          const state = await ipcRenderer.invoke('auto-unlock:get-state');
-          this.updateState(state.isLocked, state.autoUnlockEnabled, state.hasSavedPassword);
-        }
-      }
-      
-      updateState(isLocked, autoUnlockEnabled, hasSavedPassword = false) {
-        this.autoUnlockEnabled = autoUnlockEnabled;
-        
-        if (isLocked) {
-          this.showOverlay(hasSavedPassword);
-        } else {
-          this.hideOverlay();
-        }
-      }
-      
-      showOverlay(hasSavedPassword = false) {
+      showOverlay() {
         this.overlay.classList.remove('hidden');
         this.passwordInput.focus();
         
-        if (hasSavedPassword) {
-          this.savedPasswordAvailable = true;
+        if (this.savedPasswordAvailable) {
           this.autoBtn.style.display = 'block';
         } else {
-          this.savedPasswordAvailable = false;
           this.autoBtn.style.display = 'none';
         }
       }
@@ -1618,50 +1607,79 @@
           return;
         }
         
-        if (typeof ipcRenderer !== 'undefined') {
-          const result = await ipcRenderer.invoke('auto-unlock:manual', password);
+        // 发送解锁命令
+        try {
+          this.sendUnlockCommand(password);
+          this.showMessage('正在发送解锁命令...', 'success');
           
-          if (result.success) {
-            this.showMessage(result.message, 'success');
-            
-            // 如果用户勾选了记住密码，就保存它
-            if (this.rememberCheckbox.checked) {
-              await ipcRenderer.invoke('auto-unlock:save-password', password, true);
-            }
-            
-            setTimeout(() => this.hideOverlay(), 1000);
-          } else {
-            this.showMessage(result.message, 'error');
+          // 保存密码
+          if (this.rememberCheckbox.checked) {
+            this.savePassword(password);
           }
+          
+          setTimeout(() => this.hideOverlay(), 1500);
+        } catch (error) {
+          this.showMessage('发送解锁命令失败: ' + error.message, 'error');
         }
       }
       
       async handleAutoUnlock() {
-        if (typeof ipcRenderer !== 'undefined') {
-          const result = await ipcRenderer.invoke('auto-unlock:try');
-          
-          if (result.success) {
-            this.showMessage(result.message, 'success');
-            setTimeout(() => this.hideOverlay(), 1000);
-          } else {
-            this.showMessage(result.message, 'error');
-            this.autoBtn.style.display = 'none'; // 隐藏自动解锁按钮
-          }
+        if (!this.savedPassword) {
+          this.showMessage('没有保存的密码', 'error');
+          return;
+        }
+        
+        // 使用保存的密码
+        try {
+          this.sendUnlockCommand(this.savedPassword);
+          this.showMessage('正在发送自动解锁命令...', 'success');
+          setTimeout(() => this.hideOverlay(), 1500);
+        } catch (error) {
+          this.showMessage('自动解锁失败: ' + error.message, 'error');
+          this.autoBtn.style.display = 'none';
         }
       }
       
-      async handlePasswordSave() {
-        const password = this.passwordInput.value;
-        const remember = this.rememberCheckbox.checked;
+      sendUnlockCommand(password) {
+        if (!window.connectionManager) {
+          throw new Error('连接管理器未初始化');
+        }
         
-        if (remember && password) {
-          if (typeof ipcRenderer !== 'undefined') {
-            await ipcRenderer.invoke('auto-unlock:save-password', password, true);
-          }
-        } else if (!remember) {
-          if (typeof ipcRenderer !== 'undefined') {
-            await ipcRenderer.invoke('auto-unlock:clear-password');
-          }
+        // 创建解锁命令
+        const unlockCommand = {
+          inputType: 'unlock_screen',
+          password: password
+        };
+        
+        // 发送命令
+        window.connectionManager.sendInput(unlockCommand);
+      }
+      
+      savePassword(password) {
+        try {
+          localStorage.setItem('ycdesk_unlock_password', password);
+          this.savedPassword = password;
+          this.savedPasswordAvailable = true;
+        } catch (e) {
+          console.error('保存密码失败', e);
+        }
+      }
+      
+      handlePasswordSave() {
+        if (!this.rememberCheckbox.checked) {
+          this.clearPassword();
+        } else if (this.passwordInput.value) {
+          this.savePassword(this.passwordInput.value);
+        }
+      }
+      
+      clearPassword() {
+        try {
+          localStorage.removeItem('ycdesk_unlock_password');
+          this.savedPassword = null;
+          this.savedPasswordAvailable = false;
+        } catch (e) {
+          console.error('清除密码失败', e);
         }
       }
       
