@@ -1,5 +1,6 @@
 const { BrowserWindow, Tray, Menu, nativeImage, app } = require('electron')
 const path = require('path')
+const autoUnlockService = require('./auto-unlock-service')
 
 let mainWindow = null
 let remoteWindow = null
@@ -93,6 +94,7 @@ function createRemoteWindow() {
 
   remoteWindow.once('ready-to-show', () => {
     remoteWindow.show()
+    autoUnlockService.setRemoteWindow(remoteWindow)
   })
 
   remoteWindow.webContents.on('zoom-changed', (event, zoomDirection) => {
@@ -108,6 +110,7 @@ function createRemoteWindow() {
 
   remoteWindow.on('closed', () => {
     remoteWindow = null
+    autoUnlockService.setRemoteWindow(null)
   })
 
   return remoteWindow
