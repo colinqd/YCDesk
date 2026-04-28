@@ -433,6 +433,7 @@
         <option value="1024x768">1024x768</option>
         <option value="800x600">800x600</option>
       </select>
+      <button class="toolbar-btn" onclick="openUnlockPanel()">🔓 解锁</button>
       <button class="toolbar-btn" onclick="toggleDebugLog()">日志</button>
       <button class="toolbar-btn" onclick="toggleFullscreen()">全屏</button>
       <button class="toolbar-btn danger" onclick="disconnect()">断开</button>
@@ -1694,9 +1695,19 @@
       }
     }
     
+    // 全局解锁 UI 实例
+    let unlockUI = null;
+    
+    // 暴露打开解锁面板的全局函数
+    window.openUnlockPanel = function() {
+      if (unlockUI) {
+        unlockUI.showOverlay();
+      }
+    };
+    
     // 初始化解锁 UI
     document.addEventListener('DOMContentLoaded', () => {
-      new UnlockUI();
+      unlockUI = new UnlockUI();
     });
   </script>
 </body>
