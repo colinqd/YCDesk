@@ -484,6 +484,7 @@
   </div>
 
   <script src="shared/data-channel-manager.js"></script>
+  <script src="shared/input-protocol.js"></script>
   <script src="src/renderer/js/video-frame-receiver.js"></script>
   <script src="src/renderer/js/remote-video-handler.js"></script>
   <script src="shared/components/matrix-transformer.js"></script>
@@ -1668,12 +1669,37 @@
         
         console.log('[UnlockUI] 发送解锁命令，密码长度:', password.length);
         
-        // 使用 createInputCommand 来创建正确格式的解锁命令
-        const unlockCommand = window.createInputCommand('unlock_screen', {
-          password: password
-        });
+        let unlockCommand;
         
-        console.log('[UnlockUI] 完整解锁命令:', unlockCommand);
+        // 尝试使用 createInputCommand
+        if (window.createInputCommand && typeof window.createInputCommand === 'function') {
+          try {
+            unlockCommand = window.createInputCommand('unlock_screen', {
+              password: password
+            });
+            console.log('[UnlockUI] 使用 createInputCommand 构造命令:', unlockCommand);
+          } catch (e) {
+            console.warn('[UnlockUI] createInputCommand 失败，使用备用方案:', e.message);
+            // 备用方案：直接构造标准格式的命令
+            unlockCommand = {
+              type: 'input',
+              inputType: 'unlock_screen',
+              password: password,
+              timestamp: Date.now()
+            };
+          }
+        } else {
+          console.warn('[UnlockUI] window.createInputCommand 未找到，使用备用方案');
+          // 备用方案
+          unlockCommand = {
+            type: 'input',
+            inputType: 'unlock_screen',
+            password: password,
+            timestamp: Date.now()
+          };
+        }
+        
+        console.log('[UnlockUI] 发送解锁命令:', unlockCommand);
         
         // 发送命令
         window.connectionManager.sendInput(unlockCommand);
