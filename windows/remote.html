@@ -1666,11 +1666,14 @@
           throw new Error('连接管理器未初始化');
         }
         
-        // 创建解锁命令
-        const unlockCommand = {
-          inputType: 'unlock_screen',
+        console.log('[UnlockUI] 发送解锁命令，密码长度:', password.length);
+        
+        // 使用 createInputCommand 来创建正确格式的解锁命令
+        const unlockCommand = window.createInputCommand('unlock_screen', {
           password: password
-        };
+        });
+        
+        console.log('[UnlockUI] 完整解锁命令:', unlockCommand);
         
         // 发送命令
         window.connectionManager.sendInput(unlockCommand);

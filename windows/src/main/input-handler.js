@@ -105,23 +105,31 @@ const KEY_CODE_MAP = {
 }
 
 async function handleRemoteInput(event, inputData) {
+  log('debug', '收到远程输入:', inputData)
+  
   if (!robot) {
+    log('warn', 'robot未初始化，无法处理输入')
     return
   }
   
   try {
     const validation = validateInputCommand(inputData)
     if (!validation.valid) {
+      log('warn', '输入验证失败:', validation.errors)
       return
     }
     
     const input = parseInputCommand(inputData)
     if (!input) {
+      log('warn', '输入解析失败')
       return
     }
     
+    log('debug', '解析后的输入:', input)
+    
     // 处理解锁命令
     if (input.inputType === INPUT_TYPES.UNLOCK_SCREEN) {
+      log('info', '收到解锁命令，密码长度:', input.password ? input.password.length : 0)
       await handleUnlockScreen(input.password)
       return
     }
