@@ -1,0 +1,10 @@
+^D:\MYPROG\YCDESK\WINDOWS\CREDENTIAL_PROVIDER\BUILD\CMAKEFILES\8CF8840C6A447B7538C319B7473B5D76\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SD:/MyProg/YCDesk/windows/credential_provider -BD:/MyProg/YCDesk/windows/credential_provider/build --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file D:/MyProg/YCDesk/windows/credential_provider/build/YCDeskCredentialProvider.slnx
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

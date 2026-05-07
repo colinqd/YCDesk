@@ -256,6 +256,93 @@ function toggleFullscreen() {
   }
 }
 
+function handleRemoteLockStateChanged(data) {
+  const log = typeof window.log === 'function' ? window.log : console.log
+  log('[Android UI] 处理远程锁屏状态变更: isLocked=' + data.isLocked)
+  
+  let lockOverlay = document.getElementById('lockOverlay')
+  const videoContainer = document.getElementById('videoContainer')
+  
+  if (data.isLocked) {
+    log('[Android UI] 显示锁屏提示条')
+    
+    if (!lockOverlay) {
+      lockOverlay = document.createElement('div')
+      lockOverlay.id = 'lockOverlay'
+      lockOverlay.innerHTML = `
+        <div class="lock-banner">
+          <span class="lock-icon">🔒</span>
+          <span class="lock-text">被控端已锁定 - 点击下方解锁按钮</span>
+        </div>
+      `
+      document.body.appendChild(lockOverlay)
+    }
+    
+    lockOverlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      background: rgba(231, 76, 60, 0.95);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12px 20px;
+      z-index: 9999;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+    `
+    
+    const lockBanner = lockOverlay.querySelector('.lock-banner')
+    if (lockBanner) {
+      lockBanner.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        color: white;
+        font-size: 16px;
+        font-weight: 500;
+      `
+    }
+    
+    const lockIcon = lockOverlay.querySelector('.lock-icon')
+    if (lockIcon) {
+      lockIcon.style.cssText = `
+        font-size: 22px;
+      `
+    }
+    
+    const lockText = lockOverlay.querySelector('.lock-text')
+    if (lockText) {
+      lockText.style.cssText = `
+        text-align: center;
+      `
+    }
+    
+    if (videoContainer) {
+      videoContainer.style.filter = 'grayscale(0.4) brightness(0.85)'
+      videoContainer.style.marginTop = '56px'
+    }
+    
+    if (typeof window.showToast === 'function') window.showToast('被控端已锁定')
+    
+  } else {
+    log('[Android UI] 隐藏锁屏提示条')
+    
+    if (lockOverlay) {
+      lockOverlay.style.display = 'none'
+    }
+    
+    if (videoContainer) {
+      videoContainer.style.filter = ''
+      videoContainer.style.marginTop = '0'
+    }
+    
+    if (typeof window.showToast === 'function') window.showToast('被控端已解锁')
+  }
+}
+
+window.handleRemoteLockStateChanged = handleRemoteLockStateChanged
+
 function setupRemoteScreenInteraction() {
     const log = typeof window.log === 'function' ? window.log : console.log
     log('初始化远程屏幕交互...')
@@ -306,8 +393,9 @@ function setupRemoteScreenInteraction() {
                 const controlToggle = document.getElementById('controlToggle');
                 const statsOverlay = document.getElementById('statsOverlay');
                 const keyboardOverlay = document.getElementById('keyboardOverlay');
+                const lockOverlay = document.getElementById('lockOverlay');
                 
-                const uiElements = [controlOverlay, controlToggle, statsOverlay, keyboardOverlay];
+                const uiElements = [controlOverlay, controlToggle, statsOverlay, keyboardOverlay, lockOverlay];
                 
                 for (const element of uiElements) {
                     if (element && element.style.display !== 'none') {
@@ -442,5 +530,6 @@ export {
   hideFloatingMouse,
   handleFloatingMouseEvent,
   toggleFullscreen,
+  handleRemoteLockStateChanged,
   setupRemoteScreenInteraction
 }

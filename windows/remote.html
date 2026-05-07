@@ -1397,6 +1397,36 @@
       connectionManager.on('auxiliary-channel-error', (data) => {
       });
       
+      // 新增：处理被控端锁屏状态变更
+      connectionManager.on('unlock-state-changed', (data) => {
+        console.log('[remote.html] connectionManager 收到 unlock-state-changed 事件: ' + JSON.stringify(data));
+        log('收到被控端锁屏状态变更: ' + JSON.stringify(data));
+        if (data.isLocked) {
+          console.log('[remote.html] 被控端已锁定，显示解锁覆盖层');
+          log('被控端已锁定，显示解锁覆盖层');
+          updateStatus('已锁定', 'error');
+          if (unlockUI) {
+            unlockUI.showOverlay();
+          } else {
+            console.log('[remote.html] unlockUI 未初始化!');
+          }
+          const vc = document.getElementById('videoContainer');
+          if (vc) vc.classList.add('video-frozen');
+        } else {
+          console.log('[remote.html] 被控端已解锁，隐藏解锁覆盖层');
+          log('被控端已解锁，隐藏解锁覆盖层并刷新视频');
+          updateStatus('已连接');
+          if (unlockUI) {
+            unlockUI.hideOverlay();
+          }
+          const vc = document.getElementById('videoContainer');
+          if (vc) vc.classList.remove('video-frozen');
+          setTimeout(() => {
+            requestVideoRefresh();
+          }, 500);
+        }
+      });
+      
       connectionManager.stateMachine.addListener((newState, oldState, data) => {
         document.getElementById('connectionState').textContent = newState;
         

@@ -1,0 +1,3 @@
+D:/MyProg/YCDesk/windows/credential_provider/build/CMakeFiles/YCDeskCredentialProvider.dir
+D:/MyProg/YCDesk/windows/credential_provider/build/CMakeFiles/ALL_BUILD.dir
+D:/MyProg/YCDesk/windows/credential_provider/build/CMakeFiles/ZERO_CHECK.dir

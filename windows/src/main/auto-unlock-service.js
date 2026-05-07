@@ -33,6 +33,7 @@ class AutoUnlockService {
 
   setMainWindow(window) {
     this.currentMainWindow = window
+    console.log('[AutoUnlockService] mainWindow 已设置, id=' + (window ? window.id : 'null'))
   }
 
   setupListeners() {
@@ -82,13 +83,36 @@ class AutoUnlockService {
       autoUnlockEnabled: this.autoUnlockEnabled
     }
 
+    console.log('[AutoUnlockService] ========== notifyLockState 被调用 ==========')
+    console.log('[AutoUnlockService] payload:', JSON.stringify(payload))
+    console.log('[AutoUnlockService] remoteWindow 存在:', !!this.currentRemoteWindow, ', 销毁:', this.currentRemoteWindow ? this.currentRemoteWindow.isDestroyed() : 'N/A')
+    console.log('[AutoUnlockService] mainWindow 存在:', !!this.currentMainWindow, ', 销毁:', this.currentMainWindow ? this.currentMainWindow.isDestroyed() : 'N/A')
+
     if (this.currentRemoteWindow && !this.currentRemoteWindow.isDestroyed()) {
+      console.log('[AutoUnlockService] 正在发送到 remoteWindow...')
       this.currentRemoteWindow.webContents.send('unlock-state-changed', payload)
+      console.log('[AutoUnlockService] remoteWindow 发送完成')
+    } else {
+      console.log('[AutoUnlockService] remoteWindow 不可用，跳过')
     }
 
     if (this.currentMainWindow && !this.currentMainWindow.isDestroyed()) {
+      console.log('[AutoUnlockService] 正在发送到 mainWindow...')
       this.currentMainWindow.webContents.send('unlock-state-changed', payload)
+      console.log('[AutoUnlockService] mainWindow 发送完成')
+    } else {
+      console.log('[AutoUnlockService] mainWindow 不可用，跳过 (存在=' + !!this.currentMainWindow + ')')
     }
+
+    try {
+      const { notifyLockStateToClients, notifyLockStateToServer } = require('./direct-server')
+      const sent = notifyLockStateToClients(payload) || notifyLockStateToServer(payload)
+      console.log('[AutoUnlockService] TCP旁路通知结果: ' + sent + ' 个客户端')
+    } catch (e) {
+      console.log('[AutoUnlockService] TCP旁路通知失败: ' + e.message)
+    }
+
+    console.log('[AutoUnlockService] ========== notifyLockState 完成 ==========')
   }
 
   async tryAutoUnlock() {
@@ -102,14 +126,12 @@ class AutoUnlockService {
     }
 
     try {
-      // 首先尝试 Credential Provider 方式
       const username = os.userInfo().username
       const result = await credentialsManager.unlockWithCredentialProvider(username, password)
       
       if (result.success) {
         return { success: true, message: '自动解锁成功 (Credential Provider)' }
       } else {
-        // 回退到 robotjs 方式
         console.log('[AutoUnlockService] Credential Provider 不可用，回退到 robotjs')
         await this.simulatePasswordInput(password)
         return { success: true, message: '自动解锁成功' }
@@ -129,14 +151,12 @@ class AutoUnlockService {
     }
 
     try {
-      // 首先尝试 Credential Provider 方式
       const username = os.userInfo().username
       const result = await credentialsManager.unlockWithCredentialProvider(username, password)
       
       if (result.success) {
         return { success: true, message: '解锁成功 (Credential Provider)' }
       } else {
-        // 回退到 robotjs 方式
         console.log('[AutoUnlockService] Credential Provider 不可用，回退到 robotjs')
         await this.simulatePasswordInput(password)
         return { success: true, message: '解锁成功' }
@@ -157,7 +177,6 @@ class AutoUnlockService {
 
     console.log('[AutoUnlockService] 开始模拟输入密码...')
     
-    // 先按 ESC 或点击来唤醒登录界面
     try {
       robot.keyTap('escape')
       await this.sleep(300)
@@ -165,7 +184,6 @@ class AutoUnlockService {
       console.warn('[AutoUnlockService] ESC 失败:', e.message)
     }
     
-    // 尝试点击屏幕中央（可能在锁定界面需要点击）
     try {
       const { screen } = require('electron')
       const primaryDisplay = screen.getPrimaryDisplay()
@@ -180,7 +198,6 @@ class AutoUnlockService {
       console.warn('[AutoUnlockService] 点击屏幕失败:', e.message)
     }
     
-    // 输入密码
     try {
       robot.typeString(password)
       await this.sleep(200)
@@ -189,7 +206,6 @@ class AutoUnlockService {
       throw new Error('密码输入失败')
     }
     
-    // 按下 Enter
     try {
       robot.keyTap('enter')
     } catch (e) {

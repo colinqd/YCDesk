@@ -751,12 +751,22 @@ document.addEventListener('DOMContentLoaded', () => {
   }, 500)
 
   window.electronAPI.on('unlock-state-changed', (data) => {
+    console.log('[app.js 全局] 收到 unlock-state-changed IPC: ' + JSON.stringify(data))
     if (data.isLocked) {
       updateServerStatusDisplay('已锁定', 'error')
       log('系统通知：屏幕已锁定（被控端）')
     } else {
       updateServerStatusDisplay('已连接', 'connected')
       log('系统通知：屏幕已解锁（被控端）')
+    }
+
+    if (directManager && directManager.dataChannelManager) {
+      console.log('[app.js 全局] 通过 directManager 转发锁屏状态到主控端')
+      directManager.dataChannelManager.send({ type: 'unlock-state-changed', ...data })
+    }
+    if (signalingManager && signalingManager.dataChannelManager) {
+      console.log('[app.js 全局] 通过 signalingManager 转发锁屏状态到主控端')
+      signalingManager.dataChannelManager.send({ type: 'unlock-state-changed', ...data })
     }
   })
 })

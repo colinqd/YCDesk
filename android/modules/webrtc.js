@@ -448,6 +448,19 @@ function setupDataChannel() {
         handleReceivedInput(data)
       } else if (data.type === 'ping') {
         s.dataChannel.send(JSON.stringify({ type: 'pong', timestamp: data.timestamp }))
+      } else if (data.type === 'unlock-state-changed') {
+        log('[Android主控端] 收到被控端锁屏状态变更: isLocked=' + data.isLocked)
+        if (typeof window.handleRemoteLockStateChanged === 'function') {
+          window.handleRemoteLockStateChanged(data)
+        } else {
+          if (data.isLocked) {
+            log('[Android主控端] 被控端已锁定')
+            if (typeof window.showToast === 'function') window.showToast('被控端已锁定')
+          } else {
+            log('[Android主控端] 被控端已解锁')
+            if (typeof window.showToast === 'function') window.showToast('被控端已解锁')
+          }
+        }
       }
     } catch (e) {
       log('解析数据通道消息失败: ' + e.message)

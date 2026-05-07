@@ -11,7 +11,7 @@ class UIManager {
   }
 
   showPage(pageId) {
-    const pages = ['rolePage', 'controlledPage', 'controllerPage']
+    const pages = ['rolePage', 'controlledPage', 'controllerPage', 'settingsPage']
     pages.forEach(id => {
       const el = document.getElementById(id)
       if (el) {
@@ -23,7 +23,9 @@ class UIManager {
     if (targetPage) {
       targetPage.classList.add('active')
     }
-    this.currentPage = pageId
+    if (pageId !== 'settingsPage') {
+      this.currentPage = pageId
+    }
   }
 
   selectRole(role) {

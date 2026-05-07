@@ -92,6 +92,10 @@ class DataChannelManager {
     try {
       const data = JSON.parse(event.data)
       
+      if (data.type === 'unlock-state-changed') {
+        console.log('[DataChannelManager] handleMessage() 收到锁屏消息: ' + JSON.stringify(data))
+      }
+      
       if (data.ack && this.pendingMessages.has(data.ackId)) {
         this.pendingMessages.delete(data.ackId)
         return
@@ -123,8 +127,15 @@ class DataChannelManager {
       timestamp: Date.now()
     }
     
+    if (data.type === 'unlock-state-changed') {
+      console.log('[DataChannelManager] send() 收到锁屏消息, isOpen=' + this.isOpen())
+    }
+    
     if (!this.isOpen()) {
       this.enqueue(message, requireAck)
+      if (data.type === 'unlock-state-changed') {
+        console.log('[DataChannelManager] 通道未打开，消息已加入队列 (队列长度=' + this.messageQueue.length + ')')
+      }
       return false
     }
 
@@ -135,12 +146,23 @@ class DataChannelManager {
     try {
       const json = JSON.stringify(message)
       
+      if (message.type === 'unlock-state-changed') {
+        console.log('[DataChannelManager] sendRaw() 锁屏消息, bufferedAmount=' + this.dataChannel.bufferedAmount + ', json长度=' + json.length)
+      }
+      
       if (this.dataChannel.bufferedAmount > 1024 * 1024) {
         this.enqueue(message, requireAck)
+        if (message.type === 'unlock-state-changed') {
+          console.log('[DataChannelManager] bufferedAmount 过高，消息加入队列')
+        }
         return false
       }
 
       this.dataChannel.send(json)
+      
+      if (message.type === 'unlock-state-changed') {
+        console.log('[DataChannelManager] 锁屏消息已通过 WebRTC DataChannel 发送成功')
+      }
       
       if (requireAck && message.id) {
         this.trackPendingMessage(message)
@@ -149,6 +171,9 @@ class DataChannelManager {
       return true
     } catch (e) {
       this.enqueue(message, requireAck)
+      if (message.type === 'unlock-state-changed') {
+        console.log('[DataChannelManager] sendRaw 异常: ' + e.message + ', 消息加入队列')
+      }
       return false
     }
   }

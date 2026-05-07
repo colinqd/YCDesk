@@ -663,3 +663,5 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
     window.MatrixTransformer = MatrixTransformer
 }
+
+export default MatrixTransformer

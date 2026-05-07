@@ -138,6 +138,15 @@ class DirectModeManager {
             await this.handleIceCandidate(clientId, message.candidate)
           }
           break
+        case 'screen-lock-state':
+          this.logFn('主控端通过TCP收到被控端锁屏状态: ' + JSON.stringify(message))
+          if (this.isDirectController && window.electronAPI) {
+            window.electronAPI.sendToRemoteWindow('unlock-state-changed', {
+              isLocked: message.isLocked,
+              autoUnlockEnabled: message.autoUnlockEnabled
+            })
+          }
+          break
       }
     } catch (error) {
       console.error('处理消息详细错误:', error)
@@ -161,6 +170,24 @@ class DirectModeManager {
     this.currentDirectClientId = clientId
     this.isDirectController = false
     await this.createPeerConnection(clientId)
+    
+    // 添加锁屏状态监听，发送给主控端
+    if (window.electronAPI) {
+      window.electronAPI.on('unlock-state-changed', (data) => {
+        console.log('[DirectModeManager] 收到IPC锁屏状态变更: ' + JSON.stringify(data))
+        this.logFn('收到本地锁屏状态变更: ' + JSON.stringify(data))
+        if (this.dataChannelManager) {
+          console.log('[DirectModeManager] 正在通过数据通道发送...')
+          this.dataChannelManager.send({
+            type: 'unlock-state-changed',
+            ...data
+          })
+          console.log('[DirectModeManager] 数据通道 send() 调用完成')
+        } else {
+          console.log('[DirectModeManager] dataChannelManager 不存在，跳过')
+        }
+      })
+    }
     
     this.logFn('被控端: 等待主控端发送 offer...')
   }

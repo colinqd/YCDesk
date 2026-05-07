@@ -1,0 +1,10 @@
+^D:\MYPROG\YCDESK\WINDOWS\CREDENTIAL_PROVIDER\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SD:/MyProg/YCDesk/windows/credential_provider -BD:/MyProg/YCDesk/windows/credential_provider/build --check-stamp-file D:/MyProg/YCDesk/windows/credential_provider/build/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

@@ -467,6 +467,11 @@ function convertToInputCommand(command) {
       inputCommand.deltaX = command.deltaX || 0
       break
       
+    case 'unlock_screen':
+      inputCommand.inputType = 'unlock_screen'
+      inputCommand.password = command.password || ''
+      break
+      
     case 'keydown':
     case 'keyup':
       inputCommand.inputType = command.type

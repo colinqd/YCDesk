@@ -223,6 +223,25 @@ class SignalingModeManager {
     this.logFn('作为被控端建立连接，在主窗口创建PeerConnection')
     this.isController = false
     await this.createPeerConnection()
+    
+    // 添加锁屏状态监听，发送给主控端
+    if (window.electronAPI) {
+      window.electronAPI.on('unlock-state-changed', (data) => {
+        console.log('[SignalingModeManager] 收到IPC锁屏状态变更: ' + JSON.stringify(data))
+        this.logFn('收到本地锁屏状态变更: ' + JSON.stringify(data))
+        if (this.dataChannelManager) {
+          console.log('[SignalingModeManager] 正在通过数据通道发送...')
+          this.dataChannelManager.send({
+            type: 'unlock-state-changed',
+            ...data
+          })
+          console.log('[SignalingModeManager] 数据通道 send() 调用完成')
+        } else {
+          console.log('[SignalingModeManager] dataChannelManager 不存在，跳过')
+        }
+      })
+    }
+    
     this.logFn('被控端 PeerConnection 已创建，等待接收Offer...')
   }
 

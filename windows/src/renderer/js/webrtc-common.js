@@ -16,7 +16,7 @@ function setupDataChannel(channel, log) {
     log('收到数据通道消息:', event.data)
     try {
       const data = JSON.parse(event.data)
-      if (data.type === 'input') {
+      if (data.type === 'input' || data.inputType) {
         window.electronAPI.send('remote-input', data)
       }
     } catch (e) {

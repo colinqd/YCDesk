@@ -64,6 +64,27 @@ function setupClientSocket(clientSocket, clientId) {
           const message = JSON.parse(line)
           if (message.type === 'heartbeat') {
             clientSocket.write(JSON.stringify({ type: 'heartbeat-ack' }) + '\n')
+          } else if (message.type === 'screen-lock-state') {
+            log('info', '收到TCP锁屏状态通知: ' + JSON.stringify(message))
+            const mainWindow = getMainWindow()
+            if (mainWindow) {
+              mainWindow.webContents.send('direct-message', {
+                clientId: clientId,
+                message: {
+                  type: 'screen-lock-state',
+                  isLocked: message.isLocked,
+                  autoUnlockEnabled: message.autoUnlockEnabled
+                }
+              })
+            }
+            const { getRemoteWindow } = require('./window-manager')
+            const remoteWindow = getRemoteWindow()
+            if (remoteWindow && !remoteWindow.isDestroyed()) {
+              remoteWindow.webContents.send('unlock-state-changed', {
+                isLocked: message.isLocked,
+                autoUnlockEnabled: message.autoUnlockEnabled
+              })
+            }
           } else {
             const mainWindow = getMainWindow()
             if (mainWindow) {
@@ -216,6 +237,38 @@ function cleanup() {
   log('info', '直连服务器已清理')
 }
 
+function notifyLockStateToClients(payload) {
+  const message = { type: 'screen-lock-state', ...payload }
+  log('info', '通知所有TCP客户端锁屏状态: ' + JSON.stringify(message))
+  let sent = 0
+  for (const [clientId, socket] of directClientConnections) {
+    try {
+      socket.write(JSON.stringify(message) + '\n')
+      sent++
+      log('info', '锁屏通知已发送到客户端: ' + clientId)
+    } catch (e) {
+      log('error', '通知锁屏状态失败(' + clientId + '): ' + e.message)
+    }
+  }
+  return sent
+}
+
+function notifyLockStateToServer(payload) {
+  const message = { type: 'screen-lock-state', ...payload }
+  log('info', '通知TCP服务器端锁屏状态: ' + JSON.stringify(message))
+  let sent = 0
+  for (const [clientId, socket] of directClientConnections) {
+    try {
+      socket.write(JSON.stringify(message) + '\n')
+      sent++
+      log('info', '锁屏通知已发送: ' + clientId)
+    } catch (e) {
+      log('error', '通知锁屏状态失败(' + clientId + '): ' + e.message)
+    }
+  }
+  return sent
+}
+
 module.exports = {
   getLocalIps,
   startDirectServerImpl,
@@ -224,5 +277,7 @@ module.exports = {
   sendDirectMessageImpl,
   closeDirectConnectionImpl,
   initLogger,
-  cleanup
+  cleanup,
+  notifyLockStateToClients,
+  notifyLockStateToServer
 }

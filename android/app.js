@@ -10,7 +10,7 @@ import { InputDispatcher, createGestureHandler, convertToInputCommand } from './
 import { handleReceivedInput, simulateMouseMove, simulateMouseDown, simulateMouseUp, simulateWheel, simulateKeyDown, simulateKeyUp } from './modules/input-executor.js';
 import { buildWsUrl, buildHttpUrl, setConnectionMode, startWsHeartbeat, stopWsHeartbeat, wsSend, isSocketConnected, handleWsMessage, connectToServer, disconnectFromServer, attemptReconnect, cancelReconnect, sendDirectMessage, extractHostname, isIpAddress, resolveHostname } from './modules/signaling.js';
 import { getIceConfig, startDirectControllerConnection, handleDirectOffer, handleDirectAnswer, handleRenegotiationAnswer, handleDirectIceCandidate, handleRenegotiationOffer, setupDataChannel, createPeerConnection, startControllerConnection, startControlledConnection, handleOffer, startAndroidScreenCapture, handleAnswer, addPendingIceCandidates, handleIceCandidate } from './modules/webrtc.js';
-import { updateVideoTransformGlobal, resetZoomAndPan, toggleMouseMode, toggleControlsHide, showControls, handleOrientationChange, showFloatingMouse, hideFloatingMouse, handleFloatingMouseEvent, toggleFullscreen, setupRemoteScreenInteraction } from './modules/ui.js';
+import { updateVideoTransformGlobal, resetZoomAndPan, toggleMouseMode, toggleControlsHide, showControls, handleOrientationChange, showFloatingMouse, hideFloatingMouse, handleFloatingMouseEvent, toggleFullscreen, handleRemoteLockStateChanged, setupRemoteScreenInteraction } from './modules/ui.js';
 import { cycleKeyboardPosition, cycleKeyboardSize, cycleKeyboardOpacity, applyKeyboardPosition, ensureKeyboardInBounds, applyKeyboardSize, applyKeyboardOpacity, saveKeyboardSettings, loadKeyboardSettings, setupKeyboardDrag, toggleKeyboard, sendKey, toggleModifier } from './modules/keyboard.js';
 import { updateScreenSize, showRemoteScreen, updateContainerSizeAfterVideoLoad, hideRemoteScreen, startStatsMonitoring, stopStatsMonitoring } from './modules/screen.js';
 
@@ -654,6 +654,34 @@ function disconnect() {
   }
 }
 
+function requestUnlock() {
+  console.log('[requestUnlock] Sending unlock request to controlled end...')
+  
+  const inputDispatcher = s.inputDispatcher
+  if (!inputDispatcher) {
+    showToast('Input dispatcher not initialized')
+    return
+  }
+  
+  const command = {
+    type: 'unlock_screen',
+    password: ''  // Empty password triggers auto-fill from CP/credentials
+  }
+  
+  inputDispatcher.sendInputCommand(command)
+  showToast('Unlock request sent')
+  
+  // Also send Enter key to dismiss the lock screen wallpaper
+  setTimeout(() => {
+    const enterCommand = {
+      type: 'keydown',
+      code: 'Enter',
+      key: 'Enter'
+    }
+    inputDispatcher.sendInputCommand(enterCommand)
+  }, 500)
+}
+
 async function init() {
   console.log('YCDesk Android 初始化')
   
@@ -750,6 +778,7 @@ window.resetZoomAndPan = resetZoomAndPan
 window.sendKey = sendKey
 window.toggleModifier = toggleModifier
 window.disconnect = disconnect
+window.requestUnlock = requestUnlock
 window.manualConnectToServer = manualConnectToServer
 window.disconnectFromServer = disconnectFromServer
 window.toggleLogBox = toggleLogBox
