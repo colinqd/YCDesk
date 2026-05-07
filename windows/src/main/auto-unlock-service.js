@@ -1,21 +1,26 @@
 const { powerMonitor, ipcMain } = require('electron')
 const credentialsManager = require('./credentials-manager')
-
-// 直接使用 robotjs
-let robot = null
-
-try {
-  robot = require('robotjs')
-} catch (e) {
-  console.error('[AutoUnlockService] 无法加载 robotjs:', e.message)
-}
+const unlockIpcServer = require('./unlock-ipc-server')
+const windowManager = require('./window-manager')
+const os = require('os')
 
 class AutoUnlockService {
   constructor() {
     this.isLocked = false
     this.autoUnlockEnabled = false
     this.currentRemoteWindow = null
+    this.ipcServerStarted = false
     this.setupListeners()
+    this.startIpcServer()
+  }
+
+  startIpcServer() {
+    try {
+      this.ipcServerStarted = unlockIpcServer.start()
+      console.log('[AutoUnlockService] IPC 服务器启动状态:', this.ipcServerStarted)
+    } catch (error) {
+      console.error('[AutoUnlockService] IPC 服务器启动失败:', error)
+    }
   }
 
   setAutoUnlockEnabled(enabled) {
@@ -68,11 +73,18 @@ class AutoUnlockService {
   }
 
   notifyLockState() {
+    const payload = {
+      isLocked: this.isLocked,
+      autoUnlockEnabled: this.autoUnlockEnabled
+    }
+
     if (this.currentRemoteWindow && !this.currentRemoteWindow.isDestroyed()) {
-      this.currentRemoteWindow.webContents.send('unlock-state-changed', {
-        isLocked: this.isLocked,
-        autoUnlockEnabled: this.autoUnlockEnabled
-      })
+      this.currentRemoteWindow.webContents.send('unlock-state-changed', payload)
+    }
+
+    const mainWindow = windowManager.getMainWindow()
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('unlock-state-changed', payload)
     }
   }
 
@@ -87,8 +99,18 @@ class AutoUnlockService {
     }
 
     try {
-      await this.simulatePasswordInput(password)
-      return { success: true, message: '自动解锁成功' }
+      // 首先尝试 Credential Provider 方式
+      const username = os.userInfo().username
+      const result = await credentialsManager.unlockWithCredentialProvider(username, password)
+      
+      if (result.success) {
+        return { success: true, message: '自动解锁成功 (Credential Provider)' }
+      } else {
+        // 回退到 robotjs 方式
+        console.log('[AutoUnlockService] Credential Provider 不可用，回退到 robotjs')
+        await this.simulatePasswordInput(password)
+        return { success: true, message: '自动解锁成功' }
+      }
     } catch (error) {
       console.error('[AutoUnlockService] 自动解锁失败:', error)
       return { 
@@ -104,8 +126,18 @@ class AutoUnlockService {
     }
 
     try {
-      await this.simulatePasswordInput(password)
-      return { success: true, message: '解锁成功' }
+      // 首先尝试 Credential Provider 方式
+      const username = os.userInfo().username
+      const result = await credentialsManager.unlockWithCredentialProvider(username, password)
+      
+      if (result.success) {
+        return { success: true, message: '解锁成功 (Credential Provider)' }
+      } else {
+        // 回退到 robotjs 方式
+        console.log('[AutoUnlockService] Credential Provider 不可用，回退到 robotjs')
+        await this.simulatePasswordInput(password)
+        return { success: true, message: '解锁成功' }
+      }
     } catch (error) {
       console.error('[AutoUnlockService] 手动解锁失败:', error)
       return { 

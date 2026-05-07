@@ -517,6 +517,23 @@ function toggleAdvancedSettings(sectionId) {
   }
 }
 
+function updateServerStatusDisplay(text, type) {
+  const badge = document.getElementById('serverStatus')
+  const dot = badge.querySelector('.status-dot')
+  const textEl = document.getElementById('serverStatusText')
+  if (textEl) textEl.textContent = text
+  if (badge) {
+    badge.classList.remove('connecting', 'error')
+    if (type === 'error') badge.classList.add('error')
+    else if (type === 'connecting') badge.classList.add('connecting')
+  }
+  if (dot) {
+    dot.classList.remove('connecting', 'error')
+    if (type === 'error') dot.classList.add('error')
+    else if (type === 'connecting') dot.classList.add('connecting')
+  }
+}
+
 // 解锁设置相关函数
 let unlockPasswordVisible = false
 
@@ -945,4 +962,14 @@ document.addEventListener('DOMContentLoaded', () => {
     checkCredProvider()
     checkServiceStatus()
   }, 500)
+
+  window.electronAPI.on('unlock-state-changed', (data) => {
+    if (data.isLocked) {
+      updateServerStatusDisplay('已锁定', 'error')
+      log('系统通知：屏幕已锁定（被控端）')
+    } else {
+      updateServerStatusDisplay('已连接', 'connected')
+      log('系统通知：屏幕已解锁（被控端）')
+    }
+  })
 })
