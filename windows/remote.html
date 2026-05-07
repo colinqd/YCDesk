@@ -1190,6 +1190,40 @@
       updateStats();
     }
 
+    function requestVideoRefresh() {
+      if (!connectionManager || !connectionManager.dataChannelManager || !connectionManager.dataChannelManager.isOpen()) {
+        log('无法请求视频刷新：数据通道未就绪')
+        return
+      }
+      log('发送视频刷新请求到被控端...')
+      connectionManager.dataChannelManager.send({
+        type: 'video-refresh-request',
+        timestamp: Date.now()
+      })
+    }
+
+    function setupUnlockStateListener() {
+      window.electronAPI.on('unlock-state-changed', (data) => {
+        log('收到锁定状态变化: isLocked=' + data.isLocked)
+        if (data.isLocked === false) {
+          log('屏幕已解锁，隐藏解锁面板并刷新视频...')
+          if (unlockUI) {
+            unlockUI.hideOverlay()
+          }
+          updateStatus('已连接')
+          setTimeout(() => {
+            requestVideoRefresh()
+          }, 500)
+        } else if (data.isLocked === true) {
+          log('屏幕已锁定，显示解锁面板...')
+          updateStatus('已锁定', 'error')
+          if (unlockUI) {
+            unlockUI.showOverlay()
+          }
+        }
+      })
+    }
+
     async function init() {
       if (window.isInitialized) {
         log('远程窗口已初始化，忽略重复调用');
@@ -1213,6 +1247,7 @@
       
       log('远程窗口初始化开始');
       
+      setupUnlockStateListener();
       setupMatrixTransformer();
       setupPanZoomEvents();
       setupTouchEvents();

@@ -39,7 +39,11 @@
       </div>
 
       <div id="controlledPage" class="page">
-        <button class="back-btn" onclick="goBack()">← 返回选择</button>
+        <div class="page-header">
+          <button class="back-btn" onclick="goBack()">← 返回选择</button>
+          <div class="page-title">被控端</div>
+          <button class="settings-btn" onclick="openSettingsPage()">⚙️ 设置</button>
+        </div>
         
         <div class="section">
           <div class="section-title">设备信息</div>
@@ -48,14 +52,6 @@
             <div class="device-id-value" id="deviceId" onclick="copyDeviceId()">
               加载中...
             </div>
-          </div>
-          <div class="input-group" style="margin-top: 12px;">
-            <label>自定义设备 ID (6-16位字母数字)</label>
-            <input type="text" id="customDeviceId" placeholder="输入自定义设备ID" maxlength="16" style="width: 100%; text-transform: uppercase;">
-          </div>
-          <div class="btn-group" style="margin-top: 10px;">
-            <button class="btn btn-secondary" onclick="setCustomDeviceId()">设置ID</button>
-            <button class="btn btn-danger" onclick="resetDeviceId()">随机生成</button>
           </div>
           <div class="status-badge" id="serverStatus" style="margin-top: 12px;">
             <span class="status-dot"></span>
@@ -80,12 +76,18 @@
           </div>
           
           <div id="controlledSignalingMode" class="mode-content">
-            <div class="input-group">
-              <label>连接方式</label>
-              <select id="controlledConnectionMode" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px;">
-                <option value="socketio" selected>Socket.IO（用于 server-gui）</option>
-                <option value="websocket">原始 WebSocket（用于 android-server）</option>
-              </select>
+            <div class="advanced-toggle" onclick="toggleAdvancedSettings('controlledAdvanced')" id="controlledAdvancedToggle">
+              <span>⚙️ 高级设置</span>
+              <span class="toggle-arrow">▶</span>
+            </div>
+            <div id="controlledAdvanced" class="advanced-content" style="display: none;">
+              <div class="input-group">
+                <label>连接方式</label>
+                <select id="controlledConnectionMode" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px;">
+                  <option value="socketio" selected>Socket.IO（用于 server-gui）</option>
+                  <option value="websocket">原始 WebSocket（用于 android-server）</option>
+                </select>
+              </div>
             </div>
             <div class="input-group" style="margin-top: 10px;">
               <label style="display: flex; align-items: center; gap: 8px;">
@@ -109,7 +111,85 @@
           </div>
         </div>
 
-        <div class="section" id="unlockSettingsSection">
+        <div class="log-box" id="controlledLogBox">
+          <div class="log-header">
+            <div class="log-title">连接日志</div>
+            <button class="log-toggle-btn" onclick="toggleLogBox('controlledLogBox')">收起</button>
+          </div>
+          <div class="log-content" id="connectionLog"></div>
+        </div>
+      </div>
+
+      <div id="settingsPage" class="page">
+        <button class="back-btn" onclick="closeSettingsPage()">← 返回</button>
+        
+        <div class="section">
+          <div class="section-title">设备设置</div>
+          <div class="input-group">
+            <label>自定义设备 ID (6-16位字母数字)</label>
+            <input type="text" id="customDeviceId" placeholder="输入自定义设备ID" maxlength="16" style="width: 100%; text-transform: uppercase;">
+          </div>
+          <div class="btn-group" style="margin-top: 10px;">
+            <button class="btn btn-primary" onclick="setCustomDeviceId()">设置ID</button>
+            <button class="btn btn-secondary" onclick="resetDeviceId()">随机生成</button>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Credential Provider 设置</div>
+          <div class="settings-group">
+            <div class="cred-provider-status">
+              <div id="credProviderStatus">
+                <span class="status-icon">⏳</span>
+                <span class="status-text">检查状态中...</span>
+              </div>
+            </div>
+            <div id="credProviderProgress" style="display: none; margin-top: 10px; padding: 10px; background: #f0f0f0; border-radius: 5px;">
+              <div id="credProviderProgressText">准备中...</div>
+            </div>
+            <div class="btn-group" style="margin-top: 12px;">
+              <button class="btn btn-primary" onclick="checkCredProvider()">刷新状态</button>
+              <button class="btn btn-success" onclick="installCredProvider()">安装</button>
+              <button class="btn btn-danger" onclick="uninstallCredProvider()">卸载</button>
+            </div>
+            <div style="margin-top: 12px; padding: 12px; background: #fff3cd; border-radius: 5px; font-size: 13px; color: #856404;">
+              <strong>注意：</strong>安装和卸载 Credential Provider 需要管理员权限，并且需要重启电脑才能生效。
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">服务设置</div>
+          <div class="settings-group">
+            <div class="service-status">
+              <div id="serviceStatus">
+                <span class="status-icon">⏳</span>
+                <span class="status-text">检查状态中...</span>
+              </div>
+            </div>
+            <div id="serviceModeInfo" style="margin-top: 8px; padding: 8px; background: #e7f3ff; border-radius: 5px; font-size: 13px;">
+              当前模式：<span id="currentServiceMode">进程模式</span>
+            </div>
+            <div class="btn-group" style="margin-top: 12px;">
+              <button class="btn btn-primary" onclick="checkServiceStatus()">刷新状态</button>
+              <button class="btn btn-success" onclick="startService()">启动服务</button>
+              <button class="btn btn-warning" onclick="stopService()">停止服务</button>
+              <button class="btn btn-secondary" onclick="restartService()">重启服务</button>
+            </div>
+            <div style="margin-top: 10px;">
+              <div class="mode-selector" style="margin-top: 8px;">
+                <div class="mode-tab" onclick="setServiceMode('process')" id="modeProcess">进程模式</div>
+                <div class="mode-tab" onclick="setServiceMode('service')" id="modeService">服务模式</div>
+              </div>
+            </div>
+            <div class="btn-group" style="margin-top: 12px;">
+              <button class="btn btn-info" onclick="installWindowsService()">安装Windows服务</button>
+              <button class="btn btn-danger" onclick="uninstallWindowsService()">卸载Windows服务</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
           <div class="section-title">远程解锁设置</div>
           <div class="unlock-settings">
             <div class="unlock-status-box">
@@ -130,14 +210,31 @@
               <button class="btn btn-danger" onclick="clearUnlockPassword()">清除密码</button>
             </div>
           </div>
+          <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee;">
+            <div class="section-title" style="font-size: 14px;">远程解锁测试</div>
+            <div class="input-group" style="margin-top: 10px;">
+              <label>测试密码（可选）</label>
+              <div class="password-input-wrapper">
+                <input type="password" id="testUnlockPassword" placeholder="输入测试密码（留空使用已保存的密码）" style="flex: 1;">
+                <button class="toggle-password-btn" onclick="toggleTestUnlockPasswordVisibility()" id="toggleTestUnlockPasswordBtn">👁️</button>
+              </div>
+            </div>
+            <div class="btn-group" style="margin-top: 12px;">
+              <button class="btn btn-primary" onclick="testUnlock()">测试解锁</button>
+              <button class="btn btn-info" onclick="runFullUnlockTest()">运行完整测试</button>
+            </div>
+            <div id="testUnlockLog" style="margin-top: 12px; padding: 10px; background: #f5f5f5; border-radius: 5px; font-family: monospace; font-size: 12px; max-height: 200px; overflow-y: auto; display: none;"></div>
+          </div>
         </div>
 
-        <div class="log-box" id="controlledLogBox">
-          <div class="log-header">
-            <div class="log-title">连接日志</div>
-            <button class="log-toggle-btn" onclick="toggleLogBox('controlledLogBox')">收起</button>
+        <div class="section">
+          <div class="section-title">关于</div>
+          <div style="padding: 15px; background: #f9f9f9; border-radius: 8px;">
+            <p style="margin: 0; font-size: 14px; color: #666;">
+              YCDesk v1.0.0<br>
+              远程桌面控制软件 - Windows 版本
+            </p>
           </div>
-          <div class="log-content" id="connectionLog"></div>
         </div>
       </div>
 
@@ -178,12 +275,18 @@
                 <div class="history-empty">暂无历史连接记录</div>
               </div>
             </div>
-            <div class="input-group">
-              <label>连接方式</label>
-              <select id="controllerConnectionMode" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px;">
-                <option value="socketio" selected>Socket.IO（用于 server-gui）</option>
-                <option value="websocket">原始 WebSocket（用于 android-server）</option>
-              </select>
+            <div class="advanced-toggle" onclick="toggleAdvancedSettings('controllerAdvanced')" id="controllerAdvancedToggle">
+              <span>⚙️ 高级设置</span>
+              <span class="toggle-arrow">▶</span>
+            </div>
+            <div id="controllerAdvanced" class="advanced-content" style="display: none;">
+              <div class="input-group">
+                <label>连接方式</label>
+                <select id="controllerConnectionMode" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px;">
+                  <option value="socketio" selected>Socket.IO（用于 server-gui）</option>
+                  <option value="websocket">原始 WebSocket（用于 android-server）</option>
+                </select>
+              </div>
             </div>
             <div class="input-group">
               <label>信令服务器地址</label>

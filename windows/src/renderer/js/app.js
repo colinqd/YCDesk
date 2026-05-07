@@ -175,6 +175,43 @@ function goBack() {
   }
 }
 
+let currentSettingsPage = null
+
+function openSettingsPage() {
+  currentSettingsPage = uiManager.currentPage
+  
+  // 隐藏所有页面
+  const pages = document.querySelectorAll('.page')
+  pages.forEach(page => page.classList.remove('active'))
+  
+  // 显示设置页面
+  const settingsPage = document.getElementById('settingsPage')
+  if (settingsPage) {
+    settingsPage.classList.add('active')
+  }
+  
+  log('打开设置页面')
+}
+
+function closeSettingsPage() {
+  // 隐藏设置页面
+  const settingsPage = document.getElementById('settingsPage')
+  if (settingsPage) {
+    settingsPage.classList.remove('active')
+  }
+  
+  // 回到之前的页面
+  if (currentSettingsPage) {
+    const page = document.getElementById(currentSettingsPage)
+    if (page) {
+      page.classList.add('active')
+    }
+    currentSettingsPage = null
+  }
+  
+  log('关闭设置页面')
+}
+
 async function initControlled() {
   myDeviceId = await window.electronAPI.getDeviceId()
   uiManager.setDeviceId(myDeviceId)
@@ -465,6 +502,21 @@ function toggleLogBox(boxId) {
   }
 }
 
+function toggleAdvancedSettings(sectionId) {
+  const content = document.getElementById(sectionId)
+  const toggleEl = document.getElementById(sectionId + 'Toggle')
+  if (!content || !toggleEl) return
+
+  const arrow = toggleEl.querySelector('.toggle-arrow')
+  if (content.style.display === 'none') {
+    content.style.display = 'block'
+    if (arrow) arrow.textContent = '▼'
+  } else {
+    content.style.display = 'none'
+    if (arrow) arrow.textContent = '▶'
+  }
+}
+
 // 解锁设置相关函数
 let unlockPasswordVisible = false
 
@@ -550,6 +602,325 @@ async function clearUnlockPassword() {
   }
 }
 
+// Credential Provider 相关函数
+async function checkCredProvider() {
+  try {
+    const result = await window.electronAPI.checkCredProvider()
+    updateCredProviderStatus(result)
+  } catch (e) {
+    console.error('检查 Credential Provider 状态失败:', e)
+    showMessage('检查状态失败: ' + e.message)
+  }
+}
+
+function updateCredProviderStatus(status) {
+  const statusDiv = document.getElementById('credProviderStatus')
+  
+  if (status.success) {
+    if (status.installed) {
+      statusDiv.innerHTML = `
+        <span class="status-icon">✅</span>
+        <span class="status-text">已安装</span>
+      `
+    } else {
+      statusDiv.innerHTML = `
+        <span class="status-icon">⚠️</span>
+        <span class="status-text">未安装</span>
+      `
+    }
+  } else {
+    statusDiv.innerHTML = `
+      <span class="status-icon">❌</span>
+      <span class="status-text">检查失败</span>
+    `
+  }
+}
+
+async function installCredProvider() {
+  if (!confirm('确定要安装 Credential Provider 吗？此操作需要管理员权限，并且安装后需要重启电脑。')) {
+    return
+  }
+  
+  const progressDiv = document.getElementById('credProviderProgress')
+  const progressText = document.getElementById('credProviderProgressText')
+  progressDiv.style.display = 'block'
+  progressText.textContent = '请求管理员权限...'
+  
+  try {
+    // 监听进度事件
+    window.electronAPI.on('credProvider:progress', (data) => {
+      progressText.textContent = data.message
+      if (data.status === 'success') {
+        log(data.message)
+      } else if (data.status === 'error') {
+        console.error(data.message)
+      }
+    })
+    
+    const result = await window.electronAPI.installCredProvider()
+    
+    if (result.success) {
+      showMessage('安装成功！请重启电脑使更改生效。')
+      setTimeout(() => {
+        checkCredProvider()
+      }, 1000)
+    } else {
+      showMessage('安装失败: ' + (result.message || '未知错误'))
+    }
+  } catch (e) {
+    console.error('安装 Credential Provider 失败:', e)
+    showMessage('安装失败: ' + e.message)
+  } finally {
+    progressDiv.style.display = 'none'
+  }
+}
+
+async function uninstallCredProvider() {
+  if (!confirm('确定要卸载 Credential Provider 吗？此操作需要管理员权限，并且卸载后需要重启电脑。')) {
+    return
+  }
+  
+  const progressDiv = document.getElementById('credProviderProgress')
+  const progressText = document.getElementById('credProviderProgressText')
+  progressDiv.style.display = 'block'
+  progressText.textContent = '请求管理员权限...'
+  
+  try {
+    // 监听进度事件
+    window.electronAPI.on('credProvider:progress', (data) => {
+      progressText.textContent = data.message
+    })
+    
+    const result = await window.electronAPI.uninstallCredProvider()
+    
+    if (result.success) {
+      showMessage('卸载成功！请重启电脑使更改生效。')
+      setTimeout(() => {
+        checkCredProvider()
+      }, 1000)
+    } else {
+      showMessage('卸载失败: ' + (result.message || '未知错误'))
+    }
+  } catch (e) {
+    console.error('卸载 Credential Provider 失败:', e)
+    showMessage('卸载失败: ' + e.message)
+  } finally {
+    progressDiv.style.display = 'none'
+  }
+}
+
+// 服务相关函数
+async function checkServiceStatus() {
+  try {
+    const status = await window.electronAPI.getServiceStatus()
+    updateServiceStatus(status)
+  } catch (e) {
+    console.error('检查服务状态失败:', e)
+  }
+}
+
+function updateServiceStatus(status) {
+  const statusDiv = document.getElementById('serviceStatus')
+  const modeSpan = document.getElementById('currentServiceMode')
+  const modeProcess = document.getElementById('modeProcess')
+  const modeService = document.getElementById('modeService')
+  
+  if (status.isRunning) {
+    statusDiv.innerHTML = `
+      <span class="status-icon">✅</span>
+      <span class="status-text">服务运行中</span>
+    `
+  } else {
+    statusDiv.innerHTML = `
+      <span class="status-icon">⏸️</span>
+      <span class="status-text">服务未运行</span>
+    `
+  }
+  
+  modeSpan.textContent = (status.mode === 'service' ? '服务模式' : '进程模式')
+  
+  modeProcess.classList.toggle('active', status.mode === 'process')
+  modeService.classList.toggle('active', status.mode === 'service')
+}
+
+async function startService() {
+  try {
+    await window.electronAPI.startService()
+    showMessage('服务启动中...')
+    setTimeout(() => {
+      checkServiceStatus()
+    }, 2000)
+  } catch (e) {
+    console.error('启动服务失败:', e)
+    showMessage('启动失败: ' + e.message)
+  }
+}
+
+async function stopService() {
+  try {
+    await window.electronAPI.stopService()
+    showMessage('服务停止中...')
+    setTimeout(() => {
+      checkServiceStatus()
+    }, 2000)
+  } catch (e) {
+    console.error('停止服务失败:', e)
+    showMessage('停止失败: ' + e.message)
+  }
+}
+
+async function restartService() {
+  try {
+    await window.electronAPI.restartService()
+    showMessage('服务重启中...')
+    setTimeout(() => {
+      checkServiceStatus()
+    }, 3000)
+  } catch (e) {
+    console.error('重启服务失败:', e)
+    showMessage('重启失败: ' + e.message)
+  }
+}
+
+async function setServiceMode(mode) {
+  try {
+    await window.electronAPI.setServiceMode(mode)
+    showMessage('模式已切换为' + (mode === 'service' ? '服务模式' : '进程模式'))
+    await checkServiceStatus()
+  } catch (e) {
+    console.error('设置服务模式失败:', e)
+    showMessage('设置失败: ' + e.message)
+  }
+}
+
+async function installWindowsService() {
+  if (!confirm('确定要安装 Windows 服务吗？此操作需要管理员权限。')) {
+    return
+  }
+  
+  try {
+    const result = await window.electronAPI.installServiceWithElevation()
+    if (result.success) {
+      showMessage('服务安装成功！')
+    } else {
+      showMessage('服务安装失败: ' + (result.message || '未知错误'))
+    }
+  } catch (e) {
+    console.error('安装 Windows 服务失败:', e)
+    showMessage('安装失败: ' + e.message)
+  }
+}
+
+async function uninstallWindowsService() {
+  if (!confirm('确定要卸载 Windows 服务吗？此操作需要管理员权限。')) {
+    return
+  }
+  
+  try {
+    const result = await window.electronAPI.uninstallServiceWithElevation()
+    if (result.success) {
+      showMessage('服务卸载成功！')
+    } else {
+      showMessage('服务卸载失败: ' + (result.message || '未知错误'))
+    }
+  } catch (e) {
+    console.error('卸载 Windows 服务失败:', e)
+    showMessage('卸载失败: ' + e.message)
+  }
+}
+
+// 测试密码可见性
+let testUnlockPasswordVisible = false
+
+function toggleTestUnlockPasswordVisibility() {
+  const input = document.getElementById('testUnlockPassword')
+  const btn = document.getElementById('toggleTestUnlockPasswordBtn')
+  testUnlockPasswordVisible = !testUnlockPasswordVisible
+  
+  if (testUnlockPasswordVisible) {
+    input.type = 'text'
+    btn.textContent = '👁️‍🗨️'
+  } else {
+    input.type = 'password'
+    btn.textContent = '👁️'
+  }
+}
+
+// 远程解锁测试相关函数
+async function testUnlock() {
+  const password = document.getElementById('testUnlockPassword').value
+  
+  if (!confirm('此测试将锁定屏幕然后尝试自动解锁。确定要继续吗？')) {
+    return
+  }
+  
+  const logDiv = document.getElementById('testUnlockLog')
+  logDiv.style.display = 'block'
+  logDiv.innerHTML = ''
+  
+  try {
+    const result = await window.electronAPI.testUnlock(password)
+    
+    // 监听测试进度
+    window.electronAPI.on('test-unlock-log', (data) => {
+      appendTestLog(data.message, data.level || 'info')
+    })
+    
+    appendTestLog('测试完成', 'success')
+    
+    if (result.unlockSuccess) {
+      showMessage('解锁成功！使用的解锁方式: ' + result.unlockMode)
+    } else {
+      showMessage('解锁失败，请查看日志了解详情。')
+    }
+  } catch (e) {
+    console.error('测试解锁失败:', e)
+    appendTestLog('测试失败: ' + e.message, 'error')
+    showMessage('测试失败: ' + e.message)
+  }
+}
+
+async function runFullUnlockTest() {
+  const password = document.getElementById('testUnlockPassword').value
+  
+  const logDiv = document.getElementById('testUnlockLog')
+  logDiv.style.display = 'block'
+  logDiv.innerHTML = ''
+  
+  try {
+    const result = await window.electronAPI.runFullUnlockTest(password)
+    
+    appendTestLog('完整测试完成', 'success')
+    
+    if (result.success) {
+      appendTestLog('测试通过: ' + JSON.stringify(result.results), 'success')
+      showMessage('完整测试完成！')
+    } else {
+      appendTestLog('测试失败: ' + (result.error || '未知错误'), 'error')
+      showMessage('完整测试失败，请查看日志。')
+    }
+    
+    if (result.logContent) {
+      appendTestLog('--- 完整日志 ---', 'info')
+      appendTestLog(result.logContent, 'info')
+    }
+  } catch (e) {
+    console.error('运行完整解锁测试失败:', e)
+    appendTestLog('完整测试失败: ' + e.message, 'error')
+    showMessage('完整测试失败: ' + e.message)
+  }
+}
+
+function appendTestLog(message, level = 'info') {
+  const logDiv = document.getElementById('testUnlockLog')
+  const timestamp = new Date().toLocaleTimeString()
+  const logLine = document.createElement('div')
+  logLine.style.cssText = level === 'error' ? 'color: #dc3545;' : level === 'success' ? 'color: #28a745;' : ''
+  logLine.textContent = `[${timestamp}] ${message}`
+  logDiv.appendChild(logLine)
+  logDiv.scrollTop = logDiv.scrollHeight
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   initializeApp()
   
@@ -571,5 +942,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 加载解锁密码状态
   setTimeout(() => {
     loadUnlockPasswordStatus()
+    checkCredProvider()
+    checkServiceStatus()
   }, 500)
 })

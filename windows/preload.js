@@ -24,7 +24,14 @@ const RECEIVE_CHANNELS = Object.freeze([
   'remote-window-ready',
   'send-signaling-offer',
   'send-signaling-answer',
-  'send-signaling-ice-candidate'
+  'send-signaling-ice-candidate',
+  'credProvider:progress',
+  'test-unlock-log',
+  'service:stateChange',
+  'service:started',
+  'service:stopped',
+  'service:error',
+  'unlock-state-changed'
 ])
 
 const listenerRegistry = new Map()
@@ -119,5 +126,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 解锁设置相关
   getUnlockStatus: () => ipcRenderer.invoke('auto-unlock-get-status'),
   saveUnlockPassword: (password) => ipcRenderer.invoke('auto-unlock-save-password', password),
-  clearUnlockPassword: () => ipcRenderer.invoke('auto-unlock-clear-password')
+  clearUnlockPassword: () => ipcRenderer.invoke('auto-unlock-clear-password'),
+  
+  // Credential Provider 相关
+  checkCredProvider: () => ipcRenderer.invoke('credProvider:check'),
+  installCredProvider: () => ipcRenderer.invoke('credProvider:install'),
+  uninstallCredProvider: () => ipcRenderer.invoke('credProvider:uninstall'),
+  
+  // 服务相关
+  getServiceStatus: () => ipcRenderer.invoke('service:status'),
+  startService: () => ipcRenderer.invoke('service:start'),
+  stopService: () => ipcRenderer.invoke('service:stop'),
+  restartService: () => ipcRenderer.invoke('service:restart'),
+  setServiceMode: (mode) => ipcRenderer.invoke('service:setMode', mode),
+  installService: () => ipcRenderer.invoke('service:install'),
+  uninstallService: () => ipcRenderer.invoke('service:uninstall'),
+  installServiceWithElevation: () => ipcRenderer.invoke('service:installWithElevation'),
+  uninstallServiceWithElevation: () => ipcRenderer.invoke('service:uninstallWithElevation'),
+  
+  // 解锁测试相关
+  testUnlock: (password) => ipcRenderer.invoke('service:testUnlock', password),
+  getTestUnlockLog: () => ipcRenderer.invoke('service:getTestUnlockLog'),
+  runFullUnlockTest: (password) => ipcRenderer.invoke('service:runFullUnlockTest', password)
 })

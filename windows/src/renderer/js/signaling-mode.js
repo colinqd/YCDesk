@@ -114,6 +114,7 @@ class SignalingModeManager {
     this.useOptimizedTransfer = options.useOptimizedTransfer !== false
     this.OPTIMIZED_VIDEO_CHANNEL = 'optimized-video'
     this.optimizedVideoChannel = null
+    this.currentStream = null
     
     this._setupRemoteWindowListeners()
   }
@@ -270,7 +271,7 @@ class SignalingModeManager {
     })
 
     this.dataChannelManager.setOnMessage((data) => {
-      if (data.type === 'input') {
+      if (data.type === 'input' || data.inputType) {
         this.logFn('[信令模式] 收到输入命令: ' + data.inputType + ', x=' + data.x + ', y=' + data.y)
         window.electronAPI.send('remote-input', data)
       } else if (data.type === 'ping') {
@@ -288,6 +289,9 @@ class SignalingModeManager {
         })
       } else if (data.type === 'resolution-change') {
         this.logFn('[信令模式] 收到分辨率变更请求: ' + data.width + 'x' + data.height)
+      } else if (data.type === 'video-refresh-request') {
+        this.logFn('[信令模式] 收到视频刷新请求，重新初始化屏幕捕获...')
+        this.refreshVideoStream()
       }
     })
 
@@ -339,7 +343,7 @@ class SignalingModeManager {
         this.inputChannel.onmessage = (evt) => {
           try {
             const data = JSON.parse(evt.data)
-            if (data.type === 'input') {
+            if (data.type === 'input' || data.inputType) {
               window.electronAPI.send('remote-input', data)
             }
           } catch (e) {
@@ -544,12 +548,95 @@ class SignalingModeManager {
         this.logFn('[信令模式] 屏幕捕获成功，分辨率: ' + 
           stream.getVideoTracks()[0].getSettings().width + 'x' + 
           stream.getVideoTracks()[0].getSettings().height)
+        this.currentStream = stream
       } else {
         this.logFn('[信令模式] 没有找到可用的屏幕源')
       }
     } catch (error) {
       this.logFn('[信令模式] 屏幕捕获失败: ' + error.message)
       console.error('[信令模式] 屏幕捕获详细错误:', error)
+    }
+  }
+
+  stopScreenCapture() {
+    if (this.videoFrameTransmitter) {
+      this.videoFrameTransmitter.stop()
+    }
+
+    if (this.currentStream) {
+      this.currentStream.getTracks().forEach(track => {
+        track.stop()
+      })
+      this.currentStream = null
+    }
+
+    if (this.peerConnection) {
+      const senders = this.peerConnection.getSenders()
+      senders.forEach(sender => {
+        if (sender.track) {
+          try { this.peerConnection.removeTrack(sender) } catch (e) {}
+        }
+      })
+    }
+  }
+
+  async refreshVideoStream() {
+    this.logFn('[信令模式] 开始刷新视频流...')
+    try {
+      this.stopScreenCapture()
+
+      const sources = await window.electronAPI.getSources()
+      if (sources.length === 0) {
+        this.logFn('[信令模式] 未找到屏幕源，刷新失败')
+        return
+      }
+
+      const maxWidth = this.config.screenCapture?.maxWidth || 1920
+      const maxHeight = this.config.screenCapture?.maxHeight || 1080
+
+      this.currentStream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          mandatory: {
+            chromeMediaSource: 'desktop',
+            chromeMediaSourceId: sources[0].id,
+            maxWidth: maxWidth,
+            maxHeight: maxHeight,
+            maxFrameRate: this.config.screenCapture?.maxFrameRate || 30
+          }
+        }
+      })
+
+      const tracks = this.currentStream.getVideoTracks()
+      tracks.forEach(track => {
+        const sender = this.peerConnection.addTrack(track, this.currentStream)
+        try {
+          const parameters = sender.getParameters()
+          if (!parameters.encodings || parameters.encodings.length === 0) {
+            parameters.encodings = [{}]
+          }
+          parameters.encodings[0].maxBitrate = 2000000
+          parameters.encodings[0].maxFramerate = 20
+          sender.setParameters(parameters)
+        } catch (e) {}
+      })
+
+      this.logFn('[信令模式] 视频流已刷新，发起重新协商...')
+      const offer = await this.peerConnection.createOffer()
+      await this.peerConnection.setLocalDescription(offer)
+
+      this.signalingClient.send('offer', {
+        sessionId: this.currentSessionId,
+        offer: {
+          type: offer.type,
+          sdp: offer.sdp
+        },
+        toDeviceId: this.incomingFromDeviceId
+      })
+
+      this.logFn('[信令模式] 重新协商 offer 已发送')
+    } catch (error) {
+      this.logFn('[信令模式] 刷新视频流失败: ' + error.message)
     }
   }
 
@@ -567,6 +654,8 @@ class SignalingModeManager {
     this.incomingFromDeviceId = null
     this.isController = false
     this.pendingIceCandidates = []
+
+    this.stopScreenCapture()
 
     if (this.videoFrameTransmitter) {
       this.videoFrameTransmitter.reset()

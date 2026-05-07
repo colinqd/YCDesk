@@ -192,11 +192,14 @@ class DirectModeManager {
     })
 
     this.dataChannelManager.setOnMessage((data) => {
-      if (data.type === 'input') {
+      if (data.type === 'input' || data.inputType) {
         this.logFn('收到输入，转发到主进程: ' + JSON.stringify(data))
         window.electronAPI.send('remote-input', data)
       } else if (data.type === 'ping') {
         this.dataChannelManager.send({ type: 'pong', timestamp: data.timestamp })
+      } else if (data.type === 'video-refresh-request') {
+        this.logFn('收到视频刷新请求，重新初始化屏幕捕获...')
+        this.refreshVideoStream()
       }
     })
 
@@ -250,7 +253,7 @@ class DirectModeManager {
         channel.onmessage = (e) => {
           try {
             const data = JSON.parse(e.data)
-            if (data.type === 'input') {
+            if (data.type === 'input' || data.inputType) {
               window.electronAPI.send('remote-input', data)
             }
           } catch (err) {
@@ -563,6 +566,65 @@ class DirectModeManager {
           try { this.directPeerConnection.removeTrack(sender) } catch (e) {}
         }
       })
+    }
+  }
+
+  async refreshVideoStream() {
+    this.logFn('开始刷新视频流...')
+    try {
+      this.stopScreenCapture()
+
+      const sources = await window.electronAPI.getSources()
+      if (sources.length === 0) {
+        this.logFn('未找到屏幕源，刷新失败')
+        return
+      }
+
+      const maxWidth = 1920
+      const maxHeight = 1080
+
+      this.currentStream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          mandatory: {
+            chromeMediaSource: 'desktop',
+            chromeMediaSourceId: sources[0].id,
+            maxWidth: maxWidth,
+            maxHeight: maxHeight,
+            maxFrameRate: 30
+          }
+        }
+      })
+
+      const tracks = this.currentStream.getVideoTracks()
+      tracks.forEach(track => {
+        const sender = this.directPeerConnection.addTrack(track, this.currentStream)
+        try {
+          const parameters = sender.getParameters()
+          if (!parameters.encodings || parameters.encodings.length === 0) {
+            parameters.encodings = [{}]
+          }
+          parameters.encodings[0].maxBitrate = 2000000
+          parameters.encodings[0].maxFramerate = 20
+          sender.setParameters(parameters)
+        } catch (e) {}
+      })
+
+      this.logFn('视频流已刷新，发起重新协商...')
+      const offer = await this.directPeerConnection.createOffer()
+      await this.directPeerConnection.setLocalDescription(offer)
+
+      this.sendMessage({
+        type: 'offer',
+        offer: {
+          type: offer.type,
+          sdp: offer.sdp
+        }
+      })
+
+      this.logFn('重新协商 offer 已发送')
+    } catch (error) {
+      this.logFn('刷新视频流失败: ' + error.message)
     }
   }
 
