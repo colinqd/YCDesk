@@ -30,6 +30,8 @@ function createMainWindow() {
 
   mainWindow.loadFile('index.html')
 
+  autoUnlockService.setMainWindow(mainWindow)
+
   mainWindow.once('ready-to-show', () => {
     mainWindow.show()
   })
@@ -55,6 +57,7 @@ function createMainWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null
+    autoUnlockService.setMainWindow(null)
     if (remoteWindow) {
       remoteWindow.close()
     }

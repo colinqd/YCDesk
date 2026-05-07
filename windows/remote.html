@@ -143,6 +143,13 @@
       object-fit: contain;
     }
 
+    .video-frozen #screenVideo,
+    .video-frozen canvas,
+    .video-frozen video {
+      filter: grayscale(0.6) brightness(0.5);
+      transition: filter 0.3s;
+    }
+
     /* 解锁面板样式 */
     #unlockOverlay {
       position: fixed;
@@ -150,12 +157,11 @@
       left: 0;
       right: 0;
       bottom: 0;
-      background: rgba(0, 0, 0, 0.75);
+      background: rgba(0, 0, 0, 0.92);
       z-index: 9999;
       display: flex;
       align-items: center;
       justify-content: center;
-      backdrop-filter: blur(5px);
     }
 
     #unlockOverlay.hidden {
@@ -164,26 +170,28 @@
 
     .unlock-dialog {
       background: linear-gradient(135deg, #1a1a2e, #16213e);
-      border: 1px solid #0f3460;
+      border: 2px solid #e74c3c;
       border-radius: 16px;
       padding: 40px;
-      width: 400px;
+      width: 420px;
       max-width: 90%;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+      box-shadow: 0 20px 60px rgba(231, 76, 60, 0.3);
     }
 
     .unlock-dialog h2 {
-      color: #fff;
+      color: #e74c3c;
       margin-bottom: 8px;
       text-align: center;
-      font-size: 24px;
+      font-size: 22px;
+      font-weight: 700;
     }
 
-    .unlock-dialog p {
-      color: #aaa;
+    .unlock-dialog .unlock-subtitle {
+      color: #ccc;
       text-align: center;
       margin-bottom: 24px;
-      font-size: 14px;
+      font-size: 13px;
+      line-height: 1.6;
     }
 
     .unlock-input-group {
@@ -1211,12 +1219,16 @@
             unlockUI.hideOverlay()
           }
           updateStatus('已连接')
+          var vc = document.getElementById('videoContainer')
+          if (vc) vc.classList.remove('video-frozen')
           setTimeout(() => {
             requestVideoRefresh()
           }, 500)
         } else if (data.isLocked === true) {
           log('屏幕已锁定，显示解锁面板...')
           updateStatus('已锁定', 'error')
+          var vc = document.getElementById('videoContainer')
+          if (vc) vc.classList.add('video-frozen')
           if (unlockUI) {
             unlockUI.showOverlay()
           }
@@ -1557,8 +1569,8 @@
   <!-- 解锁面板 UI -->
   <div id="unlockOverlay" class="hidden">
     <div class="unlock-dialog">
-      <h2>远程电脑已锁定</h2>
-      <p>请输入密码以解锁远程电脑</p>
+      <h2>🔒 被控端已锁定</h2>
+      <div class="unlock-subtitle">远程电脑已进入锁屏状态，画面已暂停<br>请输入密码进行远程解锁以恢复连接</div>
       
       <div class="unlock-input-group">
         <label for="unlockPassword">密码</label>

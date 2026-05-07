@@ -1,7 +1,6 @@
 const { powerMonitor, ipcMain } = require('electron')
 const credentialsManager = require('./credentials-manager')
 const unlockIpcServer = require('./unlock-ipc-server')
-const windowManager = require('./window-manager')
 const os = require('os')
 
 class AutoUnlockService {
@@ -9,6 +8,7 @@ class AutoUnlockService {
     this.isLocked = false
     this.autoUnlockEnabled = false
     this.currentRemoteWindow = null
+    this.currentMainWindow = null
     this.ipcServerStarted = false
     this.setupListeners()
     this.startIpcServer()
@@ -29,6 +29,10 @@ class AutoUnlockService {
 
   setRemoteWindow(window) {
     this.currentRemoteWindow = window
+  }
+
+  setMainWindow(window) {
+    this.currentMainWindow = window
   }
 
   setupListeners() {
@@ -82,9 +86,8 @@ class AutoUnlockService {
       this.currentRemoteWindow.webContents.send('unlock-state-changed', payload)
     }
 
-    const mainWindow = windowManager.getMainWindow()
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('unlock-state-changed', payload)
+    if (this.currentMainWindow && !this.currentMainWindow.isDestroyed()) {
+      this.currentMainWindow.webContents.send('unlock-state-changed', payload)
     }
   }
 
