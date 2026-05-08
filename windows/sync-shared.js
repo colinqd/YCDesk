@@ -16,11 +16,14 @@ const SYNC_TARGETS = [
         'platform/',
         'utils/',
         'video/',
+        'gestures/',
         'input-manager.js',
         'input-protocol-usage.js',
         'components/matrix-transformer-dom.js'
       ]
-      return !exclude.some(e => normalized.includes(e))
+      if (exclude.some(e => normalized.includes(e))) return false
+      if (normalized.endsWith('.test.js')) return false
+      return true
     }
   },
   {

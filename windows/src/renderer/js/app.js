@@ -743,6 +743,11 @@ document.addEventListener('DOMContentLoaded', () => {
       signalingManager.setConnectionMode(e.target.value)
     })
   }
+
+  const activeModeSel = controlledModeSelect || controllerModeSelect
+  if (activeModeSel && activeModeSel.value) {
+    signalingManager.setConnectionMode(activeModeSel.value)
+  }
   
   // 加载解锁密码状态
   setTimeout(() => {

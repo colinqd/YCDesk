@@ -131,6 +131,14 @@ class SignalingModeManager {
   async connect(serverUrl, role) {
     this.serverUrl = serverUrl
     this.role = role
+    this.isController = (role === 'controller')
+
+    const modeSelect = document.getElementById(
+      role === 'controlled' ? 'controlledConnectionMode' : 'controllerConnectionMode'
+    )
+    if (modeSelect && modeSelect.value) {
+      this.setConnectionMode(modeSelect.value)
+    }
 
     let normalizedUrl = serverUrl.trim()
     this.logFn('原始地址: ' + serverUrl)

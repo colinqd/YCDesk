@@ -6,7 +6,7 @@ let SignalingServer = null
 const possiblePaths = [
   path.join(__dirname, '../server/server-module.js'),
   path.join(__dirname, './server/server-module.js'),
-  path.join(process.resourcesPath, 'server/server-module.js')
+  path.join(process.resourcesPath, 'app/server/server-module.js')
 ]
 
 for (const p of possiblePaths) {

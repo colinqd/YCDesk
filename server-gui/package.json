@@ -1,6 +1,6 @@
 {
   "name": "ycdesk-server-gui",
-  "version": "1.0.0",
+  "version": "3.0.2",
   "description": "YCDesk 信令服务器 - GUI 版本",
   "main": "src/main.js",
   "scripts": {
@@ -29,7 +29,13 @@
     },
     "files": [
       "src/**/*",
-      "node_modules/**/*"
+      "server/**/*",
+      "node_modules/**/*",
+      "!server/node_modules/**",
+      "!server/package-lock.json",
+      "!server/generate-cert.*",
+      "!server/*.bat",
+      "!server/*.sh"
     ],
     "win": {
       "target": [

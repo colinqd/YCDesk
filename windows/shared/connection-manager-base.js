@@ -550,11 +550,6 @@ class BaseConnectionManager {
                     window.electronAPI.send('remote-input', data)
                 }
                 break
-            case 'unlock-state-changed':
-                console.log('[BaseConnectionManager] 控制器收到锁屏状态变更: ' + JSON.stringify(data))
-                this.log('收到锁屏状态变更: ' + JSON.stringify(data))
-                this.emit('unlock-state-changed', data)
-                break
             default:
                 this.emit('message', data)
         }

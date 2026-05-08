@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
 server/node_modules/
+server-gui/node_modules/
 
 # Electron
 out/
@@ -29,7 +30,29 @@ npm-debug.log*
 *.dmg
 *.AppImage
 
-# Android
+# Windows Credential Provider
+windows/credential_provider/build/
+windows/credential_provider/*.dll
+windows/credential_provider/*.exp
+windows/credential_provider/*.lib
+windows/credential_provider/*.pdb
+windows/bin/
+
+# SSL Certificates (keep templates only)
+server/server.crt
+server/server.key
+server-gui/server/server.crt
+server-gui/server/server.key
+
+# Android (Client)
+android/android/app/build/
+android/android/.gradle/
+android/android/local.properties
+
+# Android (Server)
 android-server/.gradle/
 android-server/app/build/
 android-server/local.properties
+
+# Linux
+linux/wget-log

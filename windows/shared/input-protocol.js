@@ -11,7 +11,6 @@
 
 const INPUT_TYPES = {
   MOUSE_MOVE: 'mousemove',
-  MOUSE_MOVE_ABSOLUTE: 'mousemove_absolute',
   MOUSE_MOVE_DELTA: 'mousemove_delta',
   MOUSE_DOWN: 'mousedown',
   MOUSE_UP: 'mouseup',

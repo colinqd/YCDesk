@@ -1,6 +1,6 @@
 {
   "name": "ycdesk",
-  "version": "2.9.0",
+  "version": "3.0.2",
   "description": "远程桌面控制软件 - Windows 版本",
   "main": "src/main/main.js",
   "author": "",
@@ -49,8 +49,14 @@
       "!**/*.md",
       "!**/*.log",
       "!dist*/**",
-      "!android/**",
-      "!server/**",
+      "!credential_provider/**",
+      "!resources/**",
+      "!assets/**",
+      "!data/**",
+      "!*.bat",
+      "!nodemon.json",
+      "!watch-build.js",
+      "!sync-shared.js",
       "!node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
       "!node_modules/.bin"
     ],
@@ -61,8 +67,21 @@
           "arch": [
             "x64"
           ]
+        },
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
         }
       ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "artifactName": "YCDesk-Setup-${version}.exe"
     },
     "portable": {
       "artifactName": "YCDesk-Portable-${version}.exe"

@@ -43,6 +43,7 @@ try {
             $generator = "Visual Studio $vsYear 2022"
             if ($vsYear -eq 17) { $generator = "Visual Studio 17 2022" }
             if ($vsYear -eq 16) { $generator = "Visual Studio 16 2019" }
+            if ($vsYear -eq 18) { $generator = "Visual Studio 18 2026" }
             Write-Host "[信息] 使用生成器：$generator" -ForegroundColor Green
         }
     } else {

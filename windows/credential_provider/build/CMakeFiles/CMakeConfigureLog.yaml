@@ -84,7 +84,7 @@ events:
       The output was:
       0
       閫傜敤浜?.NET Framework MSBuild 鐗堟湰 18.4.0+6e61e96ac
-      鐢熸垚鍚姩鏃堕棿涓?2026/5/5 22:15:35銆?
+      鐢熸垚鍚姩鏃堕棿涓?2026/5/8 9:31:43銆?
       
       鑺傜偣 1 涓婄殑椤圭洰鈥淒:\\MyProg\\YCDesk\\windows\\credential_provider\\build\\CMakeFiles\\4.3.1\\CompilerIdCXX\\CompilerIdCXX.vcxproj鈥?榛樿鐩爣)銆?
       PrepareForBuild:
@@ -113,7 +113,7 @@ events:
           0 涓鍛?
           0 涓敊璇?
       
-      宸茬敤鏃堕棿 00:00:00.59
+      宸茬敤鏃堕棿 00:00:00.81
       
       
       Compilation of the CXX compiler identification source "CMakeCXXCompilerId.cpp" produced "CompilerIdCXX.exe"
@@ -154,7 +154,7 @@ events:
       - "C:/Users/DHL/.trae-cn/sdks/versions/node/current/"
       - "C:/Python314/Scripts/"
       - "C:/Python314/"
-      - "D:/MyProg/YCDesk/windows/credential_provider/build/$JAVA_HOME/bin:$PATH/"
+      - "D:/MyProg/YCDesk/windows/credential_provider/$JAVA_HOME/bin:$PATH/"
       - "C:/Program Files/nodejs/"
       - "C:/ProgramData/chocolatey/bin/"
       - "D:/PortableGit/cmd/"
@@ -242,7 +242,7 @@ events:
       - "C:/Users/DHL/.trae-cn/sdks/versions/node/current/"
       - "C:/Python314/Scripts/"
       - "C:/Python314/"
-      - "D:/MyProg/YCDesk/windows/credential_provider/build/$JAVA_HOME/bin:$PATH/"
+      - "D:/MyProg/YCDesk/windows/credential_provider/$JAVA_HOME/bin:$PATH/"
       - "C:/Program Files/nodejs/"
       - "C:/ProgramData/chocolatey/bin/"
       - "D:/PortableGit/cmd/"
@@ -289,9 +289,9 @@ events:
       - "C:/Python314/lld-link.com"
       - "C:/Python314/lld-link.exe"
       - "C:/Python314/lld-link"
-      - "D:/MyProg/YCDesk/windows/credential_provider/build/$JAVA_HOME/bin:$PATH/lld-link.com"
-      - "D:/MyProg/YCDesk/windows/credential_provider/build/$JAVA_HOME/bin:$PATH/lld-link.exe"
-      - "D:/MyProg/YCDesk/windows/credential_provider/build/$JAVA_HOME/bin:$PATH/lld-link"
+      - "D:/MyProg/YCDesk/windows/credential_provider/$JAVA_HOME/bin:$PATH/lld-link.com"
+      - "D:/MyProg/YCDesk/windows/credential_provider/$JAVA_HOME/bin:$PATH/lld-link.exe"
+      - "D:/MyProg/YCDesk/windows/credential_provider/$JAVA_HOME/bin:$PATH/lld-link"
       - "C:/Program Files/nodejs/lld-link.com"
       - "C:/Program Files/nodejs/lld-link.exe"
       - "C:/Program Files/nodejs/lld-link"
@@ -411,7 +411,7 @@ events:
       - "C:/Users/DHL/.trae-cn/sdks/versions/node/current/"
       - "C:/Python314/Scripts/"
       - "C:/Python314/"
-      - "D:/MyProg/YCDesk/windows/credential_provider/build/$JAVA_HOME/bin:$PATH/"
+      - "D:/MyProg/YCDesk/windows/credential_provider/$JAVA_HOME/bin:$PATH/"
       - "C:/Program Files/nodejs/"
       - "C:/ProgramData/chocolatey/bin/"
       - "D:/PortableGit/cmd/"
@@ -497,7 +497,7 @@ events:
       - "C:/Users/DHL/.trae-cn/sdks/versions/node/current/"
       - "C:/Python314/Scripts/"
       - "C:/Python314/"
-      - "D:/MyProg/YCDesk/windows/credential_provider/build/$JAVA_HOME/bin:$PATH/"
+      - "D:/MyProg/YCDesk/windows/credential_provider/$JAVA_HOME/bin:$PATH/"
       - "C:/Program Files/nodejs/"
       - "C:/ProgramData/chocolatey/bin/"
       - "D:/PortableGit/cmd/"
@@ -544,9 +544,9 @@ events:
       - "C:/Python314/mt.com"
       - "C:/Python314/mt.exe"
       - "C:/Python314/mt"
-      - "D:/MyProg/YCDesk/windows/credential_provider/build/$JAVA_HOME/bin:$PATH/mt.com"
-      - "D:/MyProg/YCDesk/windows/credential_provider/build/$JAVA_HOME/bin:$PATH/mt.exe"
-      - "D:/MyProg/YCDesk/windows/credential_provider/build/$JAVA_HOME/bin:$PATH/mt"
+      - "D:/MyProg/YCDesk/windows/credential_provider/$JAVA_HOME/bin:$PATH/mt.com"
+      - "D:/MyProg/YCDesk/windows/credential_provider/$JAVA_HOME/bin:$PATH/mt.exe"
+      - "D:/MyProg/YCDesk/windows/credential_provider/$JAVA_HOME/bin:$PATH/mt"
       - "C:/Program Files/nodejs/mt.com"
       - "C:/Program Files/nodejs/mt.exe"
       - "C:/Program Files/nodejs/mt"
@@ -666,7 +666,7 @@ events:
       - "C:/Users/DHL/.trae-cn/sdks/versions/node/current/"
       - "C:/Python314/Scripts/"
       - "C:/Python314/"
-      - "D:/MyProg/YCDesk/windows/credential_provider/build/$JAVA_HOME/bin:$PATH/"
+      - "D:/MyProg/YCDesk/windows/credential_provider/$JAVA_HOME/bin:$PATH/"
       - "C:/Program Files/nodejs/"
       - "C:/ProgramData/chocolatey/bin/"
       - "D:/PortableGit/cmd/"
@@ -754,7 +754,7 @@ events:
       - "C:/Users/DHL/.trae-cn/sdks/versions/node/current/"
       - "C:/Python314/Scripts/"
       - "C:/Python314/"
-      - "D:/MyProg/YCDesk/windows/credential_provider/build/$JAVA_HOME/bin:$PATH/"
+      - "D:/MyProg/YCDesk/windows/credential_provider/$JAVA_HOME/bin:$PATH/"
       - "C:/Program Files/nodejs/"
       - "C:/ProgramData/chocolatey/bin/"
       - "D:/PortableGit/cmd/"
@@ -810,9 +810,9 @@ events:
       - "C:/Python314/rc.com"
       - "C:/Python314/rc.exe"
       - "C:/Python314/rc"
-      - "D:/MyProg/YCDesk/windows/credential_provider/build/$JAVA_HOME/bin:$PATH/rc.com"
-      - "D:/MyProg/YCDesk/windows/credential_provider/build/$JAVA_HOME/bin:$PATH/rc.exe"
-      - "D:/MyProg/YCDesk/windows/credential_provider/build/$JAVA_HOME/bin:$PATH/rc"
+      - "D:/MyProg/YCDesk/windows/credential_provider/$JAVA_HOME/bin:$PATH/rc.com"
+      - "D:/MyProg/YCDesk/windows/credential_provider/$JAVA_HOME/bin:$PATH/rc.exe"
+      - "D:/MyProg/YCDesk/windows/credential_provider/$JAVA_HOME/bin:$PATH/rc"
       - "C:/Program Files/nodejs/rc.com"
       - "C:/Program Files/nodejs/rc.exe"
       - "C:/Program Files/nodejs/rc"
@@ -954,8 +954,8 @@ events:
     checks:
       - "Detecting CXX compiler ABI info"
     directories:
-      source: "D:/MyProg/YCDesk/windows/credential_provider/build/CMakeFiles/CMakeScratch/TryCompile-flvjkw"
-      binary: "D:/MyProg/YCDesk/windows/credential_provider/build/CMakeFiles/CMakeScratch/TryCompile-flvjkw"
+      source: "D:/MyProg/YCDesk/windows/credential_provider/build/CMakeFiles/CMakeScratch/TryCompile-h457b6"
+      binary: "D:/MyProg/YCDesk/windows/credential_provider/build/CMakeFiles/CMakeScratch/TryCompile-h457b6"
     cmakeVariables:
       CMAKE_CXX_FLAGS: "/DWIN32 /D_WINDOWS /GR /EHsc"
       CMAKE_CXX_FLAGS_DEBUG: "/Zi /Ob0 /Od /RTC1"
@@ -966,39 +966,39 @@ events:
       variable: "CMAKE_CXX_ABI_COMPILED"
       cached: true
       stdout: |
-        Change Dir: 'D:/MyProg/YCDesk/windows/credential_provider/build/CMakeFiles/CMakeScratch/TryCompile-flvjkw'
+        Change Dir: 'D:/MyProg/YCDesk/windows/credential_provider/build/CMakeFiles/CMakeScratch/TryCompile-h457b6'
         
-        Run Build Command(s): "C:/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/amd64/MSBuild.exe" cmTC_f5389.vcxproj /p:Configuration=Debug /p:Platform=x64 /p:VisualStudioVersion=18.0 /v:n
+        Run Build Command(s): "C:/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/amd64/MSBuild.exe" cmTC_72711.vcxproj /p:Configuration=Debug /p:Platform=x64 /p:VisualStudioVersion=18.0 /v:n
         閫傜敤浜?.NET Framework MSBuild 鐗堟湰 18.4.0+6e61e96ac
-        鐢熸垚鍚姩鏃堕棿涓?2026/5/5 22:15:35銆?
+        鐢熸垚鍚姩鏃堕棿涓?2026/5/8 9:31:44銆?
         
-        鑺傜偣 1 涓婄殑椤圭洰鈥淒:\\MyProg\\YCDesk\\windows\\credential_provider\\build\\CMakeFiles\\CMakeScratch\\TryCompile-flvjkw\\cmTC_f5389.vcxproj鈥?榛樿鐩爣)銆?
+        鑺傜偣 1 涓婄殑椤圭洰鈥淒:\\MyProg\\YCDesk\\windows\\credential_provider\\build\\CMakeFiles\\CMakeScratch\\TryCompile-h457b6\\cmTC_72711.vcxproj鈥?榛樿鐩爣)銆?
         PrepareForBuild:
           宸插惎鐢ㄧ粨鏋勫寲杈撳嚭銆傜紪璇戝櫒璇婃柇鐨勬牸寮忚缃皢鍙嶆槧閿欒灞傛缁撴瀯銆傛湁鍏宠缁嗕俊鎭紝璇峰弬闃?https://aka.ms/cpp/structured-output銆?
-          姝ｅ湪鍒涘缓鐩綍鈥淒:\\MyProg\\YCDesk\\windows\\credential_provider\\build\\CMakeFiles\\CMakeScratch\\TryCompile-flvjkw\\Debug\\鈥濄€?
-          姝ｅ湪鍒涘缓鐩綍鈥渃mTC_f5389.dir\\Debug\\cmTC_f5389.tlog\\鈥濄€?
+          姝ｅ湪鍒涘缓鐩綍鈥淒:\\MyProg\\YCDesk\\windows\\credential_provider\\build\\CMakeFiles\\CMakeScratch\\TryCompile-h457b6\\Debug\\鈥濄€?
+          姝ｅ湪鍒涘缓鐩綍鈥渃mTC_72711.dir\\Debug\\cmTC_72711.tlog\\鈥濄€?
         InitializeBuildStatus:
-          姝ｅ湪鍒涘缓鈥渃mTC_f5389.dir\\Debug\\cmTC_f5389.tlog\\unsuccessfulbuild鈥濓紝鍥犱负宸叉寚瀹氣€淎lwaysCreate鈥濄€?
-          姝ｅ湪瀵光€渃mTC_f5389.dir\\Debug\\cmTC_f5389.tlog\\unsuccessfulbuild鈥濇墽琛?Touch 浠诲姟銆?
+          姝ｅ湪鍒涘缓鈥渃mTC_72711.dir\\Debug\\cmTC_72711.tlog\\unsuccessfulbuild鈥濓紝鍥犱负宸叉寚瀹氣€淎lwaysCreate鈥濄€?
+          姝ｅ湪瀵光€渃mTC_72711.dir\\Debug\\cmTC_72711.tlog\\unsuccessfulbuild鈥濇墽琛?Touch 浠诲姟銆?
         ClCompile:
-          C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\bin\\HostX64\\x64\\CL.exe /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D _MBCS /D "CMAKE_INTDIR=\\"Debug\\"" /EHsc /RTC1 /MDd /GR /Fo"cmTC_f5389.dir\\Debug\\\\" /Fd"cmTC_f5389.dir\\Debug\\vc145.pdb" /external:W1 /TP /errorReport:queue "C:\\Program Files\\CMake\\share\\cmake-4.3\\Modules\\CMakeCXXCompilerABI.cpp"
+          C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\bin\\HostX64\\x64\\CL.exe /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D _MBCS /D "CMAKE_INTDIR=\\"Debug\\"" /EHsc /RTC1 /MDd /GR /Fo"cmTC_72711.dir\\Debug\\\\" /Fd"cmTC_72711.dir\\Debug\\vc145.pdb" /external:W1 /TP /errorReport:queue "C:\\Program Files\\CMake\\share\\cmake-4.3\\Modules\\CMakeCXXCompilerABI.cpp"
           鐢ㄤ簬 x64 鐨?Microsoft (R) C/C++ 浼樺寲缂栬瘧鍣?19.50.35728 鐗?
           鐗堟潈鎵€鏈?C) Microsoft Corporation銆備繚鐣欐墍鏈夋潈鍒┿€?
-          cl /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D _MBCS /D "CMAKE_INTDIR=\\"Debug\\"" /EHsc /RTC1 /MDd /GR /Fo"cmTC_f5389.dir\\Debug\\\\" /Fd"cmTC_f5389.dir\\Debug\\vc145.pdb" /external:W1 /TP /errorReport:queue "C:\\Program Files\\CMake\\share\\cmake-4.3\\Modules\\CMakeCXXCompilerABI.cpp"
+          cl /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D _MBCS /D "CMAKE_INTDIR=\\"Debug\\"" /EHsc /RTC1 /MDd /GR /Fo"cmTC_72711.dir\\Debug\\\\" /Fd"cmTC_72711.dir\\Debug\\vc145.pdb" /external:W1 /TP /errorReport:queue "C:\\Program Files\\CMake\\share\\cmake-4.3\\Modules\\CMakeCXXCompilerABI.cpp"
           CMakeCXXCompilerABI.cpp
         Link:
-          C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\bin\\HostX64\\x64\\link.exe /OUT:"D:\\MyProg\\YCDesk\\windows\\credential_provider\\build\\CMakeFiles\\CMakeScratch\\TryCompile-flvjkw\\Debug\\cmTC_f5389.exe" /INCREMENTAL /ILK:"cmTC_f5389.dir\\Debug\\cmTC_f5389.ilk" /NOLOGO kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"D:/MyProg/YCDesk/windows/credential_provider/build/CMakeFiles/CMakeScratch/TryCompile-flvjkw/Debug/cmTC_f5389.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /IMPLIB:"D:/MyProg/YCDesk/windows/credential_provider/build/CMakeFiles/CMakeScratch/TryCompile-flvjkw/Debug/cmTC_f5389.lib" /MACHINE:X64  /machine:x64 cmTC_f5389.dir\\Debug\\CMakeCXXCompilerABI.obj
-          cmTC_f5389.vcxproj -> D:\\MyProg\\YCDesk\\windows\\credential_provider\\build\\CMakeFiles\\CMakeScratch\\TryCompile-flvjkw\\Debug\\cmTC_f5389.exe
+          C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\bin\\HostX64\\x64\\link.exe /OUT:"D:\\MyProg\\YCDesk\\windows\\credential_provider\\build\\CMakeFiles\\CMakeScratch\\TryCompile-h457b6\\Debug\\cmTC_72711.exe" /INCREMENTAL /ILK:"cmTC_72711.dir\\Debug\\cmTC_72711.ilk" /NOLOGO kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"D:/MyProg/YCDesk/windows/credential_provider/build/CMakeFiles/CMakeScratch/TryCompile-h457b6/Debug/cmTC_72711.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /IMPLIB:"D:/MyProg/YCDesk/windows/credential_provider/build/CMakeFiles/CMakeScratch/TryCompile-h457b6/Debug/cmTC_72711.lib" /MACHINE:X64  /machine:x64 cmTC_72711.dir\\Debug\\CMakeCXXCompilerABI.obj
+          cmTC_72711.vcxproj -> D:\\MyProg\\YCDesk\\windows\\credential_provider\\build\\CMakeFiles\\CMakeScratch\\TryCompile-h457b6\\Debug\\cmTC_72711.exe
         FinalizeBuildStatus:
-          姝ｅ湪鍒犻櫎鏂囦欢鈥渃mTC_f5389.dir\\Debug\\cmTC_f5389.tlog\\unsuccessfulbuild鈥濄€?
-          姝ｅ湪瀵光€渃mTC_f5389.dir\\Debug\\cmTC_f5389.tlog\\cmTC_f5389.lastbuildstate鈥濇墽琛?Touch 浠诲姟銆?
-        宸插畬鎴愮敓鎴愰」鐩€淒:\\MyProg\\YCDesk\\windows\\credential_provider\\build\\CMakeFiles\\CMakeScratch\\TryCompile-flvjkw\\cmTC_f5389.vcxproj鈥?榛樿鐩爣)鐨勬搷浣溿€?
+          姝ｅ湪鍒犻櫎鏂囦欢鈥渃mTC_72711.dir\\Debug\\cmTC_72711.tlog\\unsuccessfulbuild鈥濄€?
+          姝ｅ湪瀵光€渃mTC_72711.dir\\Debug\\cmTC_72711.tlog\\cmTC_72711.lastbuildstate鈥濇墽琛?Touch 浠诲姟銆?
+        宸插畬鎴愮敓鎴愰」鐩€淒:\\MyProg\\YCDesk\\windows\\credential_provider\\build\\CMakeFiles\\CMakeScratch\\TryCompile-h457b6\\cmTC_72711.vcxproj鈥?榛樿鐩爣)鐨勬搷浣溿€?
         
         宸叉垚鍔熺敓鎴愩€?
             0 涓鍛?
             0 涓敊璇?
         
-        宸茬敤鏃堕棿 00:00:00.35
+        宸茬敤鏃堕棿 00:00:00.55
         
       exitCode: 0
   -
