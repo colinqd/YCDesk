@@ -319,6 +319,7 @@ function init(deviceIdParam, loggerParam) {
   })
 
   ipcMain.on('remote-input', (event, inputData) => {
+    log('debug', 'DIAG IPC: 收到remote-input, type=' + (inputData && inputData.type) + ', inputType=' + (inputData && inputData.inputType) + ', x=' + (inputData && inputData.x) + ', y=' + (inputData && inputData.y) + ', button=' + (inputData && inputData.button))
     inputHandler.handleRemoteInput(event, inputData)
   })
 

@@ -162,6 +162,12 @@ function normalizeServerUrl(url, preferSecure = null) {
   
   let normalized = url.trim()
   
+  // 清理常见的输入错误（如 www.hnasvr:.asia:31300 → www.hnasvr.asia:31300）
+  normalized = normalized
+    .replace(/:\./g, '.') // 替换冒号点（如 www.hnasvr:.asia → www.hnasvr.asia）
+    .replace(/\.{2,}/g, '.') // 替换多个点
+    .replace(/:\s*/g, ':') // 清理冒号周围空格
+  
   normalized = normalized.replace(/^wws:\/\//i, 'wss://')
   normalized = normalized.replace(/^wss:\/\//i, 'wss://')
   normalized = normalized.replace(/^ws:\/\//i, 'ws://')
@@ -177,10 +183,17 @@ function normalizeServerUrl(url, preferSecure = null) {
     return normalized
   }
   
+  // 检测是否有非标准端口（非443/80）
+  const hasCustomPort = normalized.match(/:\d+$/) && !normalized.match(/:(443|80)$/)
+  
   if (preferSecure === true) {
     normalized = 'wss://' + normalized
-  } else {
+  } else if (preferSecure === false) {
     normalized = 'ws://' + normalized
+  } else {
+    const isDomain = /^[a-zA-Z]/.test(normalized) && !/^(\d{1,3}\.){3}\d{1,3}(:\d+)?$/.test(normalized) && normalized !== 'localhost'
+    // 如果是域名且有自定义端口，默认用 ws://（Android-Server 通常没有 SSL）
+    normalized = (isDomain && !hasCustomPort ? 'wss://' : 'ws://') + normalized
   }
   
   return normalized

@@ -149,6 +149,7 @@ async function handleRemoteInput(event, inputData) {
   if (!robot) {
     diagLog('robot not initialized, cannot process non-unlock input')
     log('warn', 'robot未初始化，无法处理输入')
+    log('warn', 'DIAG: robot 变量为 null/undefined, 请检查 robotjs 模块是否正确加载')
     return
   }
   
@@ -192,7 +193,6 @@ async function handleRemoteInput(event, inputData) {
 
     switch (inputType) {
       case INPUT_TYPES.MOUSE_MOVE:
-      case INPUT_TYPES.MOUSE_MOVE_ABSOLUTE:
         handleMouseMove(x, y, screenWidth, screenHeight)
         break
 

@@ -23,6 +23,7 @@ class SignalingClient {
     this._autoSettled = false
     this._autoTimer = null
     this._autoServerUrl = ''
+    this._registerTimer = null
   }
 
   setDeviceId(deviceId) {
@@ -121,6 +122,7 @@ class SignalingClient {
         this.logFn('正在注册设备 ID: ' + this.myDeviceId)
         this.send('register', { deviceId: this.myDeviceId })
         this._startHeartbeat()
+        this._startRegisterTimeout()
         if (typeof this.onConnected === 'function') this.onConnected()
       }
 
@@ -177,6 +179,7 @@ class SignalingClient {
         this.logFn('✓ 已连接到信令服务器，Socket ID: ' + this.socket.id)
         this.logFn('正在注册设备 ID: ' + this.myDeviceId)
         this.socket.emit('register', { deviceId: this.myDeviceId })
+        this._startRegisterTimeout()
         if (typeof this.onConnected === 'function') this.onConnected()
       })
 
@@ -192,7 +195,7 @@ class SignalingClient {
           clearTimeout(this._autoTimer)
           this._autoTimer = null
           this._cleanupSocketIO()
-          this.logFn('Socket.IO 连接失败，切换到原始 WebSocket')
+          this.logFn('Socket.IO 连接失败 (' + (error.message || 'unknown') + ')，切换到原始 WebSocket')
           this.connectionMode = 'websocket'
           this.negotiatedMode = 'websocket'
           this._connectWebSocket(this._autoServerUrl)
@@ -262,11 +265,26 @@ class SignalingClient {
     }
   }
 
+  _startRegisterTimeout() {
+    this._stopRegisterTimeout()
+    this._registerTimer = setTimeout(() => {
+      this.logFn('⚠ 设备注册超时 (5s) — 请确认服务器版本是否正确')
+    }, 5000)
+  }
+
+  _stopRegisterTimeout() {
+    if (this._registerTimer) {
+      clearTimeout(this._registerTimer)
+      this._registerTimer = null
+    }
+  }
+
   _handleMessage(data) {
     const type = data.type
 
     switch (type) {
       case 'registered':
+        this._stopRegisterTimeout()
         this.logFn('设备注册成功: ' + data.deviceId)
         if (typeof this.onRegistered === 'function') this.onRegistered(data)
         break

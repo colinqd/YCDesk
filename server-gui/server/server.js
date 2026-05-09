@@ -200,11 +200,14 @@ io.on('connection', (socket) => {
   console.log('新连接:', socket.id);
 
   // 设备注册
-  socket.on('register', (deviceId) => {
+  socket.on('register', (data) => {
+    const { deviceId } = data;
     devices.set(deviceId, {
       socketId: socket.id,
+      deviceId: deviceId,
       lastSeen: new Date()
     });
+    socket.emit('registered', { deviceId });
     console.log('设备注册:', deviceId, '->', socket.id);
   });
 

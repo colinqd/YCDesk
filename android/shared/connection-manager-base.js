@@ -254,7 +254,7 @@ class BaseConnectionManager {
         
         this.inputChannel.onopen = () => {
             this.inputChannelReady = true
-            this.log('输入数据通道已打开（无序、不重传）')
+            this.log('DIAG createDataChannel: 输入数据通道已打开（无序、不重传）, readyState=' + this.inputChannel.readyState)
         }
         
         this.inputChannel.onmessage = (event) => {
@@ -606,31 +606,35 @@ class BaseConnectionManager {
         this.pendingIceCandidates = []
     }
 
-    sendInput(eventData) {
-        const message = JSON.stringify({
-            type: 'input',
-            ...eventData
-        })
+    sendInput(inputCommand) {
+        const message = JSON.stringify(inputCommand)
         
         if (this.inputChannel && this.inputChannelReady && this.inputChannel.readyState === 'open') {
             if (this.inputChannel.bufferedAmount < 65536) {
                 this.inputChannel.send(message)
+                this.log('DIAG sendInput: 通过inputChannel发送, inputType=' + inputCommand.inputType + ', size=' + message.length)
                 return
+            } else {
+                this.log('DIAG sendInput: inputChannel缓冲已满(' + this.inputChannel.bufferedAmount + '), 回退到dataChannelManager')
             }
+        } else {
+            this.log('DIAG sendInput: inputChannel未就绪(inputChannel=' + !!this.inputChannel + ', ready=' + this.inputChannelReady + ', readyState=' + (this.inputChannel ? this.inputChannel.readyState : 'null') + '), 尝试dataChannelManager')
         }
         
         if (this.dataChannelManager && this.dataChannelManager.isOpen()) {
-            this.dataChannelManager.send({
-                type: 'input',
-                ...eventData
-            }, false)
+            this.dataChannelManager.send(inputCommand, false)
+            this.log('DIAG sendInput: 通过dataChannelManager发送, inputType=' + inputCommand.inputType)
+        } else {
+            this.log('DIAG sendInput: dataChannelManager也未就绪, 输入丢失!')
         }
     }
     
     handleInputChannelMessage(data) {
+        this.log('DIAG handleInputChannelMessage: type=' + data.type + ', inputType=' + data.inputType)
         if (data.type === 'input') {
             if (window.electronAPI) {
                 window.electronAPI.send('remote-input', data)
+                this.log('DIAG handleInputChannelMessage: 已转发到remote-input IPC')
             }
         }
     }

@@ -294,7 +294,7 @@ class SignalingModeManager {
 
     this.dataChannelManager.setOnMessage((data) => {
       if (data.type === 'input' || data.inputType) {
-        this.logFn('[信令模式] 收到输入命令: ' + data.inputType + ', x=' + data.x + ', y=' + data.y)
+        this.logFn('[信令模式] DIAG dataChannelManager收到输入命令: ' + data.inputType + ', x=' + data.x + ', y=' + data.y + ', button=' + data.button)
         window.electronAPI.send('remote-input', data)
       } else if (data.type === 'ping') {
         this.dataChannelManager.send({ type: 'pong', timestamp: data.timestamp })
@@ -355,27 +355,28 @@ class SignalingModeManager {
 
     this.peerConnection.ondatachannel = (event) => {
       const label = event.channel.label
-      this.logFn('[信令模式] 收到数据通道: ' + label)
+      this.logFn('[信令模式] DIAG: ondatachannel收到数据通道: ' + label + ', readyState=' + event.channel.readyState)
       
       if (label === 'control') {
         this.dataChannelManager.setDataChannel(event.channel)
       } else if (label === 'input') {
         this.inputChannel = event.channel
         this.inputChannelReady = true
-        this.logFn('[信令模式] 输入数据通道已就绪')
+        this.logFn('[信令模式] DIAG: 输入数据通道已就绪, readyState=' + event.channel.readyState)
         let inputMsgCount = 0
         this.inputChannel.onmessage = (evt) => {
           try {
             const data = JSON.parse(evt.data)
             inputMsgCount++
-            if (inputMsgCount === 1) {
-              this.logFn('[信令模式] 收到第一条输入消息: type=' + data.type + ', inputType=' + data.inputType)
+            if (inputMsgCount <= 3 || inputMsgCount % 50 === 0) {
+              this.logFn('[信令模式] DIAG: 收到第' + inputMsgCount + '条输入消息: type=' + data.type + ', inputType=' + data.inputType + ', x=' + data.x + ', y=' + data.y)
             }
             if (data.type === 'input' || data.inputType) {
               window.electronAPI.send('remote-input', data)
             }
           } catch (e) {
-            this.logFn('[信令模式] 输入通道消息解析失败: ' + e.message)
+            this.logFn('[信令模式] DIAG: 输入通道消息解析失败: ' + e.message)
+            console.error('[signaling-mode] input parse error:', e, 'raw data type:', typeof evt.data, 'len:', typeof evt.data === 'string' ? evt.data.length : 'n/a')
           }
         }
         this.inputChannel.onclose = () => {

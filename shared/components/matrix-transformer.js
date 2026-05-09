@@ -658,10 +658,18 @@ class MatrixTransformer {
     }
 }
 
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = MatrixTransformer
-} else {
+if (typeof window !== 'undefined') {
     window.MatrixTransformer = MatrixTransformer
 }
 
-export default MatrixTransformer
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = MatrixTransformer
+}
+
+if (typeof exports !== 'undefined') {
+    exports.MatrixTransformer = MatrixTransformer
+}
+
+if (typeof define === 'function' && define.amd) {
+    define([], function() { return MatrixTransformer })
+}

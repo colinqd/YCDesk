@@ -1,6 +1,6 @@
 {
   "name": "ycdesk-signaling-server",
-  "version": "1.0.0",
+  "version": "3.1.0",
   "description": "Signaling server for YCDesk remote desktop",
   "main": "server.js",
   "bin": "server.js",

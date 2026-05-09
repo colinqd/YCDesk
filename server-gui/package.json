@@ -1,6 +1,6 @@
 {
   "name": "ycdesk-server-gui",
-  "version": "3.0.2",
+  "version": "3.1.0",
   "description": "YCDesk 信令服务器 - GUI 版本",
   "main": "src/main.js",
   "scripts": {
@@ -26,7 +26,7 @@
     "appId": "com.ycdesk.server",
     "productName": "YCDesk Server",
     "directories": {
-      "output": "../server-gui-build"
+      "output": "dist"
     },
     "files": [
       "src/**/*",

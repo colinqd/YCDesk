@@ -700,21 +700,39 @@
 
     function setupMatrixTransformer() {
       try {
-        matrixTransformer = new MatrixTransformer();
+        log('setupMatrixTransformer 开始执行');
+        log('setupMatrixTransformer: window.MatrixTransformer=' + !!window.MatrixTransformer);
+        log('setupMatrixTransformer: typeof MatrixTransformer=' + typeof MatrixTransformer);
+        
+        if (typeof MatrixTransformer === 'undefined' && window.MatrixTransformer) {
+          MatrixTransformer = window.MatrixTransformer;
+        }
+        
+        if (typeof MatrixTransformer === 'undefined') {
+          log('setupMatrixTransformer: MatrixTransformer 仍未定义，尝试延迟重试');
+          setTimeout(setupMatrixTransformer, 100);
+          return;
+        }
+        
+        matrixTransformer = new MatrixTransformer({ logger: { log: log } });
+        log('setupMatrixTransformer: matrixTransformer 实例创建成功');
         
         const viewportWidth = window.innerWidth;
         const viewportHeight = window.innerHeight;
         matrixTransformer.setScreenSize(viewportWidth, viewportHeight);
+        log('setupMatrixTransformer: 设置屏幕尺寸 ' + viewportWidth + 'x' + viewportHeight);
         
         const elementRect = remoteScreenEl.getBoundingClientRect();
         matrixTransformer.setElementSize(elementRect.width, elementRect.height);
+        log('setupMatrixTransformer: 设置元素尺寸 ' + elementRect.width + 'x' + elementRect.height);
         
         const center = matrixTransformer.calculateCenterPosition();
         
         matrixTransformer.applyTransform(remoteScreenEl);
+        log('setupMatrixTransformer: 完成');
         
       } catch (error) {
-        log('setupMatrixTransformer 出错: ' + error.message);
+        log('setupMatrixTransformer 出错: ' + error.message + '\n' + error.stack);
       }
     }
 
@@ -765,6 +783,9 @@
     }
 
     function setupInputEvents() {
+        log('[remote.html] setupInputEvents() called');
+        log('[remote.html] setupInputEvents: videoContainer=' + !!videoContainer + ', videoWrapper=' + !!videoWrapper);
+        log('[remote.html] setupInputEvents: matrixTransformer=' + !!matrixTransformer);
       if (inputEventsSetup) return;
       inputEventsSetup = true;
       log('setupInputEvents 初始化');
@@ -812,14 +833,16 @@
       }
       
       function flushMouseDelta() {
+        log('[remote.html] flushMouseDelta called, accumulatedDeltaX=' + accumulatedDeltaX + ', accumulatedDeltaY=' + accumulatedDeltaY);
         if (accumulatedDeltaX === 0 && accumulatedDeltaY === 0) return;
         
-        connectionManager.sendInput({
-          inputType: 'mousemove_delta',
+        const inputCommand = createInputCommand(INPUT_TYPES.MOUSE_MOVE_DELTA, {
           dx: Math.round(accumulatedDeltaX),
           dy: Math.round(accumulatedDeltaY),
           sequenceId: sequenceId++
         });
+        log('[remote.html] flushMouseDelta: sendInput called, inputCommand=' + JSON.stringify(inputCommand));
+        connectionManager.sendInput(inputCommand);
         
         accumulatedDeltaX = 0;
         accumulatedDeltaY = 0;
@@ -829,31 +852,34 @@
       function flushWheelAccumulated() {
         if (accumulatedWheelDeltaY === 0 && accumulatedWheelDeltaX === 0) return;
         
-        connectionManager.sendInput({
-          inputType: 'wheel_batch',
+        const inputCommand = createInputCommand(INPUT_TYPES.MOUSE_WHEEL_BATCH, {
           accumulatedDeltaY: accumulatedWheelDeltaY,
           accumulatedDeltaX: accumulatedWheelDeltaX,
           x: 0.5,
           y: 0.5
         });
+        connectionManager.sendInput(inputCommand);
         
         accumulatedWheelDeltaY = 0;
         accumulatedWheelDeltaX = 0;
       }
 
       videoWrapper.addEventListener('mousedown', (e) => {
+        log('[remote.html] mousedown event triggered, button=' + e.button);
         if (e.button === 1) return;
         
         showClickIndicator(e.clientX, e.clientY);
         flushMouseDelta();
         flushWheelAccumulated();
         
+        log('[remote.html] mousedown: matrixTransformer=' + !!matrixTransformer + ', remoteScreenWidth=' + (matrixTransformer ? matrixTransformer.remoteScreenWidth : 'null'));
         if (!matrixTransformer) return;
         
         const containerRect = videoContainer.getBoundingClientRect();
         const localX = e.clientX - containerRect.left;
         const localY = e.clientY - containerRect.top;
         
+        log('[remote.html] mousedown: localX=' + localX + ', localY=' + localY + ', rect=' + containerRect.width + 'x' + containerRect.height);
         if (localX >= 0 && localX <= containerRect.width &&
             localY >= 0 && localY <= containerRect.height) {
           const ratioX = localX / containerRect.width;
@@ -863,17 +889,20 @@
           lastMoveX = ratioX;
           lastMoveY = ratioY;
           
-          const inputData = {
-            inputType: 'mousedown',
+          const inputCommand = createInputCommand(INPUT_TYPES.MOUSE_DOWN, {
             button: e.button,
             x: Math.max(0, Math.min(1, ratioX)),
             y: Math.max(0, Math.min(1, ratioY))
-          };
-          connectionManager.sendInput(inputData);
+          });
+          log('[remote.html] mousedown: sendInput called, inputCommand=' + JSON.stringify(inputCommand));
+          connectionManager.sendInput(inputCommand);
+        } else {
+          log('[remote.html] mousedown: out of bounds, not sending input');
         }
       });
 
       videoWrapper.addEventListener('mousemove', (e) => {
+        log('[remote.html] mousemove event triggered');
         if (isDragging) return;
         if (!matrixTransformer) return;
         
@@ -898,8 +927,15 @@
           Math.pow(currentX - lastMoveX, 2) + Math.pow(currentY - lastMoveY, 2)
         );
         
+        log('[remote.html] mousemove: currentX=' + currentX + ', currentY=' + currentY + 
+          ', lastMoveX=' + lastMoveX + ', lastMoveY=' + lastMoveY + 
+          ', remoteScreenWidth=' + matrixTransformer.remoteScreenWidth +
+          ', remoteScreenHeight=' + matrixTransformer.remoteScreenHeight);
+        
         const remoteDeltaX = (currentX - lastMoveX) * matrixTransformer.remoteScreenWidth;
         const remoteDeltaY = (currentY - lastMoveY) * matrixTransformer.remoteScreenHeight;
+        
+        log('[remote.html] mousemove: remoteDeltaX=' + remoteDeltaX + ', remoteDeltaY=' + remoteDeltaY);
         
         accumulatedDeltaX += remoteDeltaX;
         accumulatedDeltaY += remoteDeltaY;
@@ -948,12 +984,12 @@
         const ratioX = localX / containerRect.width;
         const ratioY = localY / containerRect.height;
         
-        connectionManager.sendInput({
-          inputType: 'mouseup',
+        const inputCommand = createInputCommand(INPUT_TYPES.MOUSE_UP, {
           button: e.button,
           x: ratioX,
           y: ratioY
         });
+        connectionManager.sendInput(inputCommand);
       });
 
       videoWrapper.addEventListener('wheel', (e) => {
@@ -982,13 +1018,13 @@
         
         wheelSendTimer = setTimeout(() => {
           if (accumulatedWheelDeltaY !== 0 || accumulatedWheelDeltaX !== 0) {
-            connectionManager.sendInput({
-              inputType: 'wheel_batch',
+            const inputCommand = createInputCommand(INPUT_TYPES.MOUSE_WHEEL_BATCH, {
               accumulatedDeltaY: accumulatedWheelDeltaY,
               accumulatedDeltaX: accumulatedWheelDeltaX,
               x: ratioX,
               y: ratioY
             });
+            connectionManager.sendInput(inputCommand);
             accumulatedWheelDeltaY = 0;
             accumulatedWheelDeltaX = 0;
           }
@@ -1012,8 +1048,7 @@
         
         e.preventDefault();
         
-        const inputData = {
-          inputType: 'keydown',
+        const inputCommand = createInputCommand(INPUT_TYPES.KEY_DOWN, {
           key: e.key,
           code: e.code,
           keyCode: e.keyCode,
@@ -1021,8 +1056,8 @@
           shiftKey: e.shiftKey,
           altKey: e.altKey,
           metaKey: e.metaKey
-        };
-        connectionManager.sendInput(inputData);
+        });
+        connectionManager.sendInput(inputCommand);
       });
 
       videoWrapper.addEventListener('keyup', (e) => {
@@ -1033,8 +1068,7 @@
         
         e.preventDefault();
         
-        const inputData = {
-          inputType: 'keyup',
+        const inputCommand = createInputCommand(INPUT_TYPES.KEY_UP, {
           key: e.key,
           code: e.code,
           keyCode: e.keyCode,
@@ -1042,8 +1076,8 @@
           shiftKey: e.shiftKey,
           altKey: e.altKey,
           metaKey: e.metaKey
-        };
-        connectionManager.sendInput(inputData);
+        });
+        connectionManager.sendInput(inputCommand);
       });
 
       let isUnlockPanelOpen = false;
@@ -1396,10 +1430,13 @@
       
       connectionManager.on('video-metadata', (data) => {
         log('video-metadata 事件触发');
+        log('[remote.html] video-metadata: data=' + JSON.stringify(data));
         showVideo();
         updateStatus('已连接');
         requestAnimationFrame(onVideoFrame);
+        log('[remote.html] video-metadata: calling setupInputEvents()');
         setupInputEvents();
+        log('[remote.html] video-metadata: matrixTransformer remoteScreenSize=' + matrixTransformer.remoteScreenWidth + 'x' + matrixTransformer.remoteScreenHeight);
         connectionManager.startLatencyCheck();
       });
       
