@@ -1,7 +1,8 @@
 class SignalingClient {
   constructor(options = {}) {
     this.socket = null
-    this.connectionMode = 'websocket'
+    this.connectionMode = 'auto'
+    this.negotiatedMode = null
     this.myDeviceId = ''
     this.logFn = options.log || console.log
     this.onRegistered = options.onRegistered || null
@@ -18,6 +19,10 @@ class SignalingClient {
     this.heartbeatTimer = null
     this.maxReconnectAttempts = options.maxReconnectAttempts || 10
     this.reconnectDelay = options.reconnectDelay || 1000
+
+    this._autoSettled = false
+    this._autoTimer = null
+    this._autoServerUrl = ''
   }
 
   setDeviceId(deviceId) {
@@ -26,7 +31,18 @@ class SignalingClient {
 
   setConnectionMode(mode) {
     this.connectionMode = mode
-    this.logFn('连接方式已切换: ' + (mode === 'websocket' ? '原始 WebSocket' : 'Socket.IO'))
+    this.negotiatedMode = null
+    if (mode === 'auto') {
+      this.logFn('连接方式已切换: 自动检测')
+    } else if (mode === 'websocket') {
+      this.logFn('连接方式已切换: 原始 WebSocket')
+    } else {
+      this.logFn('连接方式已切换: Socket.IO')
+    }
+  }
+
+  getNegotiatedMode() {
+    return this.negotiatedMode || this.connectionMode
   }
 
   buildWsUrl(serverUrl) {
@@ -50,16 +66,48 @@ class SignalingClient {
   }
 
   connect(serverUrl) {
-    if (this.connectionMode === 'websocket') {
+    if (this.connectionMode === 'auto') {
+      this._connectAuto(serverUrl)
+    } else if (this.connectionMode === 'websocket') {
       this._connectWebSocket(serverUrl)
     } else {
       this._connectSocketIO(serverUrl)
     }
   }
 
+  _connectAuto(serverUrl) {
+    this.logFn('自动检测服务器协议...')
+    this._autoSettled = false
+    this._autoServerUrl = serverUrl
+
+    this._autoTimer = setTimeout(() => {
+      if (!this._autoSettled) {
+        this._autoSettled = true
+        this._cleanupSocketIO()
+        this.logFn('Socket.IO 超时，切换到原始 WebSocket')
+        this.connectionMode = 'websocket'
+        this.negotiatedMode = 'websocket'
+        this._connectWebSocket(serverUrl)
+      }
+    }, 2500)
+
+    this.connectionMode = 'socketio'
+    this._connectSocketIO(serverUrl)
+  }
+
+  _cleanupSocketIO() {
+    if (this.socket && typeof this.socket.disconnect === 'function') {
+      try {
+        this.socket.removeAllListeners()
+        this.socket.disconnect()
+      } catch (e) { /* ignore */ }
+    }
+    this.socket = null
+  }
+
   _connectWebSocket(serverUrl) {
     const wsUrl = this.buildWsUrl(serverUrl)
-    this.logFn('连接信令服务器: ' + wsUrl)
+    this.logFn('连接信令服务器 [WebSocket]: ' + wsUrl)
 
     try {
       if (this.socket) {
@@ -119,6 +167,13 @@ class SignalingClient {
       })
 
       this.socket.on('connect', () => {
+        if (this._autoTimer && !this._autoSettled) {
+          this._autoSettled = true
+          clearTimeout(this._autoTimer)
+          this._autoTimer = null
+          this.negotiatedMode = 'socketio'
+          this.logFn('✓ 协议协商成功: Socket.IO')
+        }
         this.logFn('✓ 已连接到信令服务器，Socket ID: ' + this.socket.id)
         this.logFn('正在注册设备 ID: ' + this.myDeviceId)
         this.socket.emit('register', { deviceId: this.myDeviceId })
@@ -126,11 +181,23 @@ class SignalingClient {
       })
 
       this.socket.on('disconnect', (reason) => {
+        if (this._autoTimer && !this._autoSettled) return
         this.logFn('与信令服务器断开连接，原因: ' + reason)
         if (typeof this.onDisconnected === 'function') this.onDisconnected('socketio', reason)
       })
 
       this.socket.on('connect_error', (error) => {
+        if (this._autoTimer && !this._autoSettled) {
+          this._autoSettled = true
+          clearTimeout(this._autoTimer)
+          this._autoTimer = null
+          this._cleanupSocketIO()
+          this.logFn('Socket.IO 连接失败，切换到原始 WebSocket')
+          this.connectionMode = 'websocket'
+          this.negotiatedMode = 'websocket'
+          this._connectWebSocket(this._autoServerUrl)
+          return
+        }
         this.logFn('✗ 连接错误: ' + (error.message || error))
         if (typeof this.onError === 'function') this.onError(error)
       })
@@ -163,6 +230,16 @@ class SignalingClient {
         this._handleMessage({ type: 'ice-candidate', ...data })
       })
     } catch (error) {
+      if (this._autoTimer && !this._autoSettled) {
+        this._autoSettled = true
+        clearTimeout(this._autoTimer)
+        this._autoTimer = null
+        this.logFn('Socket.IO 初始化失败，切换到原始 WebSocket')
+        this.connectionMode = 'websocket'
+        this.negotiatedMode = 'websocket'
+        this._connectWebSocket(this._autoServerUrl)
+        return
+      }
       this.logFn('✗ 连接初始化错误: ' + error.message)
       if (typeof this.onError === 'function') this.onError(error)
     }
@@ -252,6 +329,11 @@ class SignalingClient {
 
   disconnect() {
     this._stopHeartbeat()
+    this._autoSettled = true
+    if (this._autoTimer) {
+      clearTimeout(this._autoTimer)
+      this._autoTimer = null
+    }
     if (this.socket) {
       if (this.connectionMode === 'websocket') {
         this.socket.close()

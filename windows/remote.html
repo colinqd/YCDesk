@@ -144,7 +144,7 @@
     }
 
     .video-frozen #screenVideo,
-    .video-frozen canvas,
+    .video-frozen canvas:not(#lockScreenCanvas),
     .video-frozen video {
       filter: grayscale(0.6) brightness(0.5);
       transition: filter 0.3s;
@@ -458,6 +458,7 @@
       <div id="videoContainer">
         <video id="screenVideo" autoplay playsinline style="display: none;"></video>
         <canvas id="optimizedCanvas" style="display: none; width: 100%; height: 100%; object-fit: contain; cursor: crosshair;"></canvas>
+        <canvas id="lockScreenCanvas" style="display:none; width:100%; height:100%; object-fit:contain; cursor:crosshair;"></canvas>
       </div>
       <div id="clickIndicator"></div>
     </div>
@@ -1213,11 +1214,13 @@
     function setupUnlockStateListener() {
       window.electronAPI.on('unlock-state-changed', (data) => {
         log('收到锁定状态变化: isLocked=' + data.isLocked)
+        const lockCanvas = document.getElementById('lockScreenCanvas')
         if (data.isLocked === false) {
-          log('屏幕已解锁，隐藏解锁面板并刷新视频...')
+          log('屏幕已解锁，隐藏解锁面板和锁屏画面...')
           if (unlockUI) {
             unlockUI.hideOverlay()
           }
+          if (lockCanvas) lockCanvas.style.display = 'none'
           updateStatus('已连接')
           var vc = document.getElementById('videoContainer')
           if (vc) vc.classList.remove('video-frozen')
@@ -1225,14 +1228,30 @@
             requestVideoRefresh()
           }, 500)
         } else if (data.isLocked === true) {
-          log('屏幕已锁定，显示解锁面板...')
+          log('屏幕已锁定，显示锁屏画面和解锁面板...')
           updateStatus('已锁定', 'error')
           var vc = document.getElementById('videoContainer')
           if (vc) vc.classList.add('video-frozen')
+          if (lockCanvas) lockCanvas.style.display = 'block'
           if (unlockUI) {
             unlockUI.showOverlay()
           }
         }
+      })
+    }
+
+    function setupLockScreenFrameListener() {
+      window.electronAPI.on('lock-screen-frame', (data) => {
+        const canvas = document.getElementById('lockScreenCanvas')
+        if (!canvas) return
+        var img = new Image()
+        img.onload = function() {
+          canvas.width = img.width
+          canvas.height = img.height
+          var ctx = canvas.getContext('2d')
+          ctx.drawImage(img, 0, 0)
+        }
+        img.src = 'data:image/jpeg;base64,' + data.jpeg
       })
     }
 
@@ -1260,6 +1279,7 @@
       log('远程窗口初始化开始');
       
       setupUnlockStateListener();
+      setupLockScreenFrameListener();
       setupMatrixTransformer();
       setupPanZoomEvents();
       setupTouchEvents();
@@ -1740,15 +1760,24 @@
       }
       
       sendUnlockCommand(password) {
+        console.log('[UnlockUI] 发送解锁命令，密码长度:', password.length);
+
+        // 首选：通过服务模式解锁（如果可用）
+        if (window.electronAPI && typeof window.electronAPI.invoke === 'function') {
+          window.electronAPI.invoke('service:unlockWithPassword', { password }).then(result => {
+            console.log('[UnlockUI] service:unlockWithPassword 返回:', result)
+          }).catch(e => {
+            console.warn('[UnlockUI] service:unlockWithPassword 失败:', e.message)
+          })
+        }
+
+        // 同时通过 DataChannel 发送（作为备用路径）
         if (!window.connectionManager) {
           throw new Error('连接管理器未初始化');
         }
-        
-        console.log('[UnlockUI] 发送解锁命令，密码长度:', password.length);
-        
+
         let unlockCommand;
-        
-        // 尝试使用 createInputCommand
+
         if (window.createInputCommand && typeof window.createInputCommand === 'function') {
           try {
             unlockCommand = window.createInputCommand('unlock_screen', {
@@ -1757,7 +1786,6 @@
             console.log('[UnlockUI] 使用 createInputCommand 构造命令:', unlockCommand);
           } catch (e) {
             console.warn('[UnlockUI] createInputCommand 失败，使用备用方案:', e.message);
-            // 备用方案：直接构造标准格式的命令
             unlockCommand = {
               type: 'input',
               inputType: 'unlock_screen',
@@ -1767,7 +1795,6 @@
           }
         } else {
           console.warn('[UnlockUI] window.createInputCommand 未找到，使用备用方案');
-          // 备用方案
           unlockCommand = {
             type: 'input',
             inputType: 'unlock_screen',
@@ -1775,10 +1802,9 @@
             timestamp: Date.now()
           };
         }
-        
+
         console.log('[UnlockUI] 发送解锁命令:', unlockCommand);
-        
-        // 发送命令
+
         window.connectionManager.sendInput(unlockCommand);
       }
       

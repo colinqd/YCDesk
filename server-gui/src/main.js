@@ -4,9 +4,8 @@ const path = require('path')
 // 尝试多个可能的路径加载 server-module
 let SignalingServer = null
 const possiblePaths = [
-  path.join(__dirname, '../server/server-module.js'),
-  path.join(__dirname, './server/server-module.js'),
-  path.join(process.resourcesPath, 'app/server/server-module.js')
+  path.join(__dirname, '../../server/server-module.js'),   // dev 模式
+  path.join(__dirname, 'server-module.js')                   // 打包后（与 main.js 同目录，在 app.asar 内）
 ]
 
 for (const p of possiblePaths) {

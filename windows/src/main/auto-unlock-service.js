@@ -113,6 +113,21 @@ class AutoUnlockService {
     }
 
     console.log('[AutoUnlockService] ========== notifyLockState 完成 ==========')
+
+    // 通知服务切换采集桌面
+    try {
+      const { getServiceIntegration } = require('./service-integration')
+      const svc = getServiceIntegration()
+      if (svc.isServiceModeEnabled() && svc.isRunning()) {
+        if (this.isLocked) {
+          svc.switchToWinlogon().catch(e => console.log('[AutoUnlockService] switchToWinlogon failed:', e.message))
+        } else {
+          svc.switchToDefault().catch(e => console.log('[AutoUnlockService] switchToDefault failed:', e.message))
+        }
+      }
+    } catch (e) {
+      console.log('[AutoUnlockService] 服务通知失败:', e.message)
+    }
   }
 
   async tryAutoUnlock() {

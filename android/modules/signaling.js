@@ -147,6 +147,7 @@ function handleWsMessage(data) {
     case 'connection-result':
       log('连接结果: ' + JSON.stringify(data))
       if (data.accepted) {
+        s.currentSessionId = data.sessionId
         s.isController = true
         if (typeof window.startControllerConnection === 'function') {
           window.startControllerConnection()
@@ -183,7 +184,7 @@ function handleWsMessage(data) {
 
 async function connectToServer(serverUrl, role) {
   const log = typeof window.log === 'function' ? window.log : console.log
-  log('连接方式: ' + (s.connectionMode === 'websocket' ? '原始 WebSocket' : 'Socket.IO'))
+  log('连接方式: 自动检测')
   if (!serverUrl) {
     if (typeof window.showToast === 'function') window.showToast('请先输入信令服务器地址')
     return
@@ -211,11 +212,37 @@ async function connectToServer(serverUrl, role) {
   s.savedRole = role
   s.reconnectAttempts = 0
   
-  if (s.connectionMode === 'websocket') {
-    _connectWebSocket(serverUrl)
-  } else {
-    _connectSocketIO(serverUrl)
+  _connectAuto(serverUrl)
+}
+
+function _connectAuto(serverUrl) {
+  const log = typeof window.log === 'function' ? window.log : console.log
+  log('自动检测服务器协议...')
+  s._autoSettled = false
+  s._autoServerUrl = serverUrl
+
+  s._autoTimer = setTimeout(() => {
+    if (!s._autoSettled) {
+      s._autoSettled = true
+      _cleanupSocketIO()
+      log('Socket.IO 超时，切换到原始 WebSocket')
+      s.connectionMode = 'websocket'
+      _connectWebSocket(serverUrl)
+    }
+  }, 2500)
+
+  s.connectionMode = 'socketio'
+  _connectSocketIO(serverUrl)
+}
+
+function _cleanupSocketIO() {
+  if (s.socket && typeof s.socket.disconnect === 'function') {
+    try {
+      s.socket.removeAllListeners()
+      s.socket.disconnect()
+    } catch (e) {}
   }
+  s.socket = null
 }
 
 function _connectWebSocket(serverUrl) {
@@ -237,7 +264,7 @@ function _connectWebSocket(serverUrl) {
       log('✓ 已连接到信令服务器')
       log('正在注册设备 ID: ' + s.myDeviceId)
       wsSend('register', { deviceId: s.myDeviceId })
-      if (typeof window.updateServerStatus === 'function') window.updateServerStatus('已连接', 'connected')
+      if (typeof window.updateServerStatus === 'function') window.updateServerStatus('已连接 (WebSocket)', 'connected')
       s.connectionStatus = s.CONNECTION_STATUS.CONNECTED
       s.reconnectAttempts = 0
       if (typeof window.showToast === 'function') window.showToast('已连接到信令服务器')
@@ -296,22 +323,39 @@ function _connectSocketIO(serverUrl) {
     })
 
     s.socket.on('connect', () => {
+      if (s._autoTimer && !s._autoSettled) {
+        s._autoSettled = true
+        clearTimeout(s._autoTimer)
+        s._autoTimer = null
+        log('✓ 协议协商成功: Socket.IO')
+      }
       log('✓ 已连接到信令服务器，Socket ID: ' + s.socket.id)
       log('正在注册设备 ID: ' + s.myDeviceId)
       s.socket.emit('register', { deviceId: s.myDeviceId })
-      if (typeof window.updateServerStatus === 'function') window.updateServerStatus('已连接', 'connected')
+      if (typeof window.updateServerStatus === 'function') window.updateServerStatus('已连接 (Socket.IO)', 'connected')
       s.connectionStatus = s.CONNECTION_STATUS.CONNECTED
       s.reconnectAttempts = 0
       if (typeof window.showToast === 'function') window.showToast('已连接到信令服务器')
     })
 
     s.socket.on('disconnect', (reason) => {
+      if (s._autoTimer && !s._autoSettled) return
       log('与信令服务器断开连接，原因: ' + reason)
       if (typeof window.updateServerStatus === 'function') window.updateServerStatus('已断开', 'disconnected')
       s.connectionStatus = s.CONNECTION_STATUS.DISCONNECTED
     })
 
     s.socket.on('connect_error', (error) => {
+      if (s._autoTimer && !s._autoSettled) {
+        s._autoSettled = true
+        clearTimeout(s._autoTimer)
+        s._autoTimer = null
+        _cleanupSocketIO()
+        log('Socket.IO 连接失败，切换到原始 WebSocket')
+        s.connectionMode = 'websocket'
+        _connectWebSocket(s._autoServerUrl)
+        return
+      }
       log('✗ 连接错误: ' + (error.message || error))
       if (typeof window.updateServerStatus === 'function') window.updateServerStatus('连接失败', 'error')
       s.connectionStatus = s.CONNECTION_STATUS.ERROR
@@ -343,6 +387,7 @@ function _connectSocketIO(serverUrl) {
     s.socket.on('connection-result', (data) => {
       log('连接结果: ' + JSON.stringify(data))
       if (data.accepted) {
+        s.currentSessionId = data.sessionId
         s.isController = true
         if (typeof window.startControllerConnection === 'function') {
           window.startControllerConnection()
@@ -381,6 +426,11 @@ function _connectSocketIO(serverUrl) {
 
 function disconnectFromServer() {
   cancelReconnect()
+  s._autoSettled = true
+  if (s._autoTimer) {
+    clearTimeout(s._autoTimer)
+    s._autoTimer = null
+  }
   if (s.connectionMode === 'websocket') {
     stopWsHeartbeat()
   }
@@ -437,6 +487,8 @@ export {
   connectToServer,
   _connectWebSocket,
   _connectSocketIO,
+  _connectAuto,
+  _cleanupSocketIO,
   disconnectFromServer,
   extractHostname,
   isIpAddress,

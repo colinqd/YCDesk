@@ -729,26 +729,6 @@ async function uninstallCredProvider() {
 document.addEventListener('DOMContentLoaded', () => {
   initializeApp()
   
-  const controlledModeSelect = document.getElementById('controlledConnectionMode')
-  const controllerModeSelect = document.getElementById('controllerConnectionMode')
-  
-  if (controlledModeSelect) {
-    controlledModeSelect.addEventListener('change', (e) => {
-      signalingManager.setConnectionMode(e.target.value)
-    })
-  }
-  
-  if (controllerModeSelect) {
-    controllerModeSelect.addEventListener('change', (e) => {
-      signalingManager.setConnectionMode(e.target.value)
-    })
-  }
-
-  const activeModeSel = controlledModeSelect || controllerModeSelect
-  if (activeModeSel && activeModeSel.value) {
-    signalingManager.setConnectionMode(activeModeSel.value)
-  }
-  
   // 加载解锁密码状态
   setTimeout(() => {
     loadUnlockPasswordStatus()
@@ -772,6 +752,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (signalingManager && signalingManager.dataChannelManager) {
       console.log('[app.js 全局] 通过 signalingManager 转发锁屏状态到主控端')
       signalingManager.dataChannelManager.send({ type: 'unlock-state-changed', ...data })
+    }
+  })
+
+  window.electronAPI.on('lock-screen-frame', (data) => {
+    if (directManager && directManager.dataChannelManager) {
+      directManager.dataChannelManager.send({ type: 'lock-screen-frame', ...data })
+    }
+    if (signalingManager && signalingManager.dataChannelManager) {
+      signalingManager.dataChannelManager.send({ type: 'lock-screen-frame', ...data })
     }
   })
 })

@@ -739,21 +739,6 @@ async function init() {
   setupKeyboardDrag()
   loadKeyboardSettings()
   
-  const controlledModeSelect = document.getElementById('controlledConnectionMode')
-  const controllerModeSelect = document.getElementById('controllerConnectionMode')
-  
-  if (controlledModeSelect) {
-    controlledModeSelect.addEventListener('change', (e) => {
-      setConnectionMode(e.target.value)
-    })
-  }
-  
-  if (controllerModeSelect) {
-    controllerModeSelect.addEventListener('change', (e) => {
-      setConnectionMode(e.target.value)
-    })
-  }
-  
   console.log('初始化完成，设备ID:', s.myDeviceId)
 }
 

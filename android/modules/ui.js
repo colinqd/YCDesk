@@ -262,9 +262,11 @@ function handleRemoteLockStateChanged(data) {
   
   let lockOverlay = document.getElementById('lockOverlay')
   const videoContainer = document.getElementById('videoContainer')
+  const remoteVideo = document.getElementById('remoteVideo')
+  const lockCanvas = document.getElementById('lockScreenCanvas')
   
   if (data.isLocked) {
-    log('[Android UI] 显示锁屏提示条')
+    log('[Android UI] 显示锁屏提示条和锁屏画面')
     
     if (!lockOverlay) {
       lockOverlay = document.createElement('div')
@@ -323,10 +325,13 @@ function handleRemoteLockStateChanged(data) {
       videoContainer.style.marginTop = '56px'
     }
     
+    if (remoteVideo) remoteVideo.style.display = 'none'
+    if (lockCanvas) lockCanvas.style.display = 'block'
+    
     if (typeof window.showToast === 'function') window.showToast('被控端已锁定')
     
   } else {
-    log('[Android UI] 隐藏锁屏提示条')
+    log('[Android UI] 隐藏锁屏提示条和锁屏画面')
     
     if (lockOverlay) {
       lockOverlay.style.display = 'none'
@@ -337,11 +342,29 @@ function handleRemoteLockStateChanged(data) {
       videoContainer.style.marginTop = '0'
     }
     
+    if (remoteVideo) remoteVideo.style.display = 'block'
+    if (lockCanvas) lockCanvas.style.display = 'none'
+    
     if (typeof window.showToast === 'function') window.showToast('被控端已解锁')
   }
 }
 
+function handleLockScreenFrame(data) {
+  const canvas = document.getElementById('lockScreenCanvas')
+  if (!canvas) return
+  if (!data.jpeg) return
+  var img = new Image()
+  img.onload = function() {
+    canvas.width = img.width
+    canvas.height = img.height
+    var ctx = canvas.getContext('2d')
+    ctx.drawImage(img, 0, 0)
+  }
+  img.src = 'data:image/jpeg;base64,' + data.jpeg
+}
+
 window.handleRemoteLockStateChanged = handleRemoteLockStateChanged
+window.handleLockScreenFrame = handleLockScreenFrame
 
 function setupRemoteScreenInteraction() {
     const log = typeof window.log === 'function' ? window.log : console.log
@@ -531,5 +554,6 @@ export {
   handleFloatingMouseEvent,
   toggleFullscreen,
   handleRemoteLockStateChanged,
+  handleLockScreenFrame,
   setupRemoteScreenInteraction
 }

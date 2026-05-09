@@ -5,9 +5,9 @@
   "main": "src/main.js",
   "scripts": {
     "dev": "electron .",
-    "build": "electron-builder",
-    "build:win": "electron-builder --win",
-    "build:linux": "electron-builder --linux"
+    "build": "node sync-server-module.js && electron-builder",
+    "build:win": "node sync-server-module.js && electron-builder --win --publish never",
+    "build:linux": "node sync-server-module.js && electron-builder --linux"
   },
   "keywords": ["ycdesk", "signaling", "server", "electron"],
   "author": "YCDesk Team",
@@ -19,24 +19,20 @@
   "dependencies": {
     "express": "^4.18.2",
     "socket.io": "^4.7.2",
-    "cors": "^2.8.5"
+    "cors": "^2.8.5",
+    "ws": "^8.14.2"
   },
   "build": {
     "appId": "com.ycdesk.server",
     "productName": "YCDesk Server",
     "directories": {
-      "output": "dist"
+      "output": "../server-gui-build"
     },
     "files": [
       "src/**/*",
-      "server/**/*",
-      "node_modules/**/*",
-      "!server/node_modules/**",
-      "!server/package-lock.json",
-      "!server/generate-cert.*",
-      "!server/*.bat",
-      "!server/*.sh"
+      "node_modules/**/*"
     ],
+    "extraResources": [],
     "win": {
       "target": [
         "nsis",

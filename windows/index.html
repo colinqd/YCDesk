@@ -75,19 +75,6 @@
           </div>
           
           <div id="controlledSignalingMode" class="mode-content">
-            <div class="advanced-toggle" onclick="toggleAdvancedSettings('controlledAdvanced')" id="controlledAdvancedToggle">
-              <span>⚙️ 高级设置</span>
-              <span class="toggle-arrow">▶</span>
-            </div>
-            <div id="controlledAdvanced" class="advanced-content" style="display: none;">
-              <div class="input-group">
-                <label>连接方式</label>
-                <select id="controlledConnectionMode" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px;">
-                  <option value="socketio" selected>Socket.IO（用于 server-gui）</option>
-                  <option value="websocket">原始 WebSocket（用于 android-server）</option>
-                </select>
-              </div>
-            </div>
             <div class="input-group" style="margin-top: 10px;">
               <label style="display: flex; align-items: center; gap: 8px;">
                 <input type="checkbox" id="autoAcceptConnection" style="width: auto; margin: 0;">
@@ -226,19 +213,6 @@
               <div class="section-title">历史连接记录</div>
               <div class="history-list" id="signalingHistoryList">
                 <div class="history-empty">暂无历史连接记录</div>
-              </div>
-            </div>
-            <div class="advanced-toggle" onclick="toggleAdvancedSettings('controllerAdvanced')" id="controllerAdvancedToggle">
-              <span>⚙️ 高级设置</span>
-              <span class="toggle-arrow">▶</span>
-            </div>
-            <div id="controllerAdvanced" class="advanced-content" style="display: none;">
-              <div class="input-group">
-                <label>连接方式</label>
-                <select id="controllerConnectionMode" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px;">
-                  <option value="socketio" selected>Socket.IO（用于 server-gui）</option>
-                  <option value="websocket">原始 WebSocket（用于 android-server）</option>
-                </select>
               </div>
             </div>
             <div class="input-group">

@@ -586,7 +586,7 @@ function init(deviceIdParam, loggerParam) {
     // 步骤0: 获取 serviceIntegration 实例（在锁屏前获取）
     const serviceIntegration = getServiceIntegration({ logger })
     const serviceModeEnabled = serviceIntegration.isServiceModeEnabled()
-    const serviceClientConnected = serviceIntegration._client && serviceIntegration._client.isConnected
+    const serviceClientConnected = serviceIntegration.isRunning()
     logAndPush(0, `[环境] 服务模式启用: ${serviceModeEnabled}, 客户端连接: ${serviceClientConnected}`)
 
     // 步骤0.5: 锁屏前服务健康检查（关键！锁屏后无法回退）
@@ -685,7 +685,7 @@ function init(deviceIdParam, loggerParam) {
       log('info', '[测试解锁] 尝试服务模式解锁')
       try {
         // 重新检查连接状态，锁屏后连接可能已断开，需要重连
-        if (!serviceIntegration._client || !serviceIntegration._client.isConnected) {
+        if (!serviceIntegration.isRunning()) {
           logAndPush(3, '服务连接已断开，正在重新连接...', 'warn')
           log('warn', '[测试解锁] 服务连接已断开，正在重连')
           try {
@@ -697,7 +697,7 @@ function init(deviceIdParam, loggerParam) {
           }
         }
 
-        if (serviceIntegration._client && serviceIntegration._client.isConnected) {
+        if (serviceIntegration.isRunning()) {
           logAndPush(3, '服务已连接，发送解锁命令...', 'info')
           // 使用封装的unlockScreen方法（内部已处理协议编码）
           const unlockResult = await serviceIntegration.unlockScreen(password)
@@ -961,7 +961,7 @@ function init(deviceIdParam, loggerParam) {
         const { getServiceIntegration } = require('./service-integration')
         const serviceIntegration = getServiceIntegration()
         serviceModeEnabled = serviceIntegration.isServiceModeEnabled()
-        clientConnected = serviceIntegration._client && serviceIntegration._client.isConnected
+        clientConnected = serviceIntegration.isRunning()
       } catch (e) {
         log('warn', `[完整测试] 服务模式检查失败: ${e.message}`)
       }
@@ -1403,20 +1403,20 @@ try {
   // 安装 Windows 服务
   ipcMain.handle('service:install', safeIpcHandler(async () => {
     log('info', '安装 Windows 服务')
-    const result = await serviceIntegration.installService()
+    const result = await elevationManager.installService()
     return result
   }, 'service:install'))
 
   // 卸载 Windows 服务
   ipcMain.handle('service:uninstall', safeIpcHandler(async () => {
     log('info', '卸载 Windows 服务')
-    const result = await serviceIntegration.uninstallService()
+    const result = await elevationManager.uninstallService()
     return result
   }, 'service:uninstall'))
 
   // 获取 Windows 服务状态
   ipcMain.handle('service:getWindowsServiceStatus', safeIpcHandler(async () => {
-    const result = await elevationManager.getServiceStatus()
+    const result = await elevationManager.queryServiceStatus()
     return result
   }, 'service:getWindowsServiceStatus'))
 
@@ -1475,7 +1475,7 @@ try {
   // 使用 UAC 提权启动 Windows 服务
   ipcMain.handle('service:startWithElevation', safeIpcHandler(async () => {
     log('info', '请求 UAC 提权启动服务')
-    const result = await elevationManager.startServiceWithElevation()
+    const result = await elevationManager.startService()
     if (result.success) {
       log('info', '服务启动成功')
     } else {
@@ -1487,7 +1487,7 @@ try {
   // 使用 UAC 提权停止 Windows 服务
   ipcMain.handle('service:stopWithElevation', safeIpcHandler(async () => {
     log('info', '请求 UAC 提权停止服务')
-    const result = await elevationManager.stopServiceWithElevation()
+    const result = await elevationManager.stopService()
     if (result.success) {
       log('info', '服务停止成功')
     } else {
@@ -1499,7 +1499,6 @@ try {
   // 设置服务模式
   ipcMain.handle('service:setMode', safeIpcHandler(async (event, mode) => {
     log('info', '设置服务模式: ' + mode)
-    const { getServiceIntegration } = require('./service-integration')
     const serviceIntegration = getServiceIntegration()
     if (mode === 'service') {
       serviceIntegration.setServiceModeEnabled(true)
@@ -1515,7 +1514,7 @@ try {
     const { getServiceIntegration } = require('./service-integration')
     const serviceIntegration = getServiceIntegration()
     try {
-      await serviceIntegration.connectToWindowsService()
+      await serviceIntegration.connect()
       return { success: true }
     } catch (e) {
       log('error', '连接到 Windows 服务失败: ' + e.message)
@@ -1529,7 +1528,7 @@ try {
     const { getServiceIntegration } = require('./service-integration')
     const serviceIntegration = getServiceIntegration()
     try {
-      await serviceIntegration.disconnectFromWindowsService()
+      await serviceIntegration.disconnect()
       return { success: true }
     } catch (e) {
       log('error', '断开连接失败: ' + e.message)
@@ -1586,6 +1585,84 @@ try {
     const logFile = logger ? logger.getCurrentLogFile() : path.join(logDir, 'ycdesk-controller.log')
     return { success: true, logDir, logFile }
   }, 'controller:getLogPath'))
+
+  // ==================== 服务帧数据转发 ====================
+  if (serviceIntegration) {
+    // 监听服务发来的帧数据（通过 frame pipe）
+    serviceIntegration.on('frame', (frameData) => {
+      const framePayload = {
+        width: frameData.width,
+        height: frameData.height,
+        jpeg: frameData.jpeg.toString('base64'),
+        timestamp: frameData.timestamp
+      }
+
+      // 转发到 remote window (controller 视图)
+      const remoteWindow = windowManager.getRemoteWindow()
+      if (remoteWindow && !remoteWindow.isDestroyed()) {
+        remoteWindow.webContents.send('lock-screen-frame', framePayload)
+      }
+
+      // 同时发送到 main window 的 lock-screen-frame 通道
+      const mainWindow = windowManager.getMainWindow()
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('lock-screen-frame', framePayload)
+      }
+    })
+
+    // IPC: 发起服务解锁
+    ipcMain.handle('service:unlockWithPassword', safeIpcHandler(async (event, { password } = {}) => {
+      log('info', `[Service] 收到解锁请求，密码长度=${password ? password.length : 0}`)
+      try {
+        const result = await serviceIntegration.unlockScreen(password || '')
+        log('info', `[Service] 解锁结果: ${JSON.stringify(result)}`)
+        return { success: true, result }
+      } catch (e) {
+        log('error', `[Service] 解锁失败: ${e.message}`)
+        return { success: false, error: e.message }
+      }
+    }, 'service:unlockWithPassword'))
+
+    // IPC: 启动服务采集
+    ipcMain.handle('service:startCapture', safeIpcHandler(async (event, config = {}) => {
+      try {
+        const result = await serviceIntegration.startCapture(config)
+        return { success: true, result }
+      } catch (e) {
+        return { success: false, error: e.message }
+      }
+    }, 'service:startCapture'))
+
+    // IPC: 停止服务采集
+    ipcMain.handle('service:stopCapture', safeIpcHandler(async () => {
+      try {
+        const result = await serviceIntegration.stopCapture()
+        return { success: true, result }
+      } catch (e) {
+        return { success: false, error: e.message }
+      }
+    }, 'service:stopCapture'))
+
+    // 监听服务连接/断开事件
+    serviceIntegration.on('connected', () => {
+      log('info', '[Service] 服务已连接')
+      notifyAllWindows('service:state-changed', { connected: true })
+    })
+
+    serviceIntegration.on('disconnected', () => {
+      log('info', '[Service] 服务已断开')
+      notifyAllWindows('service:state-changed', { connected: false })
+    })
+  }
+}
+
+function notifyAllWindows(channel, data) {
+  const windows = [windowManager.getMainWindow(), windowManager.getRemoteWindow()]
+  for (const win of windows) {
+    if (win && !win.isDestroyed()) {
+      try { win.webContents.send(channel, data) } catch (e) {}
+    }
+  }
 }
 
 function cleanup() {
@@ -1598,7 +1675,7 @@ function cleanup() {
   // 清理服务集成
   const serviceIntegration = getServiceIntegration()
   if (serviceIntegration) {
-    serviceIntegration.destroy().catch(err => {
+    serviceIntegration.disconnect().catch(err => {
       log('error', '清理服务集成失败', { error: err.message })
     })
   }

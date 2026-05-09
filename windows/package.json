@@ -58,7 +58,15 @@
       "!watch-build.js",
       "!sync-shared.js",
       "!node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
-      "!node_modules/.bin"
+      "!node_modules/.bin",
+      "!service/build/**"
+    ],
+    "extraResources": [
+      {
+        "from": "bin/",
+        "to": "service/",
+        "filter": ["YCDeskService.exe"]
+      }
     ],
     "win": {
       "target": [

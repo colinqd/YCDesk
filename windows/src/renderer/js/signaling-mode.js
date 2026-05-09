@@ -69,7 +69,9 @@ class SignalingModeManager {
       },
       onConnected: () => {
         if (this.uiManager) {
-          this.uiManager.updateServerStatus('已连接', 'connected')
+          const mode = this.signalingClient.getNegotiatedMode()
+          const label = mode === 'websocket' ? '已连接 (WebSocket)' : '已连接 (Socket.IO)'
+          this.uiManager.updateServerStatus(label, 'connected')
         }
       },
       onDisconnected: () => {
@@ -132,13 +134,6 @@ class SignalingModeManager {
     this.serverUrl = serverUrl
     this.role = role
     this.isController = (role === 'controller')
-
-    const modeSelect = document.getElementById(
-      role === 'controlled' ? 'controlledConnectionMode' : 'controllerConnectionMode'
-    )
-    if (modeSelect && modeSelect.value) {
-      this.setConnectionMode(modeSelect.value)
-    }
 
     let normalizedUrl = serverUrl.trim()
     this.logFn('原始地址: ' + serverUrl)
@@ -367,9 +362,15 @@ class SignalingModeManager {
       } else if (label === 'input') {
         this.inputChannel = event.channel
         this.inputChannelReady = true
+        this.logFn('[信令模式] 输入数据通道已就绪')
+        let inputMsgCount = 0
         this.inputChannel.onmessage = (evt) => {
           try {
             const data = JSON.parse(evt.data)
+            inputMsgCount++
+            if (inputMsgCount === 1) {
+              this.logFn('[信令模式] 收到第一条输入消息: type=' + data.type + ', inputType=' + data.inputType)
+            }
             if (data.type === 'input' || data.inputType) {
               window.electronAPI.send('remote-input', data)
             }
@@ -379,13 +380,12 @@ class SignalingModeManager {
         }
         this.inputChannel.onclose = () => {
           this.inputChannelReady = false
-          this.logFn('[信令模式] 输入数据通道已关闭')
+          this.logFn('[信令模式] 输入数据通道已关闭, 共接收 ' + inputMsgCount + ' 条消息')
         }
         this.inputChannel.onerror = (error) => {
           this.inputChannelReady = false
           this.logFn('[信令模式] 输入数据通道错误: ' + error)
         }
-        this.logFn('[信令模式] 输入数据通道已就绪')
       } else if (label.startsWith('aux-')) {
         const channelName = label.replace('aux-', '')
         this.auxiliaryChannels.set(channelName, event.channel)

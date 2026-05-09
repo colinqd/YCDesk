@@ -1153,13 +1153,6 @@
               </div>
             </div>
             <div class="input-group">
-              <label>连接方式</label>
-              <select id="controllerConnectionMode" style="width: 100%; padding: 12px 10px; font-size: 14px; border: 2px solid #e2e8f0; border-radius: 10px; background: white; font-weight: 600; color: #4a5568;">
-                <option value="socketio" selected>Socket.IO（用于 server-gui）</option>
-                <option value="websocket">原始 WebSocket（用于 android-server）</option>
-              </select>
-            </div>
-            <div class="input-group">
               <label>信令服务器地址</label>
               <input type="text" id="serverUrl" placeholder="例如: 192.168.1.100:3000 或 example.com:3000" value="10.0.2.2:3000" style="width: 100%;">
             </div>
@@ -1226,13 +1219,6 @@
           </div>
           
           <div id="controlledSignalingMode" class="mode-content">
-            <div class="input-group">
-              <label>连接方式</label>
-              <select id="controlledConnectionMode" style="width: 100%; padding: 12px 10px; font-size: 14px; border: 2px solid #e2e8f0; border-radius: 10px; background: white; font-weight: 600; color: #4a5568;">
-                <option value="socketio" selected>Socket.IO（用于 server-gui）</option>
-                <option value="websocket">原始 WebSocket（用于 android-server）</option>
-              </select>
-            </div>
             <div class="input-group" style="margin-top: 10px;">
               <label style="display: flex; align-items: center; gap: 8px;">
                 <input type="checkbox" id="autoAcceptConnection" style="width: auto; margin: 0; height: auto; min-height: auto; font-size: 14px;">

@@ -359,7 +359,7 @@ function setupDataChannel() {
   const log = typeof window.log === 'function' ? window.log : console.log
   
   s.dataChannel.onopen = () => {
-    log('数据通道已打开')
+    log('[SIGNALING] 数据通道已打开 (control)')
     
     if (s.isDirectControllerMode) {
       if (typeof window.showToast === 'function') window.showToast('正在协商分辨率...')
@@ -468,7 +468,7 @@ function setupDataChannel() {
   }
 
   s.dataChannel.onclose = () => {
-    log('数据通道已关闭')
+    log('[SIGNALING] 数据通道已关闭 (control)')
     s.isWaitingRenegotiation = false
     s.isDirectControllerMode = false
     if (typeof window.hideRemoteScreen === 'function') window.hideRemoteScreen()
@@ -554,7 +554,7 @@ async function createPeerConnection() {
   }
 
   s.peerConnection.onconnectionstatechange = () => {
-    log('连接状态: ' + s.peerConnection.connectionState)
+    log('[SIGNALING] 连接状态: ' + s.peerConnection.connectionState)
     if (s.peerConnection.connectionState === 'connected') {
       s.isConnected = true
       if (typeof window.showToast === 'function') window.showToast('连接成功')
@@ -601,13 +601,14 @@ async function createPeerConnection() {
     s.peerConnection.addTransceiver('audio', { direction: 'recvonly' })
     log('已添加视频和音频接收器')
     
-    log('创建数据通道（主控端）')
+    log('[SIGNALING] 创建数据通道（主控端）')
     s.dataChannel = s.peerConnection.createDataChannel('control', {
       ordered: true,
       maxRetransmits: 3
     })
     setupDataChannel()
     
+    log('[SIGNALING] 创建输入数据通道（无序、不重传）')
     s.inputChannel = s.peerConnection.createDataChannel('input', {
       ordered: false,
       maxRetransmits: 0
@@ -616,7 +617,7 @@ async function createPeerConnection() {
     s.inputChannelReady = false
     s.inputChannel.onopen = () => {
       s.inputChannelReady = true
-      log('输入数据通道已打开（无序、不重传）')
+      log('[SIGNALING] 输入数据通道已打开（无序、不重传）')
     }
     s.inputChannel.onmessage = (event) => {
       try {
@@ -630,31 +631,36 @@ async function createPeerConnection() {
     }
     s.inputChannel.onclose = () => {
       s.inputChannelReady = false
-      log('输入数据通道已关闭')
+      log('[SIGNALING] 输入数据通道已关闭')
     }
     s.inputChannel.onerror = (error) => {
       s.inputChannelReady = false
-      log('输入数据通道错误: ' + error)
+      log('[SIGNALING] 输入数据通道错误: ' + error)
     }
   }
 }
 
 async function startControllerConnection() {
   const log = typeof window.log === 'function' ? window.log : console.log
-  log('作为主控端建立连接')
+  log('[SIGNALING] 开始主控端连接建立')
+  log('[SIGNALING] currentSessionId=' + s.currentSessionId)
+  log('[SIGNALING] incomingFromDeviceId=' + s.incomingFromDeviceId)
+  log('[SIGNALING] isController=' + s.isController)
   await createPeerConnection()
   
   try {
     const offer = await s.peerConnection.createOffer()
     await s.peerConnection.setLocalDescription(offer)
+    log('[SIGNALING] Offer创建成功, 发送到信令服务器')
     
     wsSend('offer', {
       sessionId: s.currentSessionId,
       offer: offer,
       toDeviceId: s.incomingFromDeviceId
     })
+    log('[SIGNALING] Offer已发送, sessionId=' + s.currentSessionId + ', toDeviceId=' + s.incomingFromDeviceId)
   } catch (error) {
-    log('创建 offer 失败: ' + error.message)
+    log('[SIGNALING] 创建offer失败: ' + error.message)
     if (typeof window.showToast === 'function') window.showToast('连接失败')
   }
 }

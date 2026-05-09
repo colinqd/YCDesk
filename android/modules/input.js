@@ -80,14 +80,25 @@ class InputDispatcher {
         const inputCommand = convertToInputCommand(command);
         const message = JSON.stringify(inputCommand);
         
-        if (s.inputChannel && s.inputChannelReady && s.inputChannel.readyState === 'open') {
-            if (s.inputChannel.bufferedAmount < 65536) {
-                s.inputChannel.send(message);
-                return;
+        const inputReady = s.inputChannel && s.inputChannelReady && s.inputChannel.readyState === 'open';
+        const dataReady = s.dataChannel && s.dataChannel.readyState === 'open';
+        
+        if (!inputReady && !dataReady) {
+            if (!this._lastNoChannelWarn || Date.now() - this._lastNoChannelWarn > 1000) {
+                this._lastNoChannelWarn = Date.now();
+                const log = typeof window.log === 'function' ? window.log : console.log;
+                log('[SIGNALING] 输入通道均未就绪! inputReady=' + inputReady + ' dataReady=' + dataReady);
             }
+            return;
         }
         
-        if (s.dataChannel && s.dataChannel.readyState === 'open') {
+        if (inputReady) {
+            if (s.inputChannel.bufferedAmount < 65536) {
+                s.inputChannel.send(message);
+            } else {
+                s.dataChannel.send(message);
+            }
+        } else if (dataReady) {
             s.dataChannel.send(message);
         }
     }

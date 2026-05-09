@@ -4,6 +4,7 @@ const os = require('os')
 const { createMainWindow, createRemoteWindow } = require('./window-manager')
 const { init: initIpcHandlers, generateDeviceId, loadDeviceId } = require('./ipc-handlers')
 const { createLogger } = require('./logger')
+const { getServiceIntegration } = require('./service-integration')
 
 const isDevelopment = process.env.NODE_ENV === 'development'
 
@@ -45,6 +46,11 @@ app.whenReady().then(() => {
   logger.info('平台:', { platform: process.platform })
   logger.info('设备ID:', { deviceId: deviceId })
   
+  const serviceIntegration = getServiceIntegration({ logger })
+  if (process.env.YCDESK_SERVICE_MODE === '1') {
+    serviceIntegration.setServiceModeEnabled(true)
+  }
+  
   initIpcHandlers(deviceId, logger)
   
   createMainWindow()
@@ -64,6 +70,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   logger.info('YCDesk 正在退出...')
+  try { getServiceIntegration().disconnect() } catch (e) {}
 })
 
 logger.info('YCDesk 主进程已加载')
