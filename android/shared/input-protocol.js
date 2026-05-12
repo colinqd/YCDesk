@@ -20,7 +20,9 @@ const INPUT_TYPES = {
   MOUSE_DBLCLICK: 'dblclick',
   KEY_DOWN: 'keydown',
   KEY_UP: 'keyup',
-  UNLOCK_SCREEN: 'unlock_screen'
+  UNLOCK_SCREEN: 'unlock_screen',
+  LOCK_SCREEN: 'lock_screen',
+  TEXT_INPUT: 'text_input'
 }
 
 const MOUSE_BUTTONS = {
@@ -43,9 +45,16 @@ function createInputCommand(inputType, data = {}) {
     timestamp: Date.now()
   }
   
-  // 解锁命令特殊处理
+  // 解锁/锁屏命令特殊处理
   if (inputType === INPUT_TYPES.UNLOCK_SCREEN && data.password !== undefined) {
     command.password = data.password
+    return command
+  }
+  if (inputType === INPUT_TYPES.LOCK_SCREEN) {
+    return command
+  }
+  if (inputType === INPUT_TYPES.TEXT_INPUT && data.text !== undefined) {
+    command.text = data.text
     return command
   }
   
@@ -165,6 +174,11 @@ function parseInputCommand(command) {
     result.password = command.password
   }
   
+  // 文本输入特殊处理
+  if (command.inputType === INPUT_TYPES.TEXT_INPUT && command.text !== undefined) {
+    result.text = command.text
+  }
+  
   return result
 }
 
@@ -222,6 +236,12 @@ function validateInputCommand(command) {
     if (command.password === undefined || command.password === '') {
       errors.push('解锁命令必须包含 password')
     }
+    return { valid: errors.length === 0, errors }
+  }
+  
+  // 锁屏命令特殊验证
+  if (command.inputType === INPUT_TYPES.LOCK_SCREEN) {
+    // 锁屏命令不需要任何附加字段
     return { valid: errors.length === 0, errors }
   }
   

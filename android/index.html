@@ -504,6 +504,67 @@
       color: white;
     }
 
+    .server-manage-panel {
+      background: white;
+      border: 2px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 10px;
+      margin-bottom: 12px;
+    }
+    
+    .server-manage-row {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    
+    .server-manage-row input[type="text"] {
+      flex: 1;
+      padding: 8px 10px;
+      font-size: 12px;
+      border: 2px solid #e2e8f0;
+      border-radius: 8px;
+      outline: none;
+    }
+    
+    .server-manage-row input[type="text"]:focus {
+      border-color: #667eea;
+    }
+    
+    .server-manage-btn {
+      padding: 8px 12px;
+      font-size: 11px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    
+    .server-manage-btn-add {
+      background: #667eea;
+      color: white;
+    }
+    
+    .server-manage-btn-cancel {
+      background: #94a3b8;
+      color: white;
+    }
+    
+    .server-manage-toggle {
+      font-size: 11px;
+      color: #667eea;
+      cursor: pointer;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .history-meta {
+      font-size: 9px;
+      color: #94a3b8;
+      margin-top: 2px;
+    }
+
     .footer {
       background: #f1f5f9;
       padding: 10px;
@@ -632,6 +693,8 @@
       left: 50%;
       transform: translateX(-50%);
       display: flex;
+      flex-direction: column;
+      align-items: center;
       gap: 10px;
       z-index: 1000;
       transition: all 0.3s ease;
@@ -639,6 +702,13 @@
       padding: 8px;
       border-radius: 8px;
       border: none;
+    }
+    
+    .control-row {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      flex-wrap: wrap;
     }
 
     .control-overlay.minimized {
@@ -1090,6 +1160,33 @@
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
+
+    .hidden-text-input {
+      position: fixed;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 48px;
+      opacity: 0;
+      z-index: 999;
+      pointer-events: none;
+      font-size: 16px;
+      background: transparent;
+      border: none;
+      resize: none;
+    }
+
+    .hidden-text-input.active {
+      opacity: 1;
+      pointer-events: auto;
+      z-index: 10000;
+      background: rgba(255, 255, 255, 0.95);
+      color: #000;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      padding: 12px;
+      font-size: 16px;
+    }
   </style>
 </head>
 <body>
@@ -1146,6 +1243,22 @@
           </div>
           
           <div id="controllerSignalingMode" class="mode-content">
+            <div class="section" style="padding: 0; margin-bottom: 12px;">
+              <div class="section-title">信令服务器列表 <span class="server-manage-toggle" onclick="manageSignalingServer()">⚙️ 管理</span></div>
+              <div class="history-list" id="signalingServerList" style="margin-bottom: 0;">
+                <div class="history-empty">暂无已保存的信令服务器<br>请添加后从列表选择</div>
+              </div>
+              <div class="server-manage-panel" id="serverManagePanel" style="display: none;">
+                <div class="server-manage-row">
+                  <input type="text" id="newServerName" placeholder="服务器名称（如：家庭电脑）">
+                  <input type="text" id="newServerUrl" placeholder="地址（如：192.168.1.100:3000）">
+                </div>
+                <div class="server-manage-row" style="gap: 8px;">
+                  <button class="server-manage-btn server-manage-btn-add" id="addServerBtn" onclick="onAddServerClick()">添加</button>
+                  <button class="server-manage-btn server-manage-btn-cancel" onclick="cancelEditServer()">取消</button>
+                </div>
+              </div>
+            </div>
             <div class="section" style="padding: 0; margin-bottom: 12px;">
               <div class="section-title">历史连接记录</div>
               <div class="history-list" id="signalingHistoryList">
@@ -1219,6 +1332,22 @@
           </div>
           
           <div id="controlledSignalingMode" class="mode-content">
+            <div class="section" style="padding: 0; margin-bottom: 12px;">
+              <div class="section-title">信令服务器列表 <span class="server-manage-toggle" onclick="manageSignalingServerControlled()">⚙️ 管理</span></div>
+              <div class="history-list" id="controlledSignalingServerList" style="margin-bottom: 0;">
+                <div class="history-empty">暂无已保存的信令服务器<br>请添加后从列表选择</div>
+              </div>
+              <div class="server-manage-panel" id="controlledServerManagePanel" style="display: none;">
+                <div class="server-manage-row">
+                  <input type="text" id="controlledNewServerName" placeholder="服务器名称（如：家庭电脑）">
+                  <input type="text" id="controlledNewServerUrl" placeholder="地址（如：192.168.1.100:3000）">
+                </div>
+                <div class="server-manage-row" style="gap: 8px;">
+                  <button class="server-manage-btn server-manage-btn-add" id="controlledAddServerBtn" onclick="onAddServerClickControlled()">添加</button>
+                  <button class="server-manage-btn server-manage-btn-cancel" onclick="cancelEditServerControlled()">取消</button>
+                </div>
+              </div>
+            </div>
             <div class="input-group" style="margin-top: 10px;">
               <label style="display: flex; align-items: center; gap: 8px;">
                 <input type="checkbox" id="autoAcceptConnection" style="width: auto; margin: 0; height: auto; min-height: auto; font-size: 14px;">
@@ -1283,13 +1412,18 @@
       </div>
     </div>
     <div class="control-overlay" id="controlOverlay">
-      <button class="control-btn" onclick="requestUnlock()">🔓</button>
-      <button class="control-btn" onclick="toggleControlsHide()">👁️</button>
-      <button class="control-btn" onclick="toggleKeyboard()">⌨️</button>
-      <button class="control-btn" id="mouseModeBtn" onclick="toggleMouseMode()">🖱️</button>
-      <button class="control-btn" onclick="resetZoomAndPan()">↺</button>
-      <button class="control-btn" onclick="toggleFullscreen()">⛶</button>
-      <button class="control-btn danger" onclick="disconnect()">✕</button>
+      <div class="control-row">
+        <button class="control-btn" onclick="requestUnlock()">🔓</button>
+        <button class="control-btn" onclick="requestLock()">🔒</button>
+        <button class="control-btn" onclick="toggleControlsHide()">👁️</button>
+        <button class="control-btn" onclick="toggleKeyboard()">⌨️</button>
+      </div>
+      <div class="control-row">
+        <button class="control-btn" id="mouseModeBtn" onclick="toggleMouseMode()">🖱️</button>
+        <button class="control-btn" onclick="resetZoomAndPan()">↺</button>
+        <button class="control-btn" onclick="toggleFullscreen()">⛶</button>
+        <button class="control-btn danger" onclick="disconnect()">✕</button>
+      </div>
     </div>
     <button class="control-toggle" id="controlToggle" onclick="showControls()">⚙️</button>
   </div>
@@ -1298,6 +1432,7 @@
     <div class="keyboard-header">
       <div class="keyboard-drag-handle" id="keyboardDragHandle">⋮⋮⋮</div>
       <div class="keyboard-controls">
+        <button class="keyboard-control-btn" onclick="toggleSystemKeyboard()" id="systemKbBtn" title="切换系统键盘">⌨️</button>
         <button class="keyboard-control-btn" onclick="cycleKeyboardPosition()">📍</button>
         <button class="keyboard-control-btn" onclick="cycleKeyboardSize()">📐</button>
         <button class="keyboard-control-btn" onclick="cycleKeyboardOpacity()">🔍</button>
@@ -1394,6 +1529,8 @@
       <button class="keyboard-key special" id="keyControl2" onclick="toggleModifier('Control')">CTRL</button>
     </div>
   </div>
+
+  <textarea id="hiddenTextInput" class="hidden-text-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
 
   <div class="toast" id="toast"></div>
 

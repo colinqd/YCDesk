@@ -43,6 +43,8 @@ server/server.crt
 server/server.key
 server-gui/server/server.crt
 server-gui/server/server.key
+server-gui/src/server/server.crt
+server-gui/src/server/server.key
 server-gui/dist/
 
 # Android (Client)
@@ -57,3 +59,9 @@ android-server/local.properties
 
 # Linux
 linux/wget-log
+
+# Trae IDE docs
+.trae/
+
+# Server GUI build
+server-gui-build/

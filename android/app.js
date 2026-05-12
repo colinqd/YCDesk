@@ -11,7 +11,7 @@ import { handleReceivedInput, simulateMouseMove, simulateMouseDown, simulateMous
 import { buildWsUrl, buildHttpUrl, setConnectionMode, startWsHeartbeat, stopWsHeartbeat, wsSend, isSocketConnected, handleWsMessage, connectToServer, disconnectFromServer, attemptReconnect, cancelReconnect, sendDirectMessage, extractHostname, isIpAddress, resolveHostname } from './modules/signaling.js';
 import { getIceConfig, startDirectControllerConnection, handleDirectOffer, handleDirectAnswer, handleRenegotiationAnswer, handleDirectIceCandidate, handleRenegotiationOffer, setupDataChannel, createPeerConnection, startControllerConnection, startControlledConnection, handleOffer, startAndroidScreenCapture, handleAnswer, addPendingIceCandidates, handleIceCandidate } from './modules/webrtc.js';
 import { updateVideoTransformGlobal, resetZoomAndPan, toggleMouseMode, toggleControlsHide, showControls, handleOrientationChange, showFloatingMouse, hideFloatingMouse, handleFloatingMouseEvent, toggleFullscreen, handleRemoteLockStateChanged, setupRemoteScreenInteraction } from './modules/ui.js';
-import { cycleKeyboardPosition, cycleKeyboardSize, cycleKeyboardOpacity, applyKeyboardPosition, ensureKeyboardInBounds, applyKeyboardSize, applyKeyboardOpacity, saveKeyboardSettings, loadKeyboardSettings, setupKeyboardDrag, toggleKeyboard, sendKey, toggleModifier } from './modules/keyboard.js';
+import { cycleKeyboardPosition, cycleKeyboardSize, cycleKeyboardOpacity, applyKeyboardPosition, ensureKeyboardInBounds, applyKeyboardSize, applyKeyboardOpacity, saveKeyboardSettings, loadKeyboardSettings, setupKeyboardDrag, toggleKeyboard, sendKey, toggleModifier, toggleSystemKeyboard, setupSystemKeyboardListener } from './modules/keyboard.js';
 import { updateScreenSize, showRemoteScreen, updateContainerSizeAfterVideoLoad, hideRemoteScreen, startStatsMonitoring, stopStatsMonitoring } from './modules/screen.js';
 
 const TCPSocket = registerPlugin('TCPSocket');
@@ -125,6 +125,303 @@ async function copyDeviceId() {
   }
 }
 
+function loadServers() {
+  try {
+    return JSON.parse(localStorage.getItem(s.STORAGE_KEYS.SIGNALING_SERVERS) || '[]')
+  } catch (e) {
+    return []
+  }
+}
+
+function saveServers(servers) {
+  try {
+    localStorage.setItem(s.STORAGE_KEYS.SIGNALING_SERVERS, JSON.stringify(servers))
+  } catch (e) {
+    console.error('保存信令服务器列表失败:', e)
+  }
+}
+
+function addSignalingServer() {
+  const nameInput = document.getElementById('newServerName')
+  const urlInput = document.getElementById('newServerUrl')
+  if (!nameInput || !urlInput) return
+  
+  const name = nameInput.value.trim()
+  const url = urlInput.value.trim()
+  
+  if (!name) { showToast('请输入服务器名称'); return }
+  if (!url) { showToast('请输入服务器地址'); return }
+  
+  const servers = loadServers()
+  servers.unshift({ name, url, timestamp: Date.now() })
+  saveServers(servers)
+  
+  nameInput.value = ''
+  urlInput.value = ''
+  renderServerList()
+  showToast('服务器已添加')
+}
+
+function editSignalingServer(index) {
+  const servers = loadServers()
+  if (index >= servers.length) return
+  
+  const server = servers[index]
+  const nameInput = document.getElementById('newServerName')
+  const urlInput = document.getElementById('newServerUrl')
+  const addBtn = document.getElementById('addServerBtn')
+  
+  if (nameInput) nameInput.value = server.name
+  if (urlInput) urlInput.value = server.url
+  if (addBtn) {
+    addBtn.textContent = '更新'
+    addBtn.setAttribute('data-edit-index', index)
+  }
+  showToast('编辑服务器: ' + server.name)
+}
+
+function updateSignalingServer(index) {
+  const servers = loadServers()
+  if (index >= servers.length) return
+  
+  const nameInput = document.getElementById('newServerName')
+  const urlInput = document.getElementById('newServerUrl')
+  if (!nameInput || !urlInput) return
+  
+  const name = nameInput.value.trim()
+  const url = urlInput.value.trim()
+  
+  if (!name) { showToast('请输入服务器名称'); return }
+  if (!url) { showToast('请输入服务器地址'); return }
+  
+  servers[index] = { name, url, timestamp: Date.now() }
+  saveServers(servers)
+  
+  nameInput.value = ''
+  urlInput.value = ''
+  const addBtn = document.getElementById('addServerBtn')
+  if (addBtn) {
+    addBtn.textContent = '添加'
+    addBtn.removeAttribute('data-edit-index')
+  }
+  renderServerList()
+  showToast('服务器已更新')
+}
+
+function cancelEditServer() {
+  const nameInput = document.getElementById('newServerName')
+  const urlInput = document.getElementById('newServerUrl')
+  const addBtn = document.getElementById('addServerBtn')
+  if (nameInput) nameInput.value = ''
+  if (urlInput) urlInput.value = ''
+  if (addBtn) {
+    addBtn.textContent = '添加'
+    addBtn.removeAttribute('data-edit-index')
+  }
+}
+
+// 被控端信令服务器管理
+function manageSignalingServerControlled() {
+  const panel = document.getElementById('controlledServerManagePanel')
+  if (panel) {
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none'
+  }
+}
+
+function addSignalingServerControlled() {
+  const nameInput = document.getElementById('controlledNewServerName')
+  const urlInput = document.getElementById('controlledNewServerUrl')
+  if (!nameInput || !urlInput) return
+
+  const name = nameInput.value.trim()
+  const url = urlInput.value.trim()
+
+  if (!name) { showToast('请输入服务器名称'); return }
+  if (!url) { showToast('请输入服务器地址'); return }
+
+  const servers = loadServers()
+  servers.unshift({ name, url, timestamp: Date.now() })
+  saveServers(servers)
+
+  nameInput.value = ''
+  urlInput.value = ''
+  renderServerListControlled()
+  showToast('服务器已添加')
+}
+
+function updateSignalingServerControlled(index) {
+  const servers = loadServers()
+  if (index >= servers.length) return
+
+  const nameInput = document.getElementById('controlledNewServerName')
+  const urlInput = document.getElementById('controlledNewServerUrl')
+  if (!nameInput || !urlInput) return
+
+  const name = nameInput.value.trim()
+  const url = urlInput.value.trim()
+
+  if (!name) { showToast('请输入服务器名称'); return }
+  if (!url) { showToast('请输入服务器地址'); return }
+
+  servers[index] = { name, url, timestamp: Date.now() }
+  saveServers(servers)
+
+  nameInput.value = ''
+  urlInput.value = ''
+  const addBtn = document.getElementById('controlledAddServerBtn')
+  if (addBtn) {
+    addBtn.textContent = '添加'
+    addBtn.removeAttribute('data-edit-index')
+  }
+  renderServerListControlled()
+  showToast('服务器已更新')
+}
+
+function editSignalingServerControlled(index) {
+  const servers = loadServers()
+  if (index >= servers.length) return
+
+  const server = servers[index]
+  const nameInput = document.getElementById('controlledNewServerName')
+  const urlInput = document.getElementById('controlledNewServerUrl')
+  const addBtn = document.getElementById('controlledAddServerBtn')
+
+  if (nameInput) nameInput.value = server.name
+  if (urlInput) urlInput.value = server.url
+  if (addBtn) {
+    addBtn.textContent = '更新'
+    addBtn.setAttribute('data-edit-index', index)
+  }
+  showToast('编辑服务器: ' + server.name)
+}
+
+function cancelEditServerControlled() {
+  const nameInput = document.getElementById('controlledNewServerName')
+  const urlInput = document.getElementById('controlledNewServerUrl')
+  const addBtn = document.getElementById('controlledAddServerBtn')
+  if (nameInput) nameInput.value = ''
+  if (urlInput) urlInput.value = ''
+  if (addBtn) {
+    addBtn.textContent = '添加'
+    addBtn.removeAttribute('data-edit-index')
+  }
+}
+
+function deleteSignalingServerControlled(index) {
+  const servers = loadServers()
+  if (index >= servers.length) return
+  servers.splice(index, 1)
+  saveServers(servers)
+  renderServerListControlled()
+  showToast('服务器已删除')
+}
+
+function selectServerControlled(index) {
+  const servers = loadServers()
+  if (index >= servers.length) return
+
+  const server = servers[index]
+  const urlInput = document.getElementById('controlledServerUrl')
+  if (urlInput) urlInput.value = server.url
+  showToast('已选择: ' + server.name)
+}
+
+function renderServerListControlled() {
+  const listEl = document.getElementById('controlledSignalingServerList')
+  if (!listEl) return
+
+  const servers = loadServers()
+  if (servers.length === 0) {
+    listEl.innerHTML = '<div class="history-empty">暂无已保存的信令服务器<br>请添加后从列表选择</div>'
+    return
+  }
+
+  listEl.innerHTML = servers.map((server, index) => {
+    const time = new Date(server.timestamp).toLocaleDateString()
+    return `<div class="history-item" onclick="selectServerControlled(${index})">
+      <div class="history-info">
+        <div class="history-target">${server.name}</div>
+        <div class="history-meta">${server.url} · ${time}</div>
+      </div>
+      <div class="history-actions" style="flex-shrink: 0;">
+        <button class="history-btn history-btn-connect" onclick="event.stopPropagation(); editSignalingServerControlled(${index})">编辑</button>
+        <button class="history-btn history-btn-delete" onclick="event.stopPropagation(); deleteSignalingServerControlled(${index})">删除</button>
+      </div>
+    </div>`
+  }).join('')
+}
+
+function onAddServerClickControlled() {
+  const btn = document.getElementById('controlledAddServerBtn')
+  const editIndex = btn ? btn.getAttribute('data-edit-index') : null
+  if (editIndex !== null && editIndex !== undefined) {
+    updateSignalingServerControlled(parseInt(editIndex))
+  } else {
+    addSignalingServerControlled()
+  }
+}
+
+function deleteSignalingServer(index) {
+  const servers = loadServers()
+  if (index >= servers.length) return
+  servers.splice(index, 1)
+  saveServers(servers)
+  renderServerList()
+  showToast('服务器已删除')
+}
+
+function selectServer(index) {
+  const servers = loadServers()
+  if (index >= servers.length) return
+  
+  const server = servers[index]
+  const urlInput = document.getElementById('serverUrl')
+  if (urlInput) urlInput.value = server.url
+  showToast('已选择: ' + server.name)
+}
+
+function renderServerList() {
+  const listEl = document.getElementById('signalingServerList')
+  if (!listEl) return
+  
+  const servers = loadServers()
+  if (servers.length === 0) {
+    listEl.innerHTML = '<div class="history-empty">暂无已保存的信令服务器<br>请添加后从列表选择</div>'
+    return
+  }
+  
+  listEl.innerHTML = servers.map((server, index) => {
+    const time = new Date(server.timestamp).toLocaleDateString()
+    return `<div class="history-item" onclick="selectServer(${index})">
+      <div class="history-info">
+        <div class="history-target">${server.name}</div>
+        <div class="history-meta">${server.url} · ${time}</div>
+      </div>
+      <div class="history-actions" style="flex-shrink: 0;">
+        <button class="history-btn history-btn-connect" onclick="event.stopPropagation(); editSignalingServer(${index})">编辑</button>
+        <button class="history-btn history-btn-delete" onclick="event.stopPropagation(); deleteSignalingServer(${index})">删除</button>
+      </div>
+    </div>`
+  }).join('')
+}
+
+function onAddServerClick() {
+  const btn = document.getElementById('addServerBtn')
+  const editIndex = btn ? btn.getAttribute('data-edit-index') : null
+  if (editIndex !== null && editIndex !== undefined) {
+    updateSignalingServer(parseInt(editIndex))
+  } else {
+    addSignalingServer()
+  }
+}
+
+function manageSignalingServer() {
+  const panel = document.getElementById('serverManagePanel')
+  if (panel) {
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none'
+  }
+}
+
 function saveToHistory(type, data) {
   try {
     const key = type === 'direct' ? s.STORAGE_KEYS.DIRECT_HISTORY : s.STORAGE_KEYS.SIGNALING_HISTORY
@@ -209,7 +506,7 @@ function reconnectFromHistory(type, index) {
     document.getElementById('remotePort').value = item.port
     connectDirect()
   } else {
-    document.getElementById('controllerServerUrl').value = item.serverUrl
+    document.getElementById('serverUrl').value = item.serverUrl
     manualConnectToServer()
   }
 }
@@ -508,6 +805,7 @@ async function initController() {
   log('YCDesk Android 主控端初始化完成，设备ID: ' + s.myDeviceId)
   renderHistory('direct')
   renderHistory('signaling')
+  renderServerList()
   
   try {
     const serviceResult = await FloatingMouse.startService()
@@ -554,6 +852,8 @@ async function initControlled() {
   } catch (e) {
     log('设置InputExecutor模式失败: ' + e.message)
   }
+  
+  renderServerListControlled()
   
   const localIpList = document.getElementById('localIpList')
   if (localIpList) {
@@ -682,6 +982,23 @@ function requestUnlock() {
   }, 500)
 }
 
+function requestLock() {
+  console.log('[requestLock] Sending lock request to controlled end...')
+  
+  const inputDispatcher = s.inputDispatcher
+  if (!inputDispatcher) {
+    showToast('Input dispatcher not initialized')
+    return
+  }
+  
+  const command = {
+    type: 'lock_screen'
+  }
+  
+  inputDispatcher.sendInputCommand(command)
+  showToast('Lock request sent')
+}
+
 async function init() {
   console.log('YCDesk Android 初始化')
   
@@ -738,6 +1055,7 @@ async function init() {
   
   setupKeyboardDrag()
   loadKeyboardSettings()
+  setupSystemKeyboardListener()
   
   console.log('初始化完成，设备ID:', s.myDeviceId)
 }
@@ -752,6 +1070,7 @@ window.copyDeviceId = copyDeviceId
 window.connectDevice = connectDevice
 window.connectDirect = connectDirect
 window.toggleKeyboard = toggleKeyboard
+window.toggleSystemKeyboard = toggleSystemKeyboard
 window.cycleKeyboardPosition = cycleKeyboardPosition
 window.cycleKeyboardSize = cycleKeyboardSize
 window.cycleKeyboardOpacity = cycleKeyboardOpacity
@@ -764,6 +1083,7 @@ window.sendKey = sendKey
 window.toggleModifier = toggleModifier
 window.disconnect = disconnect
 window.requestUnlock = requestUnlock
+window.requestLock = requestLock
 window.manualConnectToServer = manualConnectToServer
 window.disconnectFromServer = disconnectFromServer
 window.toggleLogBox = toggleLogBox
@@ -775,8 +1095,23 @@ window.acceptConnection = acceptConnection
 window.rejectConnection = rejectConnection
 window.deleteFromHistory = deleteFromHistory
 window.reconnectFromHistory = reconnectFromHistory
+window.manageSignalingServer = manageSignalingServer
+window.addSignalingServer = addSignalingServer
+window.onAddServerClick = onAddServerClick
+window.editSignalingServer = editSignalingServer
+window.deleteSignalingServer = deleteSignalingServer
+window.selectServer = selectServer
+window.cancelEditServer = cancelEditServer
 window.setCustomDeviceId = setCustomDeviceId
 window.resetDeviceId = resetDeviceId
+// 被控端信令服务器管理
+window.manageSignalingServerControlled = manageSignalingServerControlled
+window.addSignalingServerControlled = addSignalingServerControlled
+window.onAddServerClickControlled = onAddServerClickControlled
+window.editSignalingServerControlled = editSignalingServerControlled
+window.deleteSignalingServerControlled = deleteSignalingServerControlled
+window.selectServerControlled = selectServerControlled
+window.cancelEditServerControlled = cancelEditServerControlled
 
 window.showIncomingConnectionDialog = showIncomingConnectionDialog
 window.startControllerConnection = startControllerConnection

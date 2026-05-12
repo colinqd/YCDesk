@@ -43,7 +43,8 @@ const s = {
 
   STORAGE_KEYS: {
     DIRECT_HISTORY: 'ycdesk_direct_history',
-    SIGNALING_HISTORY: 'ycdesk_signaling_history'
+    SIGNALING_HISTORY: 'ycdesk_signaling_history',
+    SIGNALING_SERVERS: 'ycdesk_signaling_servers'
   },
   MAX_HISTORY_ITEMS: 10,
 
@@ -64,6 +65,7 @@ const s = {
   statsInterval: null,
 
   keyboardVisible: false,
+  usingSystemKeyboard: false,
   currentKeyboardPosition: 'bottom',
   currentKeyboardSize: 'medium',
   currentKeyboardOpacity: '100',

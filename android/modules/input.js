@@ -483,6 +483,10 @@ function convertToInputCommand(command) {
       inputCommand.password = command.password || ''
       break
       
+    case 'lock_screen':
+      inputCommand.inputType = 'lock_screen'
+      break
+      
     case 'keydown':
     case 'keyup':
       inputCommand.inputType = command.type

@@ -1,0 +1,36 @@
+directories:
+  output: dist-debug
+  buildResources: build
+appId: com.ycdesk.desktop.debug
+productName: YCDesk (Debug)
+asar: false
+compression: store
+npmRebuild: false
+files:
+  - filter:
+      - '**/*'
+      - '!**/*.md'
+      - '!**/*.log'
+      - '!dist*/**'
+      - '!credential_provider/**'
+      - '!resources/**'
+      - '!assets/**'
+      - '!data/**'
+      - '!*.bat'
+      - '!nodemon.json'
+      - '!watch-build.js'
+      - '!sync-shared.js'
+      - '!node_modules/*/{test,__tests__,tests,powered-test,example,examples}'
+      - '!node_modules/.bin'
+      - '!service/build/**'
+win:
+  target:
+    - target: dir
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+portable:
+  artifactName: YCDesk-Debug-Portable-${version}.exe
+electronVersion: 28.3.3

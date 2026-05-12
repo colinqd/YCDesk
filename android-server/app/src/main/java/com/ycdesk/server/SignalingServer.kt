@@ -6,6 +6,7 @@ import org.java_websocket.handshake.ClientHandshake
 import org.java_websocket.server.WebSocketServer
 import org.json.JSONObject
 import java.net.InetSocketAddress
+import java.security.SecureRandom
 import java.util.Date
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -271,10 +272,12 @@ class SignalingServer(private val port: Int, private val useHttps: Boolean) {
         return null
     }
 
+    private val secureRandom = SecureRandom()
+
     private fun generateSessionId(): String {
         val chars = "abcdefghijklmnopqrstuvwxyz0123456789"
-        return (1..9)
-            .map { chars[(Math.random() * chars.length).toInt()] }
+        return (1..12)
+            .map { chars[secureRandom.nextInt(chars.length)] }
             .joinToString("")
             .uppercase()
     }

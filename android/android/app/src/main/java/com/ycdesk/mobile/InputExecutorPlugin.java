@@ -1,11 +1,15 @@
 package com.ycdesk.mobile;
 
 import android.app.Instrumentation;
+import android.content.Context;
+import android.os.PowerManager;
 import android.os.SystemClock;
 import android.util.Log;
 import android.view.InputEvent;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.WindowManager;
+import android.view.Window;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -250,6 +254,73 @@ public class InputExecutorPlugin extends Plugin {
         }
     }
 
+    @PluginMethod
+    public void executeLockScreen(PluginCall call) {
+        try {
+            long downTime = SystemClock.uptimeMillis();
+            long eventTime = SystemClock.uptimeMillis();
+            
+            KeyEvent downEvent = new KeyEvent(downTime, eventTime, 
+                KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_POWER, 0);
+            KeyEvent upEvent = new KeyEvent(downTime, eventTime, 
+                KeyEvent.ACTION_UP, KeyEvent.KEYCODE_POWER, 0);
+            
+            instrumentation.sendKeySync(downEvent);
+            instrumentation.sendKeySync(upEvent);
+            
+            JSObject result = new JSObject();
+            result.put("success", true);
+            result.put("message", "Screen lock requested");
+            call.resolve(result);
+            Log.d(TAG, "Lock screen executed");
+        } catch (Exception e) {
+            Log.e(TAG, "Error executing lock screen: " + e.getMessage());
+            JSObject result = new JSObject();
+            result.put("success", false);
+            result.put("error", e.getMessage());
+            call.resolve(result);
+        }
+    }
+
+    @PluginMethod
+    public void executeUnlockScreen(PluginCall call) {
+        try {
+            String password = call.getString("password", "");
+            Context context = getContext();
+            
+            PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+            if (pm != null) {
+                PowerManager.WakeLock wl = pm.newWakeLock(
+                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK 
+                    | PowerManager.ACQUIRE_CAUSES_WAKEUP 
+                    | PowerManager.ON_AFTER_RELEASE,
+                    "YCDesk:UnlockScreen"
+                );
+                wl.acquire(3000);
+                wl.release();
+            }
+            
+            Window window = getActivity().getWindow();
+            if (window != null) {
+                window.addFlags(WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD);
+                window.addFlags(WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
+                window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED);
+            }
+            
+            JSObject result = new JSObject();
+            result.put("success", true);
+            result.put("message", "Screen unlock requested");
+            call.resolve(result);
+            Log.d(TAG, "Unlock screen executed");
+        } catch (Exception e) {
+            Log.e(TAG, "Error executing unlock screen: " + e.getMessage());
+            JSObject result = new JSObject();
+            result.put("success", false);
+            result.put("error", e.getMessage());
+            call.resolve(result);
+        }
+    }
+
     private int getKeyCode(String key) {
         switch (key) {
             case "Enter":
@@ -326,5 +397,14 @@ public class InputExecutorPlugin extends Plugin {
                 }
                 return -1;
         }
+    }
+
+    @PluginMethod
+    public void setControlledMode(PluginCall call) {
+        boolean enabled = call.getBoolean("enabled", false);
+        Log.d(TAG, "Controlled mode " + (enabled ? "enabled" : "disabled"));
+        JSObject result = new JSObject();
+        result.put("success", true);
+        call.resolve(result);
     }
 }

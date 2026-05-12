@@ -3,6 +3,7 @@ const path = require('path')
 
 const PROJECT_ROOT = path.resolve(__dirname, '..')
 const SHARED_SRC = path.join(PROJECT_ROOT, 'shared')
+const SHARED_RENDERER_SRC = path.join(PROJECT_ROOT, 'shared', 'renderer')
 
 const SYNC_TARGETS = [
   {
@@ -30,6 +31,16 @@ const SYNC_TARGETS = [
     name: 'android/shared',
     dir: path.join(PROJECT_ROOT, 'android', 'shared'),
     filter: () => true
+  },
+  {
+    name: 'windows/shared/renderer',
+    dir: path.join(PROJECT_ROOT, 'windows', 'shared', 'renderer'),
+    filter: () => true
+  },
+  {
+    name: 'android/shared/renderer',
+    dir: path.join(PROJECT_ROOT, 'android', 'shared', 'renderer'),
+    filter: () => true
   }
 ]
 
@@ -53,21 +64,26 @@ function syncShared() {
   console.log('')
 
   const sourceFiles = getAllFiles(SHARED_SRC)
+  const rendererSourceFiles = getAllFiles(SHARED_RENDERER_SRC)
   let totalCopied = 0
   let totalSkipped = 0
 
   for (const target of SYNC_TARGETS) {
+    const isRenderer = target.name.includes('renderer')
+    const files = isRenderer ? rendererSourceFiles : sourceFiles
+
     console.log(`--- 同步到 ${target.name} ---`)
     let copied = 0
     let skipped = 0
 
-    for (const relPath of sourceFiles) {
+    for (const relPath of files) {
       if (!target.filter(relPath)) {
         skipped++
         continue
       }
 
-      const srcFile = path.join(SHARED_SRC, relPath)
+      const srcBase = isRenderer ? SHARED_RENDERER_SRC : SHARED_SRC
+      const srcFile = path.join(srcBase, relPath)
       const destFile = path.join(target.dir, relPath)
 
       const destDir = path.dirname(destFile)
@@ -86,7 +102,20 @@ function syncShared() {
       }
 
       if (needCopy) {
-        fs.copyFileSync(srcFile, destFile)
+        // 如果是同步到 Android 并且是 matrix-transformer.js，我们需要添加 export default
+        if (target.name === 'android/shared' && relPath === 'components/matrix-transformer.js') {
+          let content = fs.readFileSync(srcFile, 'utf8')
+          // 检查是否已经有 export default
+          if (!content.includes('export default MatrixTransformer')) {
+            // 在文件末尾添加 export default
+            content = content + '\n\n// ES 模块导出 (用于 Android Vite 构建)\nexport default MatrixTransformer\n'
+            fs.writeFileSync(destFile, content, 'utf8')
+          } else {
+            fs.copyFileSync(srcFile, destFile)
+          }
+        } else {
+          fs.copyFileSync(srcFile, destFile)
+        }
         console.log(`  已同步: ${relPath}`)
         copied++
       }

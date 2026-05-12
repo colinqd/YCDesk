@@ -142,9 +142,13 @@ class SignalingServer {
   _setupSocketIO() {
     this.io = new Server(this.server, {
       cors: {
-        origin: '*',
+        origin: process.env.CORS_ORIGIN || 'http://localhost:*',
         methods: ['GET', 'POST']
-      }
+      },
+      pingInterval: 5000,
+      pingTimeout: 10000,
+      connectTimeout: 5000,
+      maxHttpBufferSize: 5e6
     });
 
     this.io.on('connection', (socket) => {

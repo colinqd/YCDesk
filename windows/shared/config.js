@@ -22,7 +22,10 @@ const CONFIG = {
     'stun:stun.voipbuster.com:3478',
     'stun:global.stun.twilio.com:3478'
   ],
-  turnServers: [],
+  turnServers: [
+    // 部署 coturn 后替换为实际地址（对称NAT穿透必需）
+    // { urls: 'turn:your-turn-server.com:3478', username: 'ycdesk', credential: 'your-password' }
+  ],
   defaultPort: 8080,
   heartbeatInterval: 5000,
   maxReconnectAttempts: 10,
@@ -59,6 +62,7 @@ const CONFIG = {
     keys: {
       directHistory: 'ycdesk_direct_history',
       signalingHistory: 'ycdesk_signaling_history',
+      signalingServers: 'ycdesk_signaling_servers',
       deviceId: 'ycdesk_device_id'
     }
   },

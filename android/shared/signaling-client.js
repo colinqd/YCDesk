@@ -14,16 +14,23 @@ class SignalingClient {
     this.onIceCandidate = options.onIceCandidate || null
     this.onConnected = options.onConnected || null
     this.onDisconnected = options.onDisconnected || null
+    this.onReconnecting = options.onReconnecting || null
     this.onError = options.onError || null
 
     this.heartbeatTimer = null
     this.maxReconnectAttempts = options.maxReconnectAttempts || 10
     this.reconnectDelay = options.reconnectDelay || 1000
+    this.autoReconnect = options.autoReconnect !== undefined ? options.autoReconnect : true
 
     this._autoSettled = false
     this._autoTimer = null
     this._autoServerUrl = ''
     this._registerTimer = null
+
+    this._reconnectAttempts = 0
+    this._reconnectTimer = null
+    this._manualDisconnect = false
+    this._reconnectServerUrl = ''
   }
 
   setDeviceId(deviceId) {
@@ -108,17 +115,19 @@ class SignalingClient {
 
   _connectWebSocket(serverUrl) {
     const wsUrl = this.buildWsUrl(serverUrl)
+    this._reconnectServerUrl = serverUrl
     this.logFn('连接信令服务器 [WebSocket]: ' + wsUrl)
 
     try {
       if (this.socket) {
-        this.socket.close()
+        try { this.socket.close() } catch (e) { /* ignore */ }
       }
 
       this.socket = new WebSocket(wsUrl)
 
       this.socket.onopen = () => {
         this.logFn('✓ 已连接到信令服务器')
+        this._reconnectAttempts = 0
         this.logFn('正在注册设备 ID: ' + this.myDeviceId)
         this.send('register', { deviceId: this.myDeviceId })
         this._startHeartbeat()
@@ -129,7 +138,13 @@ class SignalingClient {
       this.socket.onclose = (event) => {
         this.logFn('与信令服务器断开连接, code: ' + event.code)
         this._stopHeartbeat()
+        this._cancelReconnect()
+
         if (typeof this.onDisconnected === 'function') this.onDisconnected('close', event.code)
+
+        if (!this._manualDisconnect && this.autoReconnect) {
+          this._scheduleReconnect()
+        }
       }
 
       this.socket.onerror = (error) => {
@@ -255,13 +270,43 @@ class SignalingClient {
       if (this.socket && this.socket.readyState === WebSocket.OPEN) {
         this.send('ping', { timestamp: Date.now() })
       }
-    }, 25000)
+    }, 15000)
   }
 
   _stopHeartbeat() {
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer)
       this.heartbeatTimer = null
+    }
+  }
+
+  _scheduleReconnect() {
+    if (this._reconnectAttempts >= this.maxReconnectAttempts) {
+      this.logFn('重连次数已达上限(' + this.maxReconnectAttempts + '次)，停止重连')
+      return
+    }
+
+    this._reconnectAttempts++
+    const delay = Math.min(this.reconnectDelay * Math.pow(2, this._reconnectAttempts - 1), 30000)
+    this.logFn('将在 ' + (delay / 1000).toFixed(1) + ' 秒后尝试第 ' + this._reconnectAttempts + ' 次重连...')
+
+    if (typeof this.onReconnecting === 'function') {
+      this.onReconnecting({
+        attempt: this._reconnectAttempts,
+        maxAttempts: this.maxReconnectAttempts,
+        delay: delay
+      })
+    }
+
+    this._reconnectTimer = setTimeout(() => {
+      this._connectWebSocket(this._reconnectServerUrl)
+    }, delay)
+  }
+
+  _cancelReconnect() {
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer)
+      this._reconnectTimer = null
     }
   }
 
@@ -346,7 +391,9 @@ class SignalingClient {
   }
 
   disconnect() {
+    this._manualDisconnect = true
     this._stopHeartbeat()
+    this._cancelReconnect()
     this._autoSettled = true
     if (this._autoTimer) {
       clearTimeout(this._autoTimer)
@@ -361,6 +408,7 @@ class SignalingClient {
       this.socket = null
       this.logFn('已断开服务器连接')
     }
+    this._manualDisconnect = false
   }
 }
 

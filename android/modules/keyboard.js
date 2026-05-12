@@ -330,6 +330,94 @@ function toggleModifier(modifier) {
   })
 }
 
+let lastSystemTextValue = ''
+
+function toggleSystemKeyboard() {
+  const input = document.getElementById('hiddenTextInput')
+  const keyboardOverlay = document.getElementById('keyboardOverlay')
+  const btn = document.getElementById('systemKbBtn')
+  
+  if (!input) return
+  
+  s.usingSystemKeyboard = !s.usingSystemKeyboard
+  
+  if (s.usingSystemKeyboard) {
+    keyboardOverlay.style.display = 'none'
+    keyboardOverlay.classList.remove('active')
+    input.classList.add('active')
+    input.value = ''
+    lastSystemTextValue = ''
+    input.focus()
+    if (btn) btn.classList.add('active')
+    if (typeof window.showToast === 'function') window.showToast('已切换到系统输入法，支持中文输入')
+  } else {
+    input.classList.remove('active')
+    input.value = ''
+    lastSystemTextValue = ''
+    input.blur()
+    keyboardOverlay.style.display = ''
+    if (s.keyboardVisible) {
+      keyboardOverlay.classList.add('active')
+    }
+    if (btn) btn.classList.remove('active')
+    if (typeof window.showToast === 'function') window.showToast('已切换回虚拟键盘')
+  }
+}
+
+function setupSystemKeyboardListener() {
+  const input = document.getElementById('hiddenTextInput')
+  if (!input) return
+  
+  input.addEventListener('input', () => {
+    if (!s.usingSystemKeyboard) return
+    
+    const currentValue = input.value
+    if (currentValue === lastSystemTextValue) return
+    
+    if (currentValue.length > lastSystemTextValue.length) {
+      const newText = currentValue.substring(lastSystemTextValue.length)
+      sendTextInput(newText)
+    }
+    
+    lastSystemTextValue = currentValue
+  })
+  
+  input.addEventListener('blur', () => {
+    if (s.usingSystemKeyboard) {
+      toggleSystemKeyboard()
+    }
+  })
+}
+
+function sendTextInput(text) {
+  if (!text) return
+  
+  const inputReady = s.inputChannel && s.inputChannelReady && s.inputChannel.readyState === 'open'
+  const dataReady = s.dataChannel && s.dataChannel.readyState === 'open'
+  
+  if (!inputReady && !dataReady) return
+  
+  try {
+    const inputCommand = window.createInputCommand(
+      window.INPUT_TYPES.TEXT_INPUT,
+      { text: text }
+    )
+    const message = JSON.stringify(inputCommand)
+    
+    if (inputReady) {
+      if (s.inputChannel.bufferedAmount < 65536) {
+        s.inputChannel.send(message)
+      } else {
+        s.dataChannel.send(message)
+      }
+    } else if (dataReady) {
+      s.dataChannel.send(message)
+    }
+  } catch (e) {
+    console.error('sendTextInput error:', e)
+  }
+}
+
 export {
   cycleKeyboardPosition,
   cycleKeyboardSize,
@@ -343,5 +431,7 @@ export {
   setupKeyboardDrag,
   toggleKeyboard,
   sendKey,
-  toggleModifier
+  toggleModifier,
+  toggleSystemKeyboard,
+  setupSystemKeyboardListener
 }

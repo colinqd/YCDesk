@@ -88,6 +88,14 @@ async function handleReceivedInput(inputData) {
           key: inputData.key
         });
         break;
+      case 'lock_screen':
+        await InputExecutor.executeLockScreen()
+        if (typeof window.log === 'function') window.log('锁屏命令已执行')
+        break
+      case 'unlock_screen':
+        await InputExecutor.executeUnlockScreen({ password: inputData.password || '' })
+        if (typeof window.log === 'function') window.log('解锁命令已执行')
+        break
       default:
         if (typeof window.log === 'function') window.log('未知输入类型: ' + inputData.inputType);
     }

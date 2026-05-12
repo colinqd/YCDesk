@@ -7,9 +7,11 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.net.wifi.WifiManager
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import java.net.NetworkInterface
 import java.util.concurrent.ExecutorService
@@ -48,7 +50,10 @@ class SignalingServerService : Service() {
     private lateinit var executorService: ExecutorService
     private var server: SignalingServer? = null
     private var isRunning = false
-    private var currentPort = 3000
+    private var currentPort: Int = 3000
+    private var currentUseHttps: Boolean = false
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
 
     inner class LocalBinder : Binder() {
         fun getService(): SignalingServerService = this@SignalingServerService
@@ -59,6 +64,17 @@ class SignalingServerService : Service() {
         executorService = Executors.newSingleThreadExecutor()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             createNotificationChannel()
+        }
+
+        try {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "YCDesk:SignalingServerWakeLock"
+            )
+            wakeLock?.setReferenceCounted(false)
+        } catch (e: Exception) {
+            sendLog("WakeLock 初始化失败: ${e.message}")
         }
     }
 
@@ -85,6 +101,8 @@ class SignalingServerService : Service() {
         sendLog("正在初始化服务器...")
         sendLog("端口: $port")
         sendLog("协议: Socket.IO v4 (WebSocket)")
+
+        acquireWakeLock()
 
         executorService.execute {
             try {
@@ -138,6 +156,8 @@ class SignalingServerService : Service() {
                 isRunning = false
                 sendLog("服务器已停止")
 
+                releaseWakeLock()
+
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     stopForeground(true)
                 }
@@ -174,7 +194,7 @@ class SignalingServerService : Service() {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "YCDesk Server",
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_DEFAULT
             )
             val manager = getSystemService(NotificationManager::class.java)
             manager?.createNotificationChannel(channel)
@@ -195,7 +215,45 @@ class SignalingServerService : Service() {
             .setContentText("监听端口: $currentPort")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(pendingIntent)
+            .setOngoing(true)
             .build()
+    }
+
+    private fun acquireWakeLock() {
+        try {
+            if (wakeLock != null && wakeLock?.isHeld == false) {
+                wakeLock?.acquire(10 * 60 * 1000L)
+            }
+        } catch (e: Exception) {
+            sendLog("WakeLock 获取失败: ${e.message}")
+        }
+    }
+
+    private fun releaseWakeLock() {
+        try {
+            if (wakeLock != null && wakeLock?.isHeld == true) {
+                wakeLock?.release()
+            }
+        } catch (e: Exception) {
+            sendLog("WakeLock 释放失败: ${e.message}")
+        }
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        sendLog("应用被移除，安排服务重启")
+        if (isRunning) {
+            val restartIntent = Intent(this, SignalingServerService::class.java).apply {
+                action = ACTION_START
+                putExtra("port", currentPort)
+                putExtra("useHttps", false)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(restartIntent)
+            } else {
+                startService(restartIntent)
+            }
+        }
+        super.onTaskRemoved(rootIntent)
     }
 
     private fun sendLog(message: String) {
