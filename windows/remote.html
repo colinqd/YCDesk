@@ -703,7 +703,18 @@
           if (lockCanvas) lockCanvas.style.display = 'none';
           UIState.updateStatus('已连接');
           if (vc) vc.classList.remove('video-frozen');
-          setTimeout(function() { requestVideoRefresh(); }, 500);
+          
+          // 延迟发送视频刷新请求，给被控端足够时间恢复
+          setTimeout(function() { 
+            UIState.log('发送第一次视频刷新请求...');
+            requestVideoRefresh(); 
+          }, 1000);
+          
+          // 如果第一次失败，再尝试一次
+          setTimeout(function() { 
+            UIState.log('发送第二次视频刷新请求（备用）...');
+            requestVideoRefresh(); 
+          }, 3000);
         } else if (data.isLocked === true) {
           UIState.log('屏幕已锁定，显示锁屏画面和解锁面板...');
           UIState.updateStatus('已锁定', 'error');

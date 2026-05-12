@@ -12,6 +12,7 @@ const {
 const inputHandler = require('./input-handler')
 const credentialsManager = require('./credentials-manager')
 const autoUnlockService = require('./auto-unlock-service')
+const { getDeviceListManager } = require('./device-list-manager')
 const {
   getLocalIps,
   startDirectServerImpl,
@@ -1658,6 +1659,34 @@ try {
       notifyAllWindows('service:state-changed', { connected: false })
     })
   }
+
+  // ==================== 设备列表管理 ====================
+  const deviceListManager = getDeviceListManager({ log: log })
+
+  ipcMain.handle('device-list:get', safeIpcHandler(async () => {
+    const devices = deviceListManager.getDevices()
+    return { success: true, devices }
+  }, 'device-list:get'))
+
+  ipcMain.handle('device-list:add', safeIpcHandler(async (event, { deviceId, alias, serverUrl }) => {
+    const result = deviceListManager.addDevice(deviceId, alias, serverUrl)
+    return result
+  }, 'device-list:add'))
+
+  ipcMain.handle('device-list:remove', safeIpcHandler(async (event, { deviceId }) => {
+    const result = deviceListManager.removeDevice(deviceId)
+    return result
+  }, 'device-list:remove'))
+
+  ipcMain.handle('device-list:update-alias', safeIpcHandler(async (event, { deviceId, alias }) => {
+    const result = deviceListManager.updateDeviceAlias(deviceId, alias)
+    return result
+  }, 'device-list:update-alias'))
+
+  ipcMain.handle('device-list:clear', safeIpcHandler(async () => {
+    const result = deviceListManager.clearDevices()
+    return result
+  }, 'device-list:clear'))
 }
 
 function notifyAllWindows(channel, data) {

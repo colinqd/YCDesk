@@ -558,6 +558,9 @@ async function createPeerConnection() {
     if (s.peerConnection.connectionState === 'connected') {
       s.isConnected = true
       if (typeof window.showToast === 'function') window.showToast('连接成功')
+      if (typeof window.saveConnectedDevice === 'function' && s.incomingFromDeviceId) {
+        window.saveConnectedDevice(s.incomingFromDeviceId)
+      }
     } else if (s.peerConnection.connectionState === 'disconnected' || s.peerConnection.connectionState === 'failed') {
       s.isConnected = false
       if (typeof window.showToast === 'function') window.showToast('连接已断开')

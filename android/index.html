@@ -1274,6 +1274,22 @@
               <button class="btn btn-danger" onclick="disconnectFromServer()">断开连接</button>
             </div>
             <div class="input-group" style="margin-top: 15px;">
+              <label>设备列表 <span class="server-manage-toggle" onclick="manageDeviceList()">⚙️ 管理</span></label>
+              <div class="history-list" id="deviceListContainer" style="margin-bottom: 0; max-height: 100px; overflow-y: auto;">
+                <div class="history-empty">暂无已保存的设备<br>连接成功后会自动添加</div>
+              </div>
+              <div class="server-manage-panel" id="deviceManagePanel" style="display: none; margin-top: 8px;">
+                <div class="server-manage-row">
+                  <input type="text" id="newDeviceId" placeholder="设备ID（必填）" maxlength="16" style="text-transform: uppercase;">
+                  <input type="text" id="newDeviceAlias" placeholder="别名（可选）">
+                </div>
+                <div class="server-manage-row" style="gap: 8px;">
+                  <button class="server-manage-btn server-manage-btn-add" onclick="addDeviceToList()">添加</button>
+                  <button class="server-manage-btn server-manage-btn-cancel" onclick="cancelDeviceManage()">取消</button>
+                </div>
+              </div>
+            </div>
+            <div class="input-group" style="margin-top: 15px;">
               <label>对方设备 ID</label>
               <input type="text" id="targetDeviceId" placeholder="输入对方设备 ID" maxlength="16" class="uppercase">
             </div>

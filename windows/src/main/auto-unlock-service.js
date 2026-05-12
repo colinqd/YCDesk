@@ -48,12 +48,22 @@ class AutoUnlockService {
       this.isLocked = true
       console.log('[AutoUnlockService] 检测到屏幕锁定')
       this.notifyLockState()
+      
+      if (this.currentMainWindow && !this.currentMainWindow.isDestroyed()) {
+        console.log('[AutoUnlockService] 通知渲染进程停止屏幕捕获')
+        this.currentMainWindow.webContents.send('screen-capture-control', { action: 'stop' })
+      }
     })
 
     powerMonitor.on('unlock-screen', () => {
       this.isLocked = false
       console.log('[AutoUnlockService] 屏幕已解锁')
       this.notifyLockState()
+      
+      if (this.currentMainWindow && !this.currentMainWindow.isDestroyed()) {
+        console.log('[AutoUnlockService] 通知渲染进程恢复屏幕捕获')
+        this.currentMainWindow.webContents.send('screen-capture-control', { action: 'start' })
+      }
     })
 
     ipcMain.handle('auto-unlock:get-state', async () => {

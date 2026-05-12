@@ -346,6 +346,35 @@ function handleRemoteLockStateChanged(data) {
     if (lockCanvas) lockCanvas.style.display = 'none'
     
     if (typeof window.showToast === 'function') window.showToast('被控端已解锁')
+    
+    log('[Android UI] 解锁后发送视频刷新请求')
+    if (typeof s !== 'undefined' && s.dataChannel && s.dataChannel.readyState === 'open') {
+      setTimeout(function() {
+        try {
+          s.dataChannel.send(JSON.stringify({
+            type: 'video-refresh-request',
+            timestamp: Date.now()
+          }))
+          log('[Android UI] 视频刷新请求已发送')
+        } catch (e) {
+          log('[Android UI] 发送视频刷新请求失败: ' + e.message)
+        }
+      }, 500)
+      
+      setTimeout(function() {
+        try {
+          if (s.dataChannel && s.dataChannel.readyState === 'open') {
+            s.dataChannel.send(JSON.stringify({
+              type: 'video-refresh-request',
+              timestamp: Date.now()
+            }))
+            log('[Android UI] 视频刷新请求已发送（备用）')
+          }
+        } catch (e) {}
+      }, 2000)
+    } else {
+      log('[Android UI] 数据通道未就绪，无法发送视频刷新请求')
+    }
   }
 }
 

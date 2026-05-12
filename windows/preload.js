@@ -40,7 +40,8 @@ const RECEIVE_CHANNELS = Object.freeze([
   'offer',
   'answer',
   'ice-candidate',
-  'lock-screen-frame'
+  'lock-screen-frame',
+  'screen-capture-control'
 ])
 
 const listenerRegistry = new Map()
@@ -156,5 +157,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 解锁测试相关
   testUnlock: (password) => ipcRenderer.invoke('service:testUnlock', password),
   getTestUnlockLog: () => ipcRenderer.invoke('service:getTestUnlockLog'),
-  runFullUnlockTest: (password) => ipcRenderer.invoke('service:runFullUnlockTest', password)
+  runFullUnlockTest: (password) => ipcRenderer.invoke('service:runFullUnlockTest', password),
+  
+  // 设备列表管理
+  getDeviceList: () => ipcRenderer.invoke('device-list:get'),
+  addDevice: (deviceId, alias, serverUrl) => ipcRenderer.invoke('device-list:add', { deviceId, alias, serverUrl }),
+  removeDevice: (deviceId) => ipcRenderer.invoke('device-list:remove', { deviceId }),
+  updateDeviceAlias: (deviceId, alias) => ipcRenderer.invoke('device-list:update-alias', { deviceId, alias }),
+  clearDeviceList: () => ipcRenderer.invoke('device-list:clear')
 })

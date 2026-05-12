@@ -351,6 +351,165 @@ function renderServerListControlled() {
   }).join('')
 }
 
+// ==================== 设备列表管理 ====================
+const DEVICE_LIST_KEY = 'ycdesk_device_list'
+
+function loadDeviceList() {
+  try {
+    return JSON.parse(localStorage.getItem(DEVICE_LIST_KEY) || '[]')
+  } catch (e) {
+    return []
+  }
+}
+
+function saveDeviceList(devices) {
+  try {
+    localStorage.setItem(DEVICE_LIST_KEY, JSON.stringify(devices))
+  } catch (e) {
+    console.error('保存设备列表失败:', e)
+  }
+}
+
+function renderDeviceList() {
+  const container = document.getElementById('deviceListContainer')
+  if (!container) return
+
+  const devices = loadDeviceList()
+  if (devices.length === 0) {
+    container.innerHTML = '<div class="history-empty">暂无已保存的设备<br>连接成功后会自动添加</div>'
+    return
+  }
+
+  container.innerHTML = devices.map((device, index) => {
+    const alias = device.alias || ''
+    const displayName = alias ? `${alias} (${device.deviceId})` : device.deviceId
+    const lastConnected = device.lastConnected ? new Date(device.lastConnected).toLocaleDateString() : '未连接'
+    
+    return `
+      <div class="history-item">
+        <div class="history-info">
+          <div class="history-target">${displayName}</div>
+          <div class="history-time">最后连接: ${lastConnected}</div>
+        </div>
+        <div class="history-actions">
+          <button class="history-btn history-btn-connect" onclick="connectFromDeviceList('${device.deviceId}')">连接</button>
+          <button class="history-btn history-btn-delete" onclick="removeDeviceFromList('${device.deviceId}')">删除</button>
+        </div>
+      </div>
+    `
+  }).join('')
+}
+
+function manageDeviceList() {
+  const panel = document.getElementById('deviceManagePanel')
+  if (panel) {
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none'
+  }
+}
+
+function addDeviceToList() {
+  const deviceIdInput = document.getElementById('newDeviceId')
+  const aliasInput = document.getElementById('newDeviceAlias')
+  
+  if (!deviceIdInput) return
+  
+  const deviceId = deviceIdInput.value.trim().toUpperCase()
+  const alias = aliasInput ? aliasInput.value.trim() : ''
+  
+  if (!deviceId) {
+    showToast('请输入设备ID')
+    return
+  }
+  
+  if (deviceId.length < 6 || deviceId.length > 16) {
+    showToast('设备ID长度必须在6-16个字符之间')
+    return
+  }
+  
+  const devices = loadDeviceList()
+  const existingIndex = devices.findIndex(d => d.deviceId === deviceId)
+  
+  if (existingIndex !== -1) {
+    devices[existingIndex] = {
+      ...devices[existingIndex],
+      alias: alias || devices[existingIndex].alias,
+      lastConnected: Date.now()
+    }
+    showToast('设备已更新')
+  } else {
+    devices.push({
+      deviceId: deviceId,
+      alias: alias,
+      createdAt: Date.now(),
+      lastConnected: Date.now()
+    })
+    showToast('设备已添加')
+  }
+  
+  saveDeviceList(devices)
+  renderDeviceList()
+  
+  deviceIdInput.value = ''
+  if (aliasInput) aliasInput.value = ''
+}
+
+function removeDeviceFromList(deviceId) {
+  if (!confirm('确定要删除设备 ' + deviceId + ' 吗？')) {
+    return
+  }
+  
+  const devices = loadDeviceList()
+  const index = devices.findIndex(d => d.deviceId === deviceId)
+  
+  if (index !== -1) {
+    devices.splice(index, 1)
+    saveDeviceList(devices)
+    renderDeviceList()
+    showToast('设备已删除')
+  }
+}
+
+function cancelDeviceManage() {
+  const panel = document.getElementById('deviceManagePanel')
+  if (panel) {
+    panel.style.display = 'none'
+  }
+  
+  const deviceIdInput = document.getElementById('newDeviceId')
+  const aliasInput = document.getElementById('newDeviceAlias')
+  if (deviceIdInput) deviceIdInput.value = ''
+  if (aliasInput) aliasInput.value = ''
+}
+
+function connectFromDeviceList(deviceId) {
+  const targetInput = document.getElementById('targetDeviceId')
+  if (targetInput) {
+    targetInput.value = deviceId
+    connectDevice()
+  }
+}
+
+function saveConnectedDevice(deviceId) {
+  if (!deviceId) return
+  
+  const devices = loadDeviceList()
+  const existingIndex = devices.findIndex(d => d.deviceId === deviceId)
+  
+  if (existingIndex !== -1) {
+    devices[existingIndex].lastConnected = Date.now()
+  } else {
+    devices.push({
+      deviceId: deviceId,
+      alias: '',
+      createdAt: Date.now(),
+      lastConnected: Date.now()
+    })
+  }
+  
+  saveDeviceList(devices)
+  renderDeviceList()
+}
+
 function onAddServerClickControlled() {
   const btn = document.getElementById('controlledAddServerBtn')
   const editIndex = btn ? btn.getAttribute('data-edit-index') : null
@@ -557,6 +716,7 @@ function switchControllerMode(mode) {
   } else {
     document.querySelector('#controllerPage .mode-tab:last-child').classList.add('active')
     document.getElementById('controllerSignalingMode').classList.add('active')
+    renderDeviceList()
   }
 }
 
@@ -1112,6 +1272,15 @@ window.editSignalingServerControlled = editSignalingServerControlled
 window.deleteSignalingServerControlled = deleteSignalingServerControlled
 window.selectServerControlled = selectServerControlled
 window.cancelEditServerControlled = cancelEditServerControlled
+
+// 设备列表管理
+window.manageDeviceList = manageDeviceList
+window.addDeviceToList = addDeviceToList
+window.removeDeviceFromList = removeDeviceFromList
+window.cancelDeviceManage = cancelDeviceManage
+window.connectFromDeviceList = connectFromDeviceList
+window.saveConnectedDevice = saveConnectedDevice
+window.renderDeviceList = renderDeviceList
 
 window.showIncomingConnectionDialog = showIncomingConnectionDialog
 window.startControllerConnection = startControllerConnection
