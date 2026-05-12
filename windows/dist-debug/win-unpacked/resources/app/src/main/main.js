@@ -1,7 +1,7 @@
 const { app } = require('electron')
 const path = require('path')
 const os = require('os')
-const { createMainWindow, createRemoteWindow } = require('./window-manager')
+const { createMainWindow, createRemoteWindow, createTray } = require('./window-manager')
 const { init: initIpcHandlers, generateDeviceId, loadDeviceId } = require('./ipc-handlers')
 const { createLogger } = require('./logger')
 const { getServiceIntegration } = require('./service-integration')
@@ -54,6 +54,7 @@ app.whenReady().then(() => {
   initIpcHandlers(deviceId, logger)
   
   createMainWindow()
+  createTray()
 
   app.on('activate', () => {
     if (require('electron').BrowserWindow.getAllWindows().length === 0) {

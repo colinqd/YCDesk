@@ -1,4 +1,4 @@
-const { safeStorage } = require('electron')
+const { safeStorage, app } = require('electron')
 const fs = require('fs')
 const path = require('path')
 const { execSync } = require('child_process')
@@ -7,10 +7,41 @@ const unlockIpcServer = require('./unlock-ipc-server')
 
 class CredentialsManager {
   constructor() {
-    this.configDir = path.join(__dirname, '../..', 'data')
-    this.credentialsFile = path.join(this.configDir, 'credentials.json')
-    this.ensureConfigDir()
+    this._configDir = null
+    this._credentialsFile = null
     this.credentialProviderAvailable = this.checkCredentialProvider()
+  }
+  
+  getConfigDir() {
+    if (this._configDir) {
+      return this._configDir
+    }
+    
+    try {
+      if (app && app.isReady()) {
+        this._configDir = path.join(app.getPath('userData'), 'data')
+      } else {
+        this._configDir = path.join(__dirname, '../..', 'data')
+      }
+    } catch (e) {
+      this._configDir = path.join(__dirname, '../..', 'data')
+    }
+    
+    return this._configDir
+  }
+  
+  getCredentialsFile() {
+    if (!this._credentialsFile) {
+      this._credentialsFile = path.join(this.getConfigDir(), 'credentials.json')
+    }
+    return this._credentialsFile
+  }
+  
+  ensureConfigDir() {
+    const configDir = this.getConfigDir()
+    if (!fs.existsSync(configDir)) {
+      fs.mkdirSync(configDir, { recursive: true })
+    }
   }
 
   checkCredentialProvider() {
@@ -31,7 +62,6 @@ class CredentialsManager {
     console.log('[CredentialsManager] unlockWithCredentialProvider 被调用，用户:', username)
     
     try {
-      // 使用 IPC 服务器设置凭据
       unlockIpcServer.setCredentials(username, password)
       
       return { 
@@ -47,45 +77,64 @@ class CredentialsManager {
     }
   }
 
-  ensureConfigDir() {
-    if (!fs.existsSync(this.configDir)) {
-      fs.mkdirSync(this.configDir, { recursive: true })
-    }
-  }
-
   isEncryptionAvailable() {
     return safeStorage.isEncryptionAvailable()
   }
 
   async saveUnlockPassword(password, remember = true) {
     try {
+      console.log('[CredentialsManager] saveUnlockPassword 开始执行')
+      
       if (!password) {
+        console.log('[CredentialsManager] 密码为空')
         return { success: false, message: '密码不能为空' }
       }
 
+      console.log('[CredentialsManager] 检查加密可用性...')
+      const encryptionAvailable = safeStorage.isEncryptionAvailable()
+      console.log('[CredentialsManager] safeStorage.isEncryptionAvailable() =', encryptionAvailable)
+      
+      if (!encryptionAvailable) {
+        console.error('[CredentialsManager] 系统加密不可用')
+        return { success: false, message: '系统加密不可用。请确保应用程序已正确初始化。' }
+      }
+
+      console.log('[CredentialsManager] 开始加密密码...')
       let encryptedPassword
-      if (safeStorage.isEncryptionAvailable()) {
+      try {
         encryptedPassword = safeStorage.encryptString(password).toString('base64')
-      } else {
-        return { success: false, message: '系统加密不可用，无法安全存储密码' }
+        console.log('[CredentialsManager] 密码加密成功，长度:', encryptedPassword.length)
+      } catch (encryptError) {
+        console.error('[CredentialsManager] 密码加密失败:', encryptError.message)
+        return { success: false, message: '密码加密失败: ' + encryptError.message }
       }
 
       const credentials = {
         encryptedPassword,
         rememberPassword: true,
         lastUpdated: Date.now(),
-        encrypted: safeStorage.isEncryptionAvailable()
+        encrypted: true
       }
 
-      fs.writeFileSync(
-        this.credentialsFile, 
-        JSON.stringify(credentials, null, 2), 
-        'utf-8'
-      )
+      console.log('[CredentialsManager] 准备写入文件:', this.getCredentialsFile())
+      
+      try {
+        this.ensureConfigDir()
+        fs.writeFileSync(
+          this.getCredentialsFile(), 
+          JSON.stringify(credentials, null, 2), 
+          'utf-8'
+        )
+        console.log('[CredentialsManager] 文件写入成功')
+      } catch (writeError) {
+        console.error('[CredentialsManager] 文件写入失败:', writeError.message)
+        return { success: false, message: '文件写入失败: ' + writeError.message }
+      }
 
+      console.log('[CredentialsManager] 密码保存成功')
       return { success: true, message: '密码保存成功' }
     } catch (error) {
-      console.error('保存解锁密码失败:', error)
+      console.error('[CredentialsManager] 保存解锁密码失败:', error)
       return { 
         success: false, 
         message: error.message || '保存密码失败' 
@@ -95,11 +144,12 @@ class CredentialsManager {
 
   async getUnlockPassword() {
     try {
-      if (!fs.existsSync(this.credentialsFile)) {
+      const credentialsFile = this.getCredentialsFile()
+      if (!fs.existsSync(credentialsFile)) {
         return { success: false, password: null }
       }
 
-      const credentialsData = fs.readFileSync(this.credentialsFile, 'utf-8')
+      const credentialsData = fs.readFileSync(credentialsFile, 'utf-8')
       const credentials = JSON.parse(credentialsData)
 
       if (!credentials.encryptedPassword || credentials.encryptedPassword.trim() === '') {
@@ -114,9 +164,9 @@ class CredentialsManager {
           const encryptedBuffer = Buffer.from(credentials.encryptedPassword, 'base64')
           password = safeStorage.decryptString(encryptedBuffer)
         } catch (decryptError) {
-          console.error('密码解密失败:', decryptError.message)
+          console.error('[CredentialsManager] 密码解密失败:', decryptError.message)
           try {
-            fs.unlinkSync(this.credentialsFile)
+            fs.unlinkSync(credentialsFile)
           } catch (e) {
           }
           return { success: false, password: null, error: '解密失败' }
@@ -127,7 +177,7 @@ class CredentialsManager {
 
       if (!password || password.trim() === '') {
         try {
-          fs.unlinkSync(this.credentialsFile)
+          fs.unlinkSync(credentialsFile)
         } catch (e) {
         }
         return { success: false, password: null }
@@ -135,9 +185,9 @@ class CredentialsManager {
 
       return { success: true, password }
     } catch (error) {
-      console.error('获取解锁密码失败:', error)
+      console.error('[CredentialsManager] 获取解锁密码失败:', error)
       try {
-        fs.unlinkSync(this.credentialsFile)
+        fs.unlinkSync(this.getCredentialsFile())
       } catch (e) {
       }
       return { success: false, password: null }
@@ -146,12 +196,13 @@ class CredentialsManager {
 
   async clearUnlockPassword() {
     try {
-      if (fs.existsSync(this.credentialsFile)) {
-        fs.unlinkSync(this.credentialsFile)
+      const credentialsFile = this.getCredentialsFile()
+      if (fs.existsSync(credentialsFile)) {
+        fs.unlinkSync(credentialsFile)
       }
       return { success: true, message: '密码已清除' }
     } catch (error) {
-      console.error('清除解锁密码失败:', error)
+      console.error('[CredentialsManager] 清除解锁密码失败:', error)
       return { 
         success: false, 
         message: error.message || '清除密码失败' 

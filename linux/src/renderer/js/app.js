@@ -10,58 +10,54 @@ let directManager = null
 let networkManager = null
 
 function initializeApp() {
-  console.log('[App] 开始初始化应用...')
-  console.log('[App] CONFIG 是否可用:', typeof CONFIG !== 'undefined' ? '是' : '否')
-  
-  try {
-    uiManager = new UIManager({
-      log: log
-    })
-    console.log('[App] uiManager 初始化成功')
+  uiManager = new UIManager({
+    log: log
+  })
 
-    historyManager = new HistoryManager({
-      storageKeys: CONFIG.storage.keys,
-      maxItems: CONFIG.maxHistoryItems,
-      log: log
-    })
-    console.log('[App] historyManager 初始化成功')
+  historyManager = new HistoryManager({
+    storageKeys: CONFIG.storage.keys,
+    maxItems: CONFIG.maxHistoryItems,
+    log: log
+  })
 
-    connectionManager = new ConnectionManager({
-      maxReconnectAttempts: CONFIG.maxReconnectAttempts,
-      baseReconnectDelay: CONFIG.baseReconnectDelay,
-      heartbeatInterval: CONFIG.heartbeatInterval,
-      log: log,
-      onStatusChange: (status) => {
-      }
-    })
-    console.log('[App] connectionManager 初始化成功, saveRoleAndServer 存在:', typeof connectionManager.saveRoleAndServer === 'function')
+  connectionManager = new ConnectionManager({
+    maxReconnectAttempts: CONFIG.maxReconnectAttempts,
+    baseReconnectDelay: CONFIG.baseReconnectDelay,
+    heartbeatInterval: CONFIG.heartbeatInterval,
+    log: log,
+    onStatusChange: (status) => {
+    }
+  })
 
-    signalingManager = new SignalingModeManager({
-      log: log,
-      uiManager: uiManager,
-      config: CONFIG,
-      onIncomingConnection: (fromDeviceId) => {
+  signalingManager = new SignalingModeManager({
+    log: log,
+    uiManager: uiManager,
+    config: CONFIG,
+    onIncomingConnection: (fromDeviceId) => {
+      const autoAccept = document.getElementById('autoAcceptConnection')?.checked
+      if (autoAccept) {
+        log('自动接受来自 ' + fromDeviceId + ' 的连接')
+        acceptConnection()
+      } else {
         if (uiManager.showIncomingConnectionDialog(fromDeviceId)) {
           acceptConnection()
         } else {
           rejectConnection()
         }
       }
-    })
-    console.log('[App] signalingManager 初始化成功')
+    },
+    onWebRTCConnected: (targetDeviceId, serverUrl) => {
+      if (targetDeviceId) {
+        saveConnectedDevice(targetDeviceId, serverUrl)
+      }
+    }
+  })
 
-    directManager = new DirectModeManager({
-      log: log,
-      uiManager: uiManager,
-      config: CONFIG
-    })
-    console.log('[App] directManager 初始化成功')
-    
-    console.log('[App] 应用初始化完成')
-  } catch (error) {
-    console.error('[App] 初始化失败:', error)
-    alert('应用初始化失败: ' + error.message)
-  }
+  directManager = new DirectModeManager({
+    log: log,
+    uiManager: uiManager,
+    config: CONFIG
+  })
 }
 
 function log(message) {
@@ -125,7 +121,7 @@ function reconnectFromHistory(type, index) {
     document.getElementById('controllerServerUrl').value = item.serverUrl
     document.getElementById('targetDeviceId').value = item.deviceId
 
-    if (!signalingManager.socket || !signalingManager.socket.connected) {
+    if (!signalingManager.signalingClient.isConnected()) {
       controllerConnectToServer()
     } else {
       connectDevice()
@@ -136,6 +132,395 @@ function reconnectFromHistory(type, index) {
 function deleteFromHistory(type, index) {
   historyManager.deleteFromHistory(type, index)
   renderHistory(type)
+}
+
+function manageSignalingServer() {
+  const panel = document.getElementById('serverManagePanel')
+  if (panel) {
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none'
+  }
+}
+
+async function loadDeviceList() {
+  try {
+    const result = await window.electronAPI.getDeviceList()
+    if (result.success) {
+      renderDeviceList(result.devices)
+    } else {
+      log('加载设备列表失败')
+    }
+  } catch (e) {
+    log('加载设备列表异常: ' + e.message)
+  }
+}
+
+function renderDeviceList(devices) {
+  const container = document.getElementById('deviceListContainer')
+  if (!container) return
+
+  if (!devices || devices.length === 0) {
+    container.innerHTML = '<div class="history-empty">暂无已保存的设备<br>连接成功后会自动添加</div>'
+    return
+  }
+
+  container.innerHTML = devices.map((device, index) => {
+    const alias = device.alias || ''
+    const displayName = alias ? `${alias} (${device.deviceId})` : device.deviceId
+    const lastConnected = device.lastConnected ? new Date(device.lastConnected).toLocaleDateString('zh-CN') : '未连接'
+    
+    return `
+      <div class="history-item">
+        <div class="history-info">
+          <div class="history-target">${displayName}</div>
+          <div class="history-time">最后连接: ${lastConnected}</div>
+        </div>
+        <div class="history-actions">
+          <button class="history-btn history-btn-connect" onclick="connectFromDeviceList('${device.deviceId}')">连接</button>
+          <button class="history-btn history-btn-delete" onclick="removeDeviceFromList('${device.deviceId}')">删除</button>
+        </div>
+      </div>
+    `
+  }).join('')
+}
+
+function manageDeviceList() {
+  const panel = document.getElementById('deviceManagePanel')
+  if (panel) {
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none'
+  }
+}
+
+async function addDeviceToList() {
+  const deviceIdInput = document.getElementById('newDeviceId')
+  const aliasInput = document.getElementById('newDeviceAlias')
+  
+  if (!deviceIdInput) return
+  
+  const deviceId = deviceIdInput.value.trim().toUpperCase()
+  const alias = aliasInput ? aliasInput.value.trim() : ''
+  
+  if (!deviceId) {
+    log('请输入设备ID')
+    return
+  }
+  
+  if (deviceId.length < 6 || deviceId.length > 16) {
+    log('设备ID长度必须在6-16个字符之间')
+    return
+  }
+  
+  try {
+    const serverUrl = document.getElementById('controllerServerUrl')?.value || ''
+    const result = await window.electronAPI.addDevice(deviceId, alias, serverUrl)
+    
+    if (result.success) {
+      log(result.message)
+      renderDeviceList(result.devices)
+      deviceIdInput.value = ''
+      if (aliasInput) aliasInput.value = ''
+    } else {
+      log('添加失败: ' + result.message)
+    }
+  } catch (e) {
+    log('添加设备异常: ' + e.message)
+  }
+}
+
+async function removeDeviceFromList(deviceId) {
+  if (!confirm('确定要删除设备 ' + deviceId + ' 吗？')) {
+    return
+  }
+  
+  try {
+    const result = await window.electronAPI.removeDevice(deviceId)
+    
+    if (result.success) {
+      log('设备已删除')
+      renderDeviceList(result.devices)
+    } else {
+      log('删除失败: ' + result.message)
+    }
+  } catch (e) {
+    log('删除设备异常: ' + e.message)
+  }
+}
+
+function cancelDeviceManage() {
+  const panel = document.getElementById('deviceManagePanel')
+  if (panel) {
+    panel.style.display = 'none'
+  }
+  
+  const deviceIdInput = document.getElementById('newDeviceId')
+  const aliasInput = document.getElementById('newDeviceAlias')
+  if (deviceIdInput) deviceIdInput.value = ''
+  if (aliasInput) aliasInput.value = ''
+}
+
+function connectFromDeviceList(deviceId) {
+  const targetInput = document.getElementById('targetDeviceId')
+  if (targetInput) {
+    targetInput.value = deviceId
+    connectDevice()
+  }
+}
+
+async function saveConnectedDevice(deviceId, serverUrl) {
+  try {
+    await window.electronAPI.addDevice(deviceId, '', serverUrl)
+    loadDeviceList()
+  } catch (e) {
+    log('保存设备信息失败: ' + e.message)
+  }
+}
+
+function onAddServerClick() {
+  const btn = document.getElementById('addServerBtn')
+  const editIndex = btn ? btn.getAttribute('data-edit-index') : null
+  if (editIndex !== null && editIndex !== undefined) {
+    updateSignalingServer(parseInt(editIndex))
+  } else {
+    addSignalingServer()
+  }
+}
+
+function addSignalingServer() {
+  const nameInput = document.getElementById('newServerName')
+  const urlInput = document.getElementById('newServerUrl')
+  if (!nameInput || !urlInput) return
+  
+  const name = nameInput.value.trim()
+  const url = urlInput.value.trim()
+  
+  if (!name) { alert('请输入服务器名称'); return }
+  if (!url) { alert('请输入服务器地址'); return }
+  
+  historyManager.addServer(name, url)
+  nameInput.value = ''
+  urlInput.value = ''
+  renderServerList()
+  log('信令服务器已添加: ' + name)
+}
+
+function updateSignalingServer(index) {
+  const nameInput = document.getElementById('newServerName')
+  const urlInput = document.getElementById('newServerUrl')
+  if (!nameInput || !urlInput) return
+  
+  const name = nameInput.value.trim()
+  const url = urlInput.value.trim()
+  
+  if (!name) { alert('请输入服务器名称'); return }
+  if (!url) { alert('请输入服务器地址'); return }
+  
+  historyManager.editServer(index, name, url)
+  nameInput.value = ''
+  urlInput.value = ''
+  const addBtn = document.getElementById('addServerBtn')
+  if (addBtn) {
+    addBtn.textContent = '添加'
+    addBtn.removeAttribute('data-edit-index')
+  }
+  renderServerList()
+  log('信令服务器已更新')
+}
+
+function editSignalingServer(index) {
+  const servers = historyManager.getServers()
+  if (index >= servers.length) return
+  
+  const server = servers[index]
+  const nameInput = document.getElementById('newServerName')
+  const urlInput = document.getElementById('newServerUrl')
+  const addBtn = document.getElementById('addServerBtn')
+  
+  if (nameInput) nameInput.value = server.name
+  if (urlInput) urlInput.value = server.url
+  if (addBtn) {
+    addBtn.textContent = '更新'
+    addBtn.setAttribute('data-edit-index', index)
+  }
+}
+
+function cancelEditServer() {
+  const nameInput = document.getElementById('newServerName')
+  const urlInput = document.getElementById('newServerUrl')
+  const addBtn = document.getElementById('addServerBtn')
+  if (nameInput) nameInput.value = ''
+  if (urlInput) urlInput.value = ''
+  if (addBtn) {
+    addBtn.textContent = '添加'
+    addBtn.removeAttribute('data-edit-index')
+  }
+}
+
+function manageSignalingServerControlled() {
+  const panel = document.getElementById('controlledServerManagePanel')
+  if (panel) {
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none'
+  }
+}
+
+function addSignalingServerControlled() {
+  const nameInput = document.getElementById('controlledNewServerName')
+  const urlInput = document.getElementById('controlledNewServerUrl')
+  if (!nameInput || !urlInput) return
+  
+  const name = nameInput.value.trim()
+  const url = urlInput.value.trim()
+  
+  if (!name) { alert('请输入服务器名称'); return }
+  if (!url) { alert('请输入服务器地址'); return }
+  
+  historyManager.addServer(name, url)
+  nameInput.value = ''
+  urlInput.value = ''
+  renderServerListControlled()
+  log('信令服务器已添加: ' + name)
+}
+
+function updateSignalingServerControlled(index) {
+  const nameInput = document.getElementById('controlledNewServerName')
+  const urlInput = document.getElementById('controlledNewServerUrl')
+  if (!nameInput || !urlInput) return
+  
+  const name = nameInput.value.trim()
+  const url = urlInput.value.trim()
+  
+  if (!name) { alert('请输入服务器名称'); return }
+  if (!url) { alert('请输入服务器地址'); return }
+  
+  historyManager.editServer(index, name, url)
+  nameInput.value = ''
+  urlInput.value = ''
+  const addBtn = document.getElementById('controlledAddServerBtn')
+  if (addBtn) {
+    addBtn.textContent = '添加'
+    addBtn.removeAttribute('data-edit-index')
+  }
+  renderServerListControlled()
+  log('信令服务器已更新')
+}
+
+function editSignalingServerControlled(index) {
+  const servers = historyManager.getServers()
+  if (index >= servers.length) return
+  
+  const server = servers[index]
+  const nameInput = document.getElementById('controlledNewServerName')
+  const urlInput = document.getElementById('controlledNewServerUrl')
+  const addBtn = document.getElementById('controlledAddServerBtn')
+  
+  if (nameInput) nameInput.value = server.name
+  if (urlInput) urlInput.value = server.url
+  if (addBtn) {
+    addBtn.textContent = '更新'
+    addBtn.setAttribute('data-edit-index', index)
+  }
+}
+
+function cancelEditServerControlled() {
+  const nameInput = document.getElementById('controlledNewServerName')
+  const urlInput = document.getElementById('controlledNewServerUrl')
+  const addBtn = document.getElementById('controlledAddServerBtn')
+  if (nameInput) nameInput.value = ''
+  if (urlInput) urlInput.value = ''
+  if (addBtn) {
+    addBtn.textContent = '添加'
+    addBtn.removeAttribute('data-edit-index')
+  }
+}
+
+function deleteSignalingServerControlled(index) {
+  historyManager.deleteServer(index)
+  renderServerListControlled()
+  log('信令服务器已删除')
+}
+
+function selectServerControlled(index) {
+  const servers = historyManager.getServers()
+  if (index >= servers.length) return
+  
+  const server = servers[index]
+  const urlInput = document.getElementById('controlledServerUrl')
+  if (urlInput) urlInput.value = server.url
+  log('已选择信令服务器: ' + server.name)
+}
+
+function renderServerListControlled() {
+  const listEl = document.getElementById('controlledSignalingServerList')
+  if (!listEl) return
+  
+  const servers = historyManager.getServers()
+  if (servers.length === 0) {
+    listEl.innerHTML = '<div class="history-empty">暂无已保存的信令服务器<br>请添加后从列表选择</div>'
+    return
+  }
+  
+  listEl.innerHTML = servers.map((server, index) => {
+    const time = new Date(server.timestamp).toLocaleDateString()
+    return `<div class="history-item" onclick="selectServerControlled(${index})">
+      <div class="history-info">
+        <div class="history-target">${server.name}</div>
+        <div class="history-meta">${server.url} · ${time}</div>
+      </div>
+      <div class="history-actions">
+        <button class="history-btn history-btn-connect" onclick="event.stopPropagation(); editSignalingServerControlled(${index})">编辑</button>
+        <button class="history-btn history-btn-delete" onclick="event.stopPropagation(); deleteSignalingServerControlled(${index})">删除</button>
+      </div>
+    </div>`
+  }).join('')
+}
+
+function onAddServerClickControlled() {
+  const btn = document.getElementById('controlledAddServerBtn')
+  const editIndex = btn ? btn.getAttribute('data-edit-index') : null
+  if (editIndex !== null && editIndex !== undefined) {
+    updateSignalingServerControlled(parseInt(editIndex))
+  } else {
+    addSignalingServerControlled()
+  }
+}
+
+function deleteSignalingServer(index) {
+  historyManager.deleteServer(index)
+  renderServerList()
+  log('信令服务器已删除')
+}
+
+function selectServer(index) {
+  const servers = historyManager.getServers()
+  if (index >= servers.length) return
+  
+  const server = servers[index]
+  const urlInput = document.getElementById('controllerServerUrl')
+  if (urlInput) urlInput.value = server.url
+  log('已选择信令服务器: ' + server.name)
+}
+
+function renderServerList() {
+  const listEl = document.getElementById('signalingServerList')
+  if (!listEl) return
+  
+  const servers = historyManager.getServers()
+  if (servers.length === 0) {
+    listEl.innerHTML = '<div class="history-empty">暂无已保存的信令服务器<br>请添加后从列表选择</div>'
+    return
+  }
+  
+  listEl.innerHTML = servers.map((server, index) => {
+    const time = new Date(server.timestamp).toLocaleDateString()
+    return `<div class="history-item" onclick="selectServer(${index})">
+      <div class="history-info">
+        <div class="history-target">${server.name}</div>
+        <div class="history-meta">${server.url} · ${time}</div>
+      </div>
+      <div class="history-actions">
+        <button class="history-btn history-btn-connect" onclick="event.stopPropagation(); editSignalingServer(${index})">编辑</button>
+        <button class="history-btn history-btn-delete" onclick="event.stopPropagation(); deleteSignalingServer(${index})">删除</button>
+      </div>
+    </div>`
+  }).join('')
 }
 
 function selectRole(role) {
@@ -157,7 +542,7 @@ function switchControlledMode(mode) {
       signalingManager.disconnect()
     }
   } else {
-    stopListening()
+    loadDeviceListControlled()
   }
 
   log('被控端切换到 ' + (mode === 'direct' ? '直连模式' : '信令服务器模式'))
@@ -171,6 +556,8 @@ function switchControllerMode(mode) {
     if (signalingManager) {
       signalingManager.disconnect()
     }
+  } else {
+    loadDeviceList()
   }
 
   log('主控端切换到 ' + (mode === 'direct' ? '直连模式' : '信令服务器模式'))
@@ -182,6 +569,39 @@ function goBack() {
   if (signalingManager) {
     signalingManager.disconnect()
   }
+}
+
+let currentSettingsPage = null
+
+function openSettingsPage() {
+  currentSettingsPage = uiManager.currentPage
+  
+  const pages = document.querySelectorAll('.page')
+  pages.forEach(page => page.classList.remove('active'))
+  
+  const settingsPage = document.getElementById('settingsPage')
+  if (settingsPage) {
+    settingsPage.classList.add('active')
+  }
+  
+  log('打开设置页面')
+}
+
+function closeSettingsPage() {
+  const settingsPage = document.getElementById('settingsPage')
+  if (settingsPage) {
+    settingsPage.classList.remove('active')
+  }
+  
+  if (currentSettingsPage) {
+    const page = document.getElementById(currentSettingsPage)
+    if (page) {
+      page.classList.add('active')
+    }
+    currentSettingsPage = null
+  }
+  
+  log('关闭设置页面')
 }
 
 async function initControlled() {
@@ -198,8 +618,6 @@ async function initControlled() {
   })
 
   window.electronAPI.on('direct-message', async (data) => {
-    log('[App-Controlled] 收到直连消息: ' + data.message.type + ', 完整内容: ' + JSON.stringify(data.message).substring(0, 300))
-    log('[App-Controlled] clientId: ' + data.clientId)
     await directManager.handleMessage(data.clientId, data.message)
   })
 
@@ -208,6 +626,7 @@ async function initControlled() {
     uiManager.updateServerStatus('就绪', 'disconnected')
   })
 
+  renderServerListControlled()
   await getLocalIps()
 }
 
@@ -219,34 +638,6 @@ async function initController() {
   log('YCDesk 主控端初始化完成，设备ID: ' + myDeviceId)
 
   window.electronAPI.on('direct-message', async (data) => {
-    log('[App] 收到直连消息: ' + data.message.type + ', 完整内容: ' + JSON.stringify(data.message).substring(0, 200))
-    log('[App] directManager 存在: ' + (directManager ? '是' : '否'))
-    log('[App] isDirectController: ' + (directManager ? directManager.isDirectController : 'N/A'))
-    
-    // 如果是主控端，且收到 answer 或 ice-candidate，转发到远程窗口
-    if (directManager && directManager.isDirectController) {
-      log('[App] 是主控端，准备转发消息')
-      if (data.message.type === 'answer') {
-        log('[App] 主控端收到 answer，转发到远程窗口')
-        log('[App] answer 数据: ' + JSON.stringify(data.message.answer).substring(0, 200))
-        try {
-          const result = await window.electronAPI.sendToRemoteWindow('webrtc-answer', { answer: data.message.answer })
-          log('[App] sendToRemoteWindow(answer) 返回: ' + JSON.stringify(result))
-        } catch (error) {
-          log('[App] sendToRemoteWindow(answer) 错误: ' + error.message)
-          console.error('[App] sendToRemoteWindow(answer) 详细错误:', error)
-        }
-      } else if (data.message.type === 'ice-candidate') {
-        log('[App] 主控端收到 ICE 候选，转发到远程窗口')
-        try {
-          const result = await window.electronAPI.sendToRemoteWindow('webrtc-ice-candidate', { candidate: data.message.candidate })
-          log('[App] sendToRemoteWindow(ice-candidate) 返回: ' + JSON.stringify(result))
-        } catch (error) {
-          log('[App] sendToRemoteWindow(ice-candidate) 错误: ' + error.message)
-          console.error('[App] sendToRemoteWindow(ice-candidate) 详细错误:', error)
-        }
-      }
-    }
     await directManager.handleMessage(data.clientId, data.message)
   })
 
@@ -255,58 +646,41 @@ async function initController() {
   })
 
   window.electronAPI.on('remote-window-ready', async () => {
-    log('[App] 收到远程窗口准备就绪信号')
-    log('[App] signalingManager.pendingStartSignal:', signalingManager ? signalingManager.pendingStartSignal : 'signalingManager is null')
-    log('[App] directManager.pendingStartSignal:', directManager ? directManager.pendingStartSignal : 'directManager is null')
+    log('收到远程窗口准备就绪信号')
     
-    // 检查信令模式是否有待发送的启动信号
     if (signalingManager && signalingManager.pendingStartSignal) {
-      log('[App] 发送信令模式启动信号到远程窗口: ' + JSON.stringify(signalingManager.pendingStartSignal))
+      log('发送信令模式启动信号到远程窗口: ' + JSON.stringify(signalingManager.pendingStartSignal))
       try {
         const result = await window.electronAPI.sendToRemoteWindow('signaling-mode-start', signalingManager.pendingStartSignal)
-        log('[App] sendToRemoteWindow 返回: ' + JSON.stringify(result))
+        log('sendToRemoteWindow 返回: ' + JSON.stringify(result))
       } catch (error) {
-        log('[App] sendToRemoteWindow 错误: ' + error.message)
+        log('sendToRemoteWindow 错误: ' + error.message)
       }
       signalingManager.pendingStartSignal = null
     }
     
-    // 检查直连模式是否有待发送的启动信号
     if (directManager && directManager.pendingStartSignal) {
-      log('[App] 发送直连模式启动信号到远程窗口: ' + JSON.stringify(directManager.pendingStartSignal))
+      log('发送直连模式启动信号到远程窗口: ' + JSON.stringify(directManager.pendingStartSignal))
       try {
         const result = await window.electronAPI.sendToRemoteWindow('direct-mode-start', directManager.pendingStartSignal)
-        log('[App] sendToRemoteWindow 返回: ' + JSON.stringify(result))
+        log('sendToRemoteWindow 返回: ' + JSON.stringify(result))
       } catch (error) {
-        log('[App] sendToRemoteWindow 错误: ' + error.message)
+        log('sendToRemoteWindow 错误: ' + error.message)
       }
       directManager.pendingStartSignal = null
     }
   })
 
   window.electronAPI.on('webrtc-offer', async (data) => {
-    log('[App] 收到远程窗口的offer，转发给被控端')
-    log('[App] offer 数据: ' + JSON.stringify(data).substring(0, 200))
-    log('[App] directManager 存在: ' + (directManager ? '是' : '否'))
-    if (directManager) {
-      log('[App] 调用 directManager.sendMessage')
-      try {
-        await directManager.sendMessage({
-          type: 'offer',
-          offer: data.offer
-        })
-        log('[App] sendMessage 调用完成')
-      } catch (error) {
-        log('[App] sendMessage 错误: ' + error.message)
-        console.error('[App] sendMessage 详细错误:', error)
-      }
-    } else {
-      log('[App] 无法转发，directManager 不存在')
-    }
+    log('收到远程窗口的offer，转发给被控端')
+    directManager.sendMessage({
+      type: 'offer',
+      offer: data.offer
+    })
   })
 
   window.electronAPI.on('webrtc-answer', async (data) => {
-    log('[App] 收到远程窗口的answer，转发给被控端')
+    log('收到远程窗口的answer，转发给被控端')
     directManager.sendMessage({
       type: 'answer',
       answer: data.answer
@@ -314,7 +688,7 @@ async function initController() {
   })
 
   window.electronAPI.on('webrtc-ice-candidate', async (data) => {
-    log('[App] 收到远程窗口的ICE候选，转发给被控端')
+    log('收到远程窗口的ICE候选，转发给被控端')
     directManager.sendMessage({
       type: 'ice-candidate',
       candidate: data.candidate
@@ -323,6 +697,7 @@ async function initController() {
 
   renderHistory('direct')
   renderHistory('signaling')
+  renderServerList()
 }
 
 async function getLocalIps() {
@@ -380,21 +755,6 @@ async function connectDirect() {
 }
 
 async function controlledConnectToServer() {
-  console.log('[App] controlledConnectToServer 被调用')
-  console.log('[App] connectionManager 是否可用:', connectionManager !== null)
-  
-  if (!connectionManager) {
-    console.error('[App] connectionManager 未初始化！')
-    alert('应用未正确初始化，请刷新页面')
-    return
-  }
-  
-  if (typeof connectionManager.saveRoleAndServer !== 'function') {
-    console.error('[App] saveRoleAndServer 不是函数！')
-    alert('应用未正确初始化，请刷新页面')
-    return
-  }
-  
   const serverUrl = uiManager.getControlledServerUrl()
   connectionManager.saveRoleAndServer('controlled', serverUrl)
   connectionManager.cancelReconnect()
@@ -407,21 +767,6 @@ function controlledDisconnectFromServer() {
 }
 
 async function controllerConnectToServer() {
-  console.log('[App] controllerConnectToServer 被调用')
-  console.log('[App] connectionManager 是否可用:', connectionManager !== null)
-  
-  if (!connectionManager) {
-    console.error('[App] connectionManager 未初始化！')
-    alert('应用未正确初始化，请刷新页面')
-    return
-  }
-  
-  if (typeof connectionManager.saveRoleAndServer !== 'function') {
-    console.error('[App] saveRoleAndServer 不是函数！')
-    alert('应用未正确初始化，请刷新页面')
-    return
-  }
-  
   const serverUrl = uiManager.getControllerServerUrl()
   connectionManager.saveRoleAndServer('controller', serverUrl)
   connectionManager.cancelReconnect()
@@ -436,14 +781,10 @@ function controllerDisconnectFromServer() {
 function connectDevice() {
   const targetDeviceId = uiManager.getTargetDeviceId()
   if (!uiManager._validateDeviceId(targetDeviceId)) {
-    alert('请输入有效的设备 ID（需要 9 位字符）')
+    alert('请输入有效的设备 ID（需要 6-16 位字符）')
     return false
   }
-  if (targetDeviceId === myDeviceId) {
-    alert('不能连接自己')
-    return false
-  }
-  if (!signalingManager.socket || !signalingManager.socket.connected) {
+  if (!signalingManager.signalingClient.isConnected()) {
     alert('未连接到信令服务器，请先连接服务器')
     return false
   }
@@ -468,6 +809,57 @@ function copyDeviceId() {
   uiManager.copyDeviceId(myDeviceId)
 }
 
+function showMessage(msg) {
+  const msgDiv = document.createElement('div')
+  msgDiv.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.8);color:white;padding:20px 40px;border-radius:8px;font-size:16px;z-index:10000;'
+  msgDiv.textContent = msg
+  document.body.appendChild(msgDiv)
+  setTimeout(() => msgDiv.remove(), 2000)
+}
+
+async function setCustomDeviceId() {
+  const customIdInput = document.getElementById('customDeviceId')
+  const customId = customIdInput.value.trim()
+  
+  if (!customId) {
+    showMessage('请输入设备ID')
+    return
+  }
+  
+  try {
+    const result = await window.electronAPI.setDeviceId(customId)
+    if (result.success) {
+      myDeviceId = result.deviceId
+      uiManager.setDeviceId(myDeviceId)
+      signalingManager.setDeviceId(myDeviceId)
+      directManager.setDeviceId(myDeviceId)
+      customIdInput.value = ''
+      showMessage('设备ID已设置为: ' + myDeviceId)
+    }
+  } catch (error) {
+    showMessage('设置失败: ' + error.message)
+  }
+}
+
+async function resetDeviceId() {
+  if (!confirm('确定要随机生成新的设备ID吗？')) {
+    return
+  }
+  
+  try {
+    const result = await window.electronAPI.resetDeviceId()
+    if (result.success) {
+      myDeviceId = result.deviceId
+      uiManager.setDeviceId(myDeviceId)
+      signalingManager.setDeviceId(myDeviceId)
+      directManager.setDeviceId(myDeviceId)
+      alert('设备ID已重置为: ' + myDeviceId)
+    }
+  } catch (error) {
+    alert('重置设备ID失败: ' + error.message)
+  }
+}
+
 function openRemoteWindow() {
   window.electronAPI.openRemoteWindow()
 }
@@ -488,6 +880,158 @@ async function closeWindow() {
   }
 }
 
+function toggleLogBox(boxId) {
+  const logBox = document.getElementById(boxId)
+  if (!logBox) return
+  
+  const btn = logBox.querySelector('.log-toggle-btn')
+  if (logBox.classList.contains('collapsed')) {
+    logBox.classList.remove('collapsed')
+    if (btn) btn.textContent = '收起'
+  } else {
+    logBox.classList.add('collapsed')
+    if (btn) btn.textContent = '展开'
+  }
+}
+
+function updateServerStatusDisplay(text, type) {
+  const badge = document.getElementById('serverStatus')
+  const dot = badge.querySelector('.status-dot')
+  const textEl = document.getElementById('serverStatusText')
+  if (textEl) textEl.textContent = text
+  if (badge) {
+    badge.classList.remove('connecting', 'error')
+    if (type === 'error') badge.classList.add('error')
+    else if (type === 'connecting') badge.classList.add('connecting')
+  }
+  if (dot) {
+    dot.classList.remove('connecting', 'error')
+    if (type === 'error') dot.classList.add('error')
+    else if (type === 'connecting') dot.classList.add('connecting')
+  }
+}
+
+async function loadDeviceListControlled() {
+  try {
+    const result = await window.electronAPI.getDeviceList()
+    if (result.success) {
+      renderDeviceListControlled(result.devices)
+    }
+  } catch (e) {
+    log('加载设备列表异常: ' + e.message)
+  }
+}
+
+function renderDeviceListControlled(devices) {
+  const container = document.getElementById('controlledDeviceListContainer')
+  if (!container) return
+
+  if (!devices || devices.length === 0) {
+    container.innerHTML = '<div class="history-empty">暂无已保存的设备<br>连接成功后会自动添加</div>'
+    return
+  }
+
+  container.innerHTML = devices.map((device, index) => {
+    const alias = device.alias || ''
+    const displayName = alias ? `${alias} (${device.deviceId})` : device.deviceId
+    const lastConnected = device.lastConnected ? new Date(device.lastConnected).toLocaleDateString('zh-CN') : '未连接'
+    
+    return `
+      <div class="history-item">
+        <div class="history-info">
+          <div class="history-target">${displayName}</div>
+          <div class="history-time">最后连接: ${lastConnected}</div>
+        </div>
+        <div class="history-actions">
+          <button class="history-btn history-btn-delete" onclick="removeDeviceFromListControlled('${device.deviceId}')">删除</button>
+        </div>
+      </div>
+    `
+  }).join('')
+}
+
+function manageDeviceListControlled() {
+  const panel = document.getElementById('controlledDeviceManagePanel')
+  if (panel) {
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none'
+  }
+}
+
+async function addDeviceToListControlled() {
+  const deviceIdInput = document.getElementById('controlledNewDeviceId')
+  const aliasInput = document.getElementById('controlledNewDeviceAlias')
+  
+  if (!deviceIdInput) return
+  
+  const deviceId = deviceIdInput.value.trim().toUpperCase()
+  const alias = aliasInput ? aliasInput.value.trim() : ''
+  
+  if (!deviceId) {
+    log('请输入设备ID')
+    return
+  }
+  
+  if (deviceId.length < 6 || deviceId.length > 16) {
+    log('设备ID长度必须在6-16个字符之间')
+    return
+  }
+  
+  try {
+    const serverUrl = document.getElementById('controlledServerUrl')?.value || ''
+    const result = await window.electronAPI.addDevice(deviceId, alias, serverUrl)
+    
+    if (result.success) {
+      log(result.message)
+      renderDeviceListControlled(result.devices)
+      deviceIdInput.value = ''
+      if (aliasInput) aliasInput.value = ''
+    } else {
+      log('添加失败: ' + result.message)
+    }
+  } catch (e) {
+    log('添加设备异常: ' + e.message)
+  }
+}
+
+async function removeDeviceFromListControlled(deviceId) {
+  if (!confirm('确定要删除设备 ' + deviceId + ' 吗？')) {
+    return
+  }
+  
+  try {
+    const result = await window.electronAPI.removeDevice(deviceId)
+    
+    if (result.success) {
+      log('设备已删除')
+      renderDeviceListControlled(result.devices)
+    } else {
+      log('删除失败: ' + result.message)
+    }
+  } catch (e) {
+    log('删除设备异常: ' + e.message)
+  }
+}
+
+function cancelDeviceManageControlled() {
+  const panel = document.getElementById('controlledDeviceManagePanel')
+  if (panel) {
+    panel.style.display = 'none'
+  }
+  
+  const deviceIdInput = document.getElementById('controlledNewDeviceId')
+  const aliasInput = document.getElementById('controlledNewDeviceAlias')
+  if (deviceIdInput) deviceIdInput.value = ''
+  if (aliasInput) aliasInput.value = ''
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   initializeApp()
 })
+
+window.manageSignalingServerControlled = manageSignalingServerControlled
+window.addSignalingServerControlled = addSignalingServerControlled
+window.onAddServerClickControlled = onAddServerClickControlled
+window.editSignalingServerControlled = editSignalingServerControlled
+window.deleteSignalingServerControlled = deleteSignalingServerControlled
+window.selectServerControlled = selectServerControlled
+window.cancelEditServerControlled = cancelEditServerControlled

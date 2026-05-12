@@ -249,6 +249,18 @@ class SignalingModeManager {
           console.log('[SignalingModeManager] dataChannelManager 不存在，跳过')
         }
       })
+      
+      window.electronAPI.on('screen-capture-control', (data) => {
+        console.log('[SignalingModeManager] 收到屏幕捕获控制: ' + JSON.stringify(data))
+        this.logFn('收到屏幕捕获控制: ' + data.action)
+        if (data.action === 'stop') {
+          this.logFn('[信令模式] 停止屏幕捕获')
+          this.stopScreenCapture()
+        } else if (data.action === 'start') {
+          this.logFn('[信令模式] 恢复屏幕捕获')
+          this.refreshVideoStream()
+        }
+      })
     }
     
     this.logFn('被控端 PeerConnection 已创建，等待接收Offer...')
@@ -358,6 +370,9 @@ class SignalingModeManager {
       this.logFn('[信令模式] 连接状态: ' + this.peerConnection.connectionState)
       if (this.peerConnection.connectionState === 'connected') {
         this.logFn('[信令模式] WebRTC连接已建立')
+        if (typeof this.onWebRTCConnected === 'function') {
+          this.onWebRTCConnected(this.targetDeviceId, this.currentServerUrl)
+        }
       } else if (this.peerConnection.connectionState === 'failed') {
         this.logFn('[信令模式] WebRTC连接失败')
       }
@@ -627,7 +642,10 @@ class SignalingModeManager {
     try {
       this.stopScreenCapture()
 
+      this.logFn('[信令模式] 获取屏幕源...')
       const sources = await window.electronAPI.getSources()
+      this.logFn('[信令模式] 找到 ' + sources.length + ' 个屏幕源')
+      
       if (sources.length === 0) {
         this.logFn('[信令模式] 未找到屏幕源，刷新失败')
         return
@@ -636,6 +654,8 @@ class SignalingModeManager {
       const maxWidth = this.config.screenCapture?.maxWidth || 1920
       const maxHeight = this.config.screenCapture?.maxHeight || 1080
 
+      this.logFn('[信令模式] 请求屏幕捕获，最大分辨率: ' + maxWidth + 'x' + maxHeight)
+      
       this.currentStream = await navigator.mediaDevices.getUserMedia({
         audio: false,
         video: {
@@ -649,8 +669,11 @@ class SignalingModeManager {
         }
       })
 
+      this.logFn('[信令模式] 屏幕捕获成功，获取到 ' + this.currentStream.getVideoTracks().length + ' 个视频轨道')
+
       const tracks = this.currentStream.getVideoTracks()
       tracks.forEach(track => {
+        this.logFn('[信令模式] 添加视频轨道: ' + track.label + ', ' + track.width + 'x' + track.height)
         const sender = this.peerConnection.addTrack(track, this.currentStream)
         try {
           const parameters = sender.getParameters()
@@ -660,7 +683,9 @@ class SignalingModeManager {
           parameters.encodings[0].maxBitrate = 8000000
           parameters.encodings[0].maxFramerate = 30
           sender.setParameters(parameters)
-        } catch (e) {}
+        } catch (e) {
+          this.logFn('[信令模式] 设置编码参数失败: ' + e.message)
+        }
       })
 
       this.logFn('[信令模式] 视频流已刷新，发起重新协商...')
@@ -679,6 +704,7 @@ class SignalingModeManager {
       this.logFn('[信令模式] 重新协商 offer 已发送')
     } catch (error) {
       this.logFn('[信令模式] 刷新视频流失败: ' + error.message)
+      console.error('[信令模式] 刷新视频流详细错误:', error)
     }
   }
 

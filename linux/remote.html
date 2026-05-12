@@ -16,17 +16,20 @@
       background: #1a1a2e;
       overflow: hidden;
       height: 100vh;
-      display: flex;
-      flex-direction: column;
     }
 
     .toolbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
       background: #16213e;
       padding: 10px 20px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       border-bottom: 1px solid #0f3460;
+      z-index: 1000;
     }
 
     .toolbar-left {
@@ -55,6 +58,14 @@
       background: #28a745;
       border-radius: 50%;
       animation: pulse 2s infinite;
+    }
+
+    .status-dot.connecting {
+      background: #ffc107;
+    }
+
+    .status-dot.error {
+      background: #dc3545;
     }
 
     @keyframes pulse {
@@ -93,61 +104,210 @@
       color: #fff;
     }
 
-    .content {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-      overflow: hidden;
-    }
-
-    .screen-container {
+    #remoteScreen {
+      position: absolute;
+      top: 0;
+      left: 0;
       background: #0f0f23;
       border-radius: 12px;
       box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-      overflow: hidden;
-      width: 1280px;
-      height: 720px;
-      max-width: 100%;
-      max-height: calc(100vh - 150px);
-      position: relative;
+      width: 100vw;
+      height: 100vh;
+      z-index: 1;
+      transform-origin: center center;
     }
 
-    .video-wrapper {
+    #videoWrapper {
       position: absolute;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
       overflow: hidden;
+      border-radius: 12px;
     }
 
-    .video-container {
+    #videoContainer {
       position: absolute;
-      top: 0;
-      left: 0;
-      transform-origin: 0 0;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
     }
 
-    .screen-video {
+    #screenVideo {
       display: block;
-      width: 100%;
-      height: 100%;
       background: #000;
       cursor: crosshair;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
     }
 
-    .placeholder {
-      width: 1280px;
-      max-width: 100%;
-      height: 720px;
-      max-height: calc(100vh - 150px);
+    .video-frozen #screenVideo,
+    .video-frozen canvas:not(#lockScreenCanvas),
+    .video-frozen video {
+      filter: grayscale(0.6) brightness(0.5);
+      transition: filter 0.3s;
+    }
+
+    #unlockOverlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.92);
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #unlockOverlay.hidden {
+      display: none;
+    }
+
+    .unlock-dialog {
+      background: linear-gradient(135deg, #1a1a2e, #16213e);
+      border: 2px solid #e74c3c;
+      border-radius: 16px;
+      padding: 40px;
+      width: 420px;
+      max-width: 90%;
+      box-shadow: 0 20px 60px rgba(231, 76, 60, 0.3);
+    }
+
+    .unlock-dialog h2 {
+      color: #e74c3c;
+      margin-bottom: 8px;
+      text-align: center;
+      font-size: 22px;
+      font-weight: 700;
+    }
+
+    .unlock-dialog .unlock-subtitle {
+      color: #ccc;
+      text-align: center;
+      margin-bottom: 24px;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .unlock-input-group {
+      margin-bottom: 20px;
+    }
+
+    .unlock-input-group label {
+      display: block;
+      color: #fff;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+
+    .unlock-input {
+      width: 100%;
+      padding: 14px 16px;
+      background: #0f3460;
+      border: 1px solid #1a4a7a;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 16px;
+      outline: none;
+      transition: all 0.3s;
+    }
+
+    .unlock-input:focus {
+      border-color: #e94560;
+      box-shadow: 0 0 0 3px rgba(233, 69, 96, 0.1);
+    }
+
+    .unlock-remember-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+
+    .unlock-remember-group input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+    }
+
+    .unlock-remember-group label {
+      color: #aaa;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .unlock-buttons {
+      display: flex;
+      gap: 12px;
+    }
+
+    .unlock-btn {
+      flex: 1;
+      padding: 14px 24px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    .unlock-btn-primary {
+      background: #e94560;
+      color: #fff;
+    }
+
+    .unlock-btn-primary:hover {
+      background: #ff5a75;
+    }
+
+    .unlock-btn-secondary {
+      background: #0f3460;
+      color: #fff;
+      border: 1px solid #1a4a7a;
+    }
+
+    .unlock-btn-secondary:hover {
+      background: #1a4a7a;
+    }
+
+    .unlock-message {
+      margin-top: 16px;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 14px;
+      text-align: center;
+      display: none;
+    }
+
+    .unlock-message.success {
+      display: block;
+      background: rgba(40, 167, 69, 0.2);
+      color: #28a745;
+    }
+
+    .unlock-message.error {
+      display: block;
+      background: rgba(220, 53, 69, 0.2);
+      color: #dc3545;
+    }
+
+    #placeholder {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       color: #666;
+      border-radius: 12px;
+      z-index: 10;
     }
 
     .placeholder-icon {
@@ -165,6 +325,24 @@
       color: #888;
     }
 
+    #clickIndicator {
+      position: absolute;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: rgba(233, 69, 96, 0.6);
+      pointer-events: none;
+      transform: translate(-50%, -50%) scale(0);
+      opacity: 0;
+      z-index: 100;
+      transition: transform 0.3s ease-out, opacity 0.3s ease-out;
+    }
+
+    #clickIndicator.show {
+      transform: translate(-50%, -50%) scale(1);
+      opacity: 1;
+    }
+
     .info-bar {
       position: fixed;
       bottom: 20px;
@@ -178,6 +356,7 @@
       display: flex;
       gap: 20px;
       backdrop-filter: blur(10px);
+      z-index: 1000;
     }
 
     .info-item {
@@ -193,35 +372,96 @@
     .info-value {
       color: #fff;
     }
+
+    #debugLog {
+      position: fixed;
+      top: 60px;
+      right: 10px;
+      width: 350px;
+      max-height: 300px;
+      background: rgba(0,0,0,0.8);
+      color: #0f0;
+      font-family: monospace;
+      font-size: 11px;
+      overflow-y: auto;
+      border-radius: 5px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    #debugLogContent {
+      flex: 1;
+      padding: 10px;
+      overflow-y: auto;
+      user-select: text;
+    }
+    
+    #debugLogToolbar {
+      display: flex;
+      gap: 5px;
+      padding: 8px 10px;
+      border-top: 1px solid #333;
+      background: rgba(0,0,0,0.5);
+    }
+    
+    .log-btn {
+      background: #333;
+      border: 1px solid #555;
+      color: #ccc;
+      padding: 4px 10px;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 11px;
+      transition: all 0.2s;
+    }
+    
+    .log-btn:hover {
+      background: #444;
+      border-color: #666;
+    }
   </style>
 </head>
 <body>
-  <div class="toolbar" id="toolbar" style="-webkit-app-region: drag;">
-    <div class="toolbar-left" style="-webkit-app-region: no-drag;">
+  <div class="toolbar">
+    <div class="toolbar-left">
       <div class="logo">YCDesk</div>
       <div class="connection-status">
-        <span class="status-dot"></span>
+        <span class="status-dot" id="statusDot"></span>
         <span id="statusText">连接中...</span>
       </div>
     </div>
-    <div class="toolbar-right" style="-webkit-app-region: no-drag;">
-      <button class="toolbar-btn" onclick="toggleFullscreen()">全屏</button>
-      <button class="toolbar-btn danger" onclick="disconnect()">断开</button>
+    <div class="toolbar-right">
+      <select id="resolutionSelect" style="background: #333; color: #ccc; border: 1px solid #555; border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer;">
+        <option value="auto">自动分辨率</option>
+        <option value="1920x1080">1920x1080</option>
+        <option value="1600x900">1600x900</option>
+        <option value="1280x720">1280x720</option>
+        <option value="1024x768">1024x768</option>
+        <option value="800x600">800x600</option>
+      </select>
+      <button class="toolbar-btn" onclick="window.ToolbarManager.unlockPanel()">🔓 解锁</button>
+      <button class="toolbar-btn" onclick="window.ToolbarManager.lockRemoteScreen(window.connectionManager)">🔒 锁屏</button>
+      <button class="toolbar-btn" onclick="UIState.toggleDebugLog()">日志</button>
+      <button class="toolbar-btn" onclick="UIState.toggleFullscreen()">全屏</button>
+      <button class="toolbar-btn danger" onclick="window.ToolbarManager.disconnectAndLock(window.connectionManager)">🚪 退出并锁屏</button>
+      <button class="toolbar-btn danger" onclick="window.ToolbarManager.disconnect(window.connectionManager)">断开</button>
     </div>
   </div>
 
-  <div class="content">
-    <div class="screen-container" id="remoteScreen">
-      <div class="placeholder" id="placeholder">
-        <div class="placeholder-icon">🖥️</div>
-        <div class="placeholder-text">正在建立连接...</div>
-        <div class="placeholder-subtext" id="subtext">请稍候</div>
+  <div id="remoteScreen">
+    <div id="placeholder">
+      <div class="placeholder-icon">🖥️</div>
+      <div class="placeholder-text">正在建立连接...</div>
+      <div class="placeholder-subtext" id="subtext">请稍候</div>
+    </div>
+    <div id="videoWrapper">
+      <div id="videoContainer">
+        <video id="screenVideo" autoplay playsinline style="display: none;"></video>
+        <canvas id="optimizedCanvas" style="display: none; width: 100%; height: 100%; object-fit: contain; cursor: crosshair;"></canvas>
+        <canvas id="lockScreenCanvas" style="display:none; width:100%; height:100%; object-fit:contain; cursor:crosshair;"></canvas>
       </div>
-      <div class="video-wrapper" id="videoWrapper">
-        <div class="video-container" id="videoContainer">
-          <video class="screen-video" id="screenVideo" autoplay playsinline style="display: none;"></video>
-        </div>
-      </div>
+      <div id="clickIndicator"></div>
     </div>
   </div>
 
@@ -238,1142 +478,490 @@
       <span class="info-label">分辨率:</span>
       <span class="info-value" id="resolution">--</span>
     </div>
+    <div class="info-item">
+      <span class="info-label">状态:</span>
+      <span class="info-value" id="connectionState">--</span>
+    </div>
   </div>
 
-  <div id="debugLog" style="position: fixed; top: 60px; right: 10px; width: 350px; max-height: 300px; background: rgba(0,0,0,0.8); color: #0f0; font-family: monospace; font-size: 11px; padding: 10px; overflow-y: auto; border-radius: 5px; z-index: 9999;"></div>
+  <div id="debugLog">
+    <div id="debugLogContent"></div>
+    <div id="debugLogToolbar">
+      <button class="log-btn" onclick="UIState.copyAllLogs()">全部复制</button>
+      <button class="log-btn" onclick="UIState.copySelectedLogs()">选择复制</button>
+      <button class="log-btn" onclick="UIState.clearLogs()">清空</button>
+    </div>
+  </div>
 
-  <script src="./shared/data-channel-manager.js"></script>
-  <script src="./shared/components/matrix-transformer.js"></script>
-  <script>
-    let videoElement = null;
-    let videoContainer = null;
-    let videoWrapper = null;
-    let screenContainer = null;
-    let matrixTransformer = null;
-    let frameCount = 0;
-    let lastTime = performance.now();
-    let sendInputEvent = null;
-    let latencyCheckInterval = null;
-    let lastLatency = 0;
-    let peerConnection = null;
-    let dataChannelManager = null;
-    let pendingIceCandidates = [];
-    let isDragging = false;
-    let lastMouseX = 0;
-    let lastMouseY = 0;
-    let initialScale = 1;
-    let initialDistance = 0;
-    
-    let connectionMode = 'direct';
-    let signalingSessionId = null;
-    let signalingTargetDeviceId = null;
-    let isSignalingController = false;
-    
-    // 直连模式变量
-    let directClientId = null;
-    let isDirectController = false;
+  <!-- 外部库和共享模块 -->
+  <script src="shared/data-channel-manager.js"></script>
+  <script src="shared/input-protocol.js"></script>
+  <script src="src/renderer/js/video-frame-receiver.js"></script>
+  <script src="src/renderer/js/remote-video-handler.js"></script>
+  <script src="shared/components/matrix-transformer.js"></script>
+  <script src="shared/connection-state-machine.js"></script>
+  <script src="shared/resolution-negotiator.js"></script>
+  <script src="shared/auxiliary-channel-manager.js"></script>
+  <script src="shared/fallback-handler.js"></script>
+  <script src="shared/connection-manager-base.js"></script>
+  <script src="shared/direct-connection-manager.js"></script>
+  <script src="shared/signaling-connection-manager.js"></script>
 
-    function log(message) {
-      const timestamp = new Date().toLocaleTimeString();
-      const logMessage = `[${timestamp}] ${message}`;
-      console.log(logMessage);
+  <!-- 模块化 JS -->
+  <script src="src/renderer/js/modules/ui-state.js"></script>
+  <script src="src/renderer/js/modules/keyboard-handler.js"></script>
+  <script src="src/renderer/js/modules/mouse-handler.js"></script>
+  <script src="src/renderer/js/modules/touch-handler.js"></script>
+  <script src="src/renderer/js/modules/toolbar-manager.js"></script>
+  <script src="src/renderer/js/modules/connection-events.js"></script>
+  <script src="src/renderer/js/modules/unlock-ui.js"></script>
+
+  <!-- 解锁面板 HTML -->
+  <div id="unlockOverlay" class="hidden">
+    <div class="unlock-dialog">
+      <h2>🔒 被控端已锁定</h2>
+      <div class="unlock-subtitle">远程电脑已进入锁屏状态，画面已暂停<br>请输入密码进行远程解锁以恢复连接</div>
       
-      const debugLog = document.getElementById('debugLog');
-      if (debugLog) {
-        const div = document.createElement('div');
-        div.textContent = logMessage;
-        debugLog.appendChild(div);
-        debugLog.scrollTop = debugLog.scrollHeight;
-      }
-    }
+      <div class="unlock-input-group">
+        <label for="unlockPassword">密码</label>
+        <input type="password" id="unlockPassword" class="unlock-input" placeholder="输入解锁密码">
+      </div>
+      
+      <div class="unlock-remember-group">
+        <input type="checkbox" id="rememberUnlockPassword">
+        <label for="rememberUnlockPassword">记住密码（加密存储）</label>
+      </div>
+      
+      <div class="unlock-buttons">
+        <button class="unlock-btn unlock-btn-primary" id="btnManualUnlock">解锁</button>
+        <button class="unlock-btn unlock-btn-secondary" id="btnAutoUnlock" style="display: none;">自动解锁</button>
+      </div>
+      
+      <div id="unlockMessage" class="unlock-message"></div>
+    </div>
+  </div>
 
-    let isFullscreenMode = false;
+  <script>
+    // 全局错误处理
+    window.onerror = function(msg, url, line, col, error) {
+      UIState.log('[全局错误] ' + msg + ' (' + url + ':' + line + ')');
+      return false;
+    };
+    window.onunhandledrejection = function(event) {
+      UIState.log('[Promise错误] ' + event.reason);
+    };
 
-    async function toggleFullscreen() {
+    // === 应用状态变量 ===
+    var videoElement = null;
+    var videoContainer = null;
+    var videoWrapper = null;
+    var remoteScreenEl = null;
+    var matrixTransformer = null;
+    var connectionManager = null;
+    var remoteVideoHandler = null;
+    var inputEventsSetup = false;
+    var isDragging = false;
+    var connectionMode = 'direct';
+    var lastMouseX = 0;
+    var lastMouseY = 0;
+
+    window.isDragging = false;
+
+    // === MatrixTransformer/视频/性能 ===
+    function setupMatrixTransformer() {
       try {
-        const result = await window.electronAPI.toggleRemoteFullscreen();
-        if (result.success) {
-          isFullscreenMode = result.isFullscreen;
-          log('全屏模式: ' + (isFullscreenMode ? '已开启' : '已退出'));
-          setTimeout(updateDisplaySize, 100);
+        UIState.log('setupMatrixTransformer 开始执行');
+        UIState.log('setupMatrixTransformer: window.MatrixTransformer=' + !!window.MatrixTransformer);
+        UIState.log('setupMatrixTransformer: typeof MatrixTransformer=' + typeof MatrixTransformer);
+        
+        if (typeof MatrixTransformer === 'undefined' && window.MatrixTransformer) {
+          MatrixTransformer = window.MatrixTransformer;
         }
-      } catch (e) {
-        console.error('切换全屏失败:', e);
+        
+        if (typeof MatrixTransformer === 'undefined') {
+          UIState.log('setupMatrixTransformer: MatrixTransformer 仍未定义，尝试延迟重试');
+          setTimeout(setupMatrixTransformer, 100);
+          return;
+        }
+        
+        matrixTransformer = new MatrixTransformer({ logger: { log: function(m) { UIState.log(m) } } });
+        UIState.log('setupMatrixTransformer: matrixTransformer 实例创建成功');
+        
+        var viewportWidth = window.innerWidth;
+        var viewportHeight = window.innerHeight;
+        matrixTransformer.setScreenSize(viewportWidth, viewportHeight);
+        UIState.log('setupMatrixTransformer: 设置屏幕尺寸 ' + viewportWidth + 'x' + viewportHeight);
+        
+        var elementRect = remoteScreenEl.getBoundingClientRect();
+        matrixTransformer.setElementSize(elementRect.width, elementRect.height);
+        UIState.log('setupMatrixTransformer: 设置元素尺寸 ' + elementRect.width + 'x' + elementRect.height);
+        
+        var center = matrixTransformer.calculateCenterPosition();
+        matrixTransformer.applyTransform(remoteScreenEl);
+        UIState.log('setupMatrixTransformer: 完成');
+      } catch (error) {
+        UIState.log('setupMatrixTransformer 出错: ' + error.message + '\n' + error.stack);
       }
     }
 
-    function updateDisplaySize() {
-      if (matrixTransformer && screenContainer) {
-        const rect = screenContainer.getBoundingClientRect();
-        matrixTransformer.setScreenSize(rect.width, rect.height);
-        log('屏幕尺寸更新: ' + rect.width + 'x' + rect.height);
-      }
+    function setupPanZoomEvents() {
+      remoteScreenEl.addEventListener('mousedown', function(e) {
+        if (e.button === 1) {
+          isDragging = true;
+          window.isDragging = true;
+          lastMouseX = e.clientX;
+          lastMouseY = e.clientY;
+          e.preventDefault();
+        }
+      });
+
+      remoteScreenEl.addEventListener('mousemove', function(e) {
+        if (isDragging && matrixTransformer) {
+          var deltaX = e.clientX - lastMouseX;
+          var deltaY = e.clientY - lastMouseY;
+          matrixTransformer.updatePan(deltaX, deltaY);
+          matrixTransformer.applyTransform(remoteScreenEl);
+          lastMouseX = e.clientX;
+          lastMouseY = e.clientY;
+        }
+      });
+
+      remoteScreenEl.addEventListener('mouseup', function(e) {
+        if (e.button === 1) { isDragging = false; window.isDragging = false; }
+      });
+
+      remoteScreenEl.addEventListener('mouseleave', function() {
+        isDragging = false; window.isDragging = false;
+      });
+
+      remoteScreenEl.addEventListener('wheel', function(e) {
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          if (!matrixTransformer) return;
+          var scaleFactor = e.deltaY > 0 ? 0.9 : 1.1;
+          var newScale = matrixTransformer.scale * scaleFactor;
+          matrixTransformer.updateScale(newScale, e.clientX, e.clientY);
+          matrixTransformer.applyTransform(remoteScreenEl);
+        }
+      }, { passive: false });
     }
 
-    window.addEventListener('resize', () => {
-      updateDisplaySize();
+    function setupPerformanceMonitor() {
+      var stats = { fps: 0, frameCount: 0, lastTime: performance.now() };
+
+      function updateStats() {
+        var now = performance.now();
+        var elapsed = (now - stats.lastTime) / 1000;
+        if (elapsed >= 1) {
+          stats.fps = Math.round(stats.frameCount / elapsed);
+          stats.frameCount = 0;
+          stats.lastTime = now;
+          var fpsEl = document.getElementById('fps');
+          if (fpsEl) fpsEl.textContent = stats.fps + ' fps';
+        }
+        requestAnimationFrame(updateStats);
+      }
+
+      if (videoElement) {
+        videoElement.addEventListener('timeupdate', function() { stats.frameCount++; });
+      }
+
+      setInterval(function() {
+        if (connectionManager && connectionManager.peerConnection) {
+          connectionManager.peerConnection.getStats().then(function(statsReport) {
+            statsReport.forEach(function(report) {
+              if (report.type === 'inbound-rtp' && report.kind === 'video') {
+                stats.bytesReceived = report.bytesReceived || 0;
+                stats.packetsLost = report.packetsLost || 0;
+              }
+            });
+          });
+        }
+      }, 1000);
+
+      updateStats();
+    }
+
+    function requestVideoRefresh() {
+      if (!connectionManager || !connectionManager.dataChannelManager || !connectionManager.dataChannelManager.isOpen()) {
+        UIState.log('无法请求视频刷新：数据通道未就绪');
+        return;
+      }
+      UIState.log('发送视频刷新请求到被控端...');
+      connectionManager.dataChannelManager.send({ type: 'video-refresh-request', timestamp: Date.now() });
+    }
+
+    // === 事件监听器 ===
+    function setupUnlockStateListener() {
+      window.electronAPI.on('unlock-state-changed', function(data) {
+        UIState.log('收到锁定状态变化: isLocked=' + data.isLocked);
+        var lockCanvas = document.getElementById('lockScreenCanvas');
+        var vc = document.getElementById('videoContainer');
+        if (data.isLocked === false) {
+          UIState.log('屏幕已解锁，隐藏解锁面板和锁屏画面...');
+          if (window.unlockUI) window.unlockUI.hideOverlay();
+          if (lockCanvas) lockCanvas.style.display = 'none';
+          UIState.updateStatus('已连接');
+          if (vc) vc.classList.remove('video-frozen');
+          
+          // 延迟发送视频刷新请求，给被控端足够时间恢复
+          setTimeout(function() { 
+            UIState.log('发送第一次视频刷新请求...');
+            requestVideoRefresh(); 
+          }, 1000);
+          
+          // 如果第一次失败，再尝试一次
+          setTimeout(function() { 
+            UIState.log('发送第二次视频刷新请求（备用）...');
+            requestVideoRefresh(); 
+          }, 3000);
+        } else if (data.isLocked === true) {
+          UIState.log('屏幕已锁定，显示锁屏画面和解锁面板...');
+          UIState.updateStatus('已锁定', 'error');
+          if (vc) vc.classList.add('video-frozen');
+          if (lockCanvas) lockCanvas.style.display = 'block';
+          if (window.unlockUI) window.unlockUI.showOverlay();
+        }
+      });
+    }
+
+    function setupLockScreenFrameListener() {
+      window.electronAPI.on('lock-screen-frame', function(data) {
+        var canvas = document.getElementById('lockScreenCanvas');
+        if (!canvas) return;
+        var img = new Image();
+        img.onload = function() {
+          canvas.width = img.width;
+          canvas.height = img.height;
+          var ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+        };
+        img.src = 'data:image/jpeg;base64,' + data.jpeg;
+      });
+    }
+
+    // === 输入事件 ===
+    window.setupInputEvents = function() {
+      UIState.log('[remote.html] setupInputEvents() called');
+      if (inputEventsSetup) return;
+      inputEventsSetup = true;
+      UIState.log('setupInputEvents 初始化');
+
+      KeyboardHandler.setup(videoWrapper, function() { return connectionManager; });
+      MouseHandler.setup(videoWrapper, videoContainer, function() { return matrixTransformer; }, function() { return connectionManager; });
+
+      var isUnlockPanelOpen = false;
+      videoWrapper.setAttribute('tabindex', '0');
+      videoWrapper.focus();
+      
+      videoWrapper.addEventListener('blur', function() {
+        setTimeout(function() {
+          if (videoWrapper && !isUnlockPanelOpen) videoWrapper.focus();
+        }, 10);
+      });
+      
+      window.setUnlockPanelState = function(open) { isUnlockPanelOpen = open; };
+      
+      videoWrapper.addEventListener('click', function() { videoWrapper.focus(); });
+      
+      var resolutionSelect = document.getElementById('resolutionSelect');
+      if (resolutionSelect) {
+        resolutionSelect.addEventListener('change', function(e) {
+          var value = e.target.value;
+          if (value === 'auto' || !connectionManager || !connectionManager.dataChannelManager || 
+              !connectionManager.dataChannelManager.isOpen()) return;
+          var parts = value.split('x');
+          var w = Number(parts[0]), h = Number(parts[1]);
+          connectionManager.dataChannelManager.send({ type: 'resolution-change', width: w, height: h });
+          UIState.log('请求分辨率变更: ' + w + 'x' + h);
+        });
+      }
+    };
+
+    // === 窗口尺寸变更 ===
+    var resizeDebounceTimer = null;
+    var RESIZE_DEBOUNCE_MS = 300;
+
+    function handleWindowResize() {
+      clearTimeout(resizeDebounceTimer);
+      resizeDebounceTimer = setTimeout(function() {
+        if (!matrixTransformer || !connectionManager) {
+          UIState.log('[resize] matrixTransformer 或 connectionManager 未就绪，跳过');
+          return;
+        }
+
+        var viewportWidth = window.innerWidth;
+        var viewportHeight = window.innerHeight;
+        UIState.log('[resize] 窗口尺寸变更: ' + viewportWidth + 'x' + viewportHeight);
+
+        matrixTransformer.setScreenSize(viewportWidth, viewportHeight);
+
+        var rse = document.getElementById('remoteScreen');
+        if (rse) {
+          var elementRect = rse.getBoundingClientRect();
+          matrixTransformer.setElementSize(elementRect.width, elementRect.height);
+        }
+
+        matrixTransformer.calculateCenterPosition();
+        matrixTransformer.applyTransform(document.getElementById('videoContainer'));
+
+        if (videoElement && videoElement.videoWidth && videoElement.videoHeight) {
+          var localSize = connectionManager.getLocalWindowSize();
+          var remoteSize = { width: videoElement.videoWidth, height: videoElement.videoHeight };
+          var displaySize = connectionManager.calculateOptimalSize(localSize, remoteSize);
+          connectionManager.adjustVideoContainer(displaySize);
+        }
+      }, RESIZE_DEBOUNCE_MS);
+    }
+
+    window.addEventListener('resize', handleWindowResize);
+
+    // === 连接模式入口 ===
+    function initSignalingMode(data) {
+      if (connectionManager) {
+        UIState.log('连接管理器已经存在，忽略重复的启动信号');
+        return;
+      }
+      connectionMode = 'signaling';
+      
+      connectionManager = new SignalingConnectionManager();
+      connectionManager.isController = (data.mode === 'controller');
+      connectionManager.targetDeviceId = data.targetDeviceId;
+      window.connectionManager = connectionManager;
+      setupAllConnectionEvents();
+      
+      connectionManager.setVideoElements(videoElement, videoContainer, videoWrapper, remoteScreenEl);
+      connectionManager.setMatrixTransformer(matrixTransformer);
+      
+      window.electronAPI.on('signaling-offer', function(offerData) {
+        if (connectionManager) connectionManager.handleSignalingOffer(offerData);
+      });
+      
+      window.electronAPI.on('signaling-answer', function(answerData) {
+        if (connectionManager) connectionManager.handleAnswer(answerData.answer);
+      });
+      
+      window.electronAPI.on('signaling-ice-candidate', function(candidateData) {
+        if (connectionManager) connectionManager.handleIceCandidate(candidateData.candidate);
+      });
+      
+      connectionManager.connect({
+        credentials: { deviceId: data.deviceId, sessionId: data.sessionId }
+      }).then(function() {
+        if (!inputEventsSetup && connectionManager.isController) {
+          UIState.log('兜底调用 setupInputEvents');
+          window.setupInputEvents();
+        }
+      }).catch(function(error) {
+        UIState.log('信令模式连接失败: ' + error.message);
+        UIState.updateStatus('连接失败', 'error');
+      });
+    }
+
+    function initDirectMode(data) {
+      if (connectionManager) return;
+      connectionMode = 'direct';
+      
+      connectionManager = new DirectConnectionManager();
+      connectionManager.setModeData(data);
+      window.connectionManager = connectionManager;
+      setupAllConnectionEvents();
+      
+      connectionManager.setVideoElements(videoElement, videoContainer, videoWrapper, remoteScreenEl);
+      connectionManager.setMatrixTransformer(matrixTransformer);
+      
+      connectionManager.connect({}).then(function() {
+        if (!inputEventsSetup) {
+          UIState.log('兜底调用 setupInputEvents');
+          window.setupInputEvents();
+        }
+      }).catch(function(error) {
+        UIState.log('直连模式连接失败: ' + error.message);
+        console.error('连接错误详情:', error);
+        UIState.updateStatus('连接失败', 'error');
+      });
+    }
+
+    function setupAllConnectionEvents() {
+      ConnectionEvents.setupConnectionManagerEvents(connectionManager, matrixTransformer, videoElement);
+    }
+
+    // === 全局快捷键 ===
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' && document.fullscreenElement) document.exitFullscreen();
+      if (e.ctrlKey && (e.key === '0' || e.key === 'r')) {
+        e.preventDefault();
+        if (matrixTransformer) {
+          matrixTransformer.resetView();
+          matrixTransformer.applyTransform(remoteScreenEl);
+        }
+      }
+      if (e.key === 'F11') { e.preventDefault(); UIState.toggleFullscreen(); }
     });
 
-    async function resetInputModifiers() {
-      try {
-        log('重置输入修饰键状态...');
-        await window.electronAPI.resetInputModifiers();
-      } catch (e) {
-        console.error('重置输入修饰键失败:', e);
+    // === 入口函数 ===
+    function init() {
+      if (window.isInitialized) {
+        UIState.log('远程窗口已初始化，忽略重复调用');
+        return;
       }
-    }
-
-    function disconnect() {
-      stopLatencyCheck();
-      if (confirm('确定要断开连接吗？')) {
-        resetInputModifiers();
-        if (peerConnection) {
-          peerConnection.close();
-        }
-        window.close();
-      }
-    }
-
-    function startLatencyCheck() {
-      if (latencyCheckInterval) return;
+      window.isInitialized = true;
       
-      latencyCheckInterval = setInterval(() => {
-        checkLatency();
-      }, 2000);
-      
-      checkLatency();
-    }
-
-    function stopLatencyCheck() {
-      if (latencyCheckInterval) {
-        clearInterval(latencyCheckInterval);
-        latencyCheckInterval = null;
-      }
-    }
-
-    function checkLatency() {
-      const sendTime = performance.now();
-      
-      if (dataChannelManager && dataChannelManager.isOpen()) {
-        dataChannelManager.send({
-          type: 'ping',
-          timestamp: sendTime
-        });
-      }
-      
-      setTimeout(() => {
-        const latency = Math.round(performance.now() - sendTime);
-        if (latency > 0 && latency < 5000) {
-          lastLatency = latency;
-          document.getElementById('latency').textContent = `${latency} ms`;
-        }
-      }, 500);
-    }
-
-    function setupMatrixTransformer() {
-      matrixTransformer = new MatrixTransformer();
+      videoElement = document.getElementById('screenVideo');
       videoContainer = document.getElementById('videoContainer');
       videoWrapper = document.getElementById('videoWrapper');
-      screenContainer = document.getElementById('remoteScreen');
+      remoteScreenEl = document.getElementById('remoteScreen');
       
-      const rect = screenContainer.getBoundingClientRect();
-      matrixTransformer.setScreenSize(rect.width, rect.height);
-      
-      log('MatrixTransformer 初始化完成，屏幕尺寸: ' + rect.width + 'x' + rect.height);
-    }
-
-    function setupInputEvents() {
-      const videoWrapperEl = document.getElementById('videoWrapper');
-      
-      if (dataChannelManager && dataChannelManager.isOpen()) {
-        sendInputEvent = (eventData) => {
-          dataChannelManager.send({
-            type: 'input',
-            ...eventData
-          }, false);
-        };
-
-        videoWrapperEl.addEventListener('mousedown', (e) => {
-          if (e.button === 1) { // 中键拖动
-            isDragging = true;
-            lastMouseX = e.clientX;
-            lastMouseY = e.clientY;
-            return;
-          }
-          
-          const rect = screenContainer.getBoundingClientRect();
-          const containerX = e.clientX - rect.left;
-          const containerY = e.clientY - rect.top;
-          
-          const remote = matrixTransformer.containerToRemote(containerX, containerY);
-          if (remote) {
-            isMouseDownOnVideo = true;
-            sendInputEvent({
-              inputType: 'mousedown',
-              button: e.button,
-              x: Math.max(0, Math.min(1, remote.x / matrixTransformer.remoteScreenWidth)),
-              y: Math.max(0, Math.min(1, remote.y / matrixTransformer.remoteScreenHeight))
-            });
-          }
+      var optimizedCanvas = document.getElementById('optimizedCanvas');
+      if (optimizedCanvas && typeof RemoteVideoHandler !== 'undefined') {
+        remoteVideoHandler = new RemoteVideoHandler({
+          logger: { log: function(m) { UIState.log(m) }, error: console.error },
+          useOptimizedTransfer: true
         });
-
-        videoWrapperEl.addEventListener('mousemove', (e) => {
-          if (isDragging) {
-            const deltaX = e.clientX - lastMouseX;
-            const deltaY = e.clientY - lastMouseY;
-            matrixTransformer.updatePan(deltaX, deltaY);
-            matrixTransformer.applyTransform(screenContainer);
-            lastMouseX = e.clientX;
-            lastMouseY = e.clientY;
-            return;
-          }
-          
-          const rect = screenContainer.getBoundingClientRect();
-          const containerX = e.clientX - rect.left;
-          const containerY = e.clientY - rect.top;
-          
-          const remote = matrixTransformer.containerToRemote(containerX, containerY);
-          if (remote) {
-            sendInputEvent({
-              inputType: 'mousemove',
-              x: Math.max(0, Math.min(1, remote.x / matrixTransformer.remoteScreenWidth)),
-              y: Math.max(0, Math.min(1, remote.y / matrixTransformer.remoteScreenHeight))
-            });
-          }
-        });
-
-        videoWrapperEl.addEventListener('mouseup', (e) => {
-          if (e.button === 1) {
-            isDragging = false;
-            return;
-          }
-          
-          if (isMouseDownOnVideo) {
-            isMouseDownOnVideo = false;
-            
-            const rect = screenContainer.getBoundingClientRect();
-            const containerX = e.clientX - rect.left;
-            const containerY = e.clientY - rect.top;
-            
-            let remote = matrixTransformer.containerToRemote(containerX, containerY);
-            
-            if (!remote) {
-              remote = {
-                x: matrixTransformer.remoteScreenWidth / 2,
-                y: matrixTransformer.remoteScreenHeight / 2
-              };
-            }
-            
-            sendInputEvent({
-              inputType: 'mouseup',
-              button: e.button,
-              x: Math.max(0, Math.min(1, remote.x / matrixTransformer.remoteScreenWidth)),
-              y: Math.max(0, Math.min(1, remote.y / matrixTransformer.remoteScreenHeight))
-            });
-          }
-        });
-
-        videoWrapperEl.addEventListener('wheel', (e) => {
-          e.preventDefault();
-          
-          if (e.deltaY !== 0) {
-            const rect = screenContainer.getBoundingClientRect();
-            
-            const scaleFactor = e.deltaY > 0 ? 0.9 : 1.1;
-            const newScale = matrixTransformer.scale * scaleFactor;
-            matrixTransformer.updateScale(newScale, e.clientX, e.clientY, rect);
-            matrixTransformer.applyTransform(screenContainer);
-          } else {
-            sendInputEvent({
-              inputType: 'wheel',
-              deltaY: e.deltaY,
-              deltaX: e.deltaX || 0
-            });
-          }
-        }, { passive: false });
-
-        videoWrapperEl.addEventListener('mouseleave', () => {
-          isDragging = false;
-          isMouseDownOnVideo = false;
-        });
-
-        videoWrapperEl.addEventListener('contextmenu', (e) => {
-          e.preventDefault();
-        });
-
-        document.addEventListener('keydown', (e) => {
-          e.preventDefault();
-          sendInputEvent({
-            inputType: 'keydown',
-            key: e.key,
-            code: e.code,
-            keyCode: e.keyCode,
-            ctrlKey: e.ctrlKey,
-            shiftKey: e.shiftKey,
-            altKey: e.altKey,
-            metaKey: e.metaKey
-          });
-        });
-
-        document.addEventListener('keyup', (e) => {
-          e.preventDefault();
-          sendInputEvent({
-            inputType: 'keyup',
-            key: e.key,
-            code: e.code,
-            keyCode: e.keyCode,
-            ctrlKey: e.ctrlKey,
-            shiftKey: e.shiftKey,
-            altKey: e.altKey,
-            metaKey: e.metaKey
-          });
-        });
-
-        console.log('输入事件监听已设置');
-      }
-    }
-
-    function updateStatus(text, isConnected = true) {
-      document.getElementById('statusText').textContent = text;
-    }
-
-    function showPlaceholder(text, subtext = '') {
-      document.getElementById('placeholder').style.display = 'flex';
-      document.getElementById('screenVideo').style.display = 'none';
-      document.querySelector('.placeholder-text').textContent = text;
-      document.getElementById('subtext').textContent = subtext;
-    }
-
-    function showVideo() {
-      log('showVideo() called - showing video element');
-      
-      // 确保 video wrapper 可见
-      const videoWrapper = document.getElementById('videoWrapper');
-      const screenVideo = document.getElementById('screenVideo');
-      const placeholder = document.getElementById('placeholder');
-      const videoContainer = document.getElementById('videoContainer');
-      
-      placeholder.style.display = 'none';
-      videoWrapper.style.display = 'block';
-      videoWrapper.style.position = 'absolute';
-      videoWrapper.style.top = '0';
-      videoWrapper.style.left = '0';
-      videoWrapper.style.width = '100%';
-      videoWrapper.style.height = '100%';
-      videoWrapper.style.overflow = 'hidden';
-      
-      screenVideo.style.display = 'block';
-      screenVideo.style.width = '100%';
-      screenVideo.style.height = '100%';
-      
-      // 设置 video-container 的初始尺寸
-      if (screenVideo.videoWidth && screenVideo.videoHeight) {
-        videoContainer.style.width = screenVideo.videoWidth + 'px';
-        videoContainer.style.height = screenVideo.videoHeight + 'px';
-        log('Set video-container size: ' + screenVideo.videoWidth + 'x' + screenVideo.videoHeight);
-      } else {
-        videoContainer.style.width = '100%';
-        videoContainer.style.height = '100%';
-        log('Set video-container size to 100%');
+        UIState.log('RemoteVideoHandler 已创建');
+        window.remoteVideoHandler = remoteVideoHandler;
       }
       
-      log('Video element display: ' + screenVideo.style.display);
-      log('Video wrapper display: ' + videoWrapper.style.display);
-      log('Placeholder display: ' + placeholder.style.display);
+      // 初始化解锁 UI
+      window.unlockUI = new window.UnlockUI();
       
-      // 尝试触发 video 播放
-      if (screenVideo.srcObject) {
-        log('Video has srcObject, attempting to play');
-        screenVideo.play().catch(err => {
-          log('Video play failed: ' + err.message);
-        });
-      }
-    }
-
-    function updateFps() {
-      const now = performance.now();
-      const elapsed = (now - lastTime) / 1000;
-      if (elapsed >= 1) {
-        const fps = Math.round(frameCount / elapsed);
-        document.getElementById('fps').textContent = `${fps} fps`;
-        frameCount = 0;
-        lastTime = now;
-      }
-    }
-
-    function onVideoFrame() {
-      frameCount++;
-      updateFps();
-      requestAnimationFrame(onVideoFrame);
-    }
-
-    async function createPeerConnection() {
-      log('创建 PeerConnection，模式: ' + connectionMode);
-      peerConnection = new RTCPeerConnection({ iceServers: [] });
+      // 添加解锁面板暴露函数
+      window.openUnlockPanel = function() { if (window.unlockUI) window.unlockUI.showOverlay(); };
+      window.ToolbarManager.unlockPanel = window.openUnlockPanel;
       
-      peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-          log('发送ICE候选');
-          const candidateData = {
-            candidate: {
-              candidate: event.candidate.candidate,
-              sdpMid: event.candidate.sdpMid,
-              sdpMLineIndex: event.candidate.sdpMLineIndex
-            }
-          };
-          
-          if (connectionMode === 'signaling') {
-            candidateData.sessionId = signalingSessionId;
-            candidateData.targetDeviceId = signalingTargetDeviceId;
-            window.electronAPI.sendSignalingMessage('send-signaling-ice-candidate', candidateData);
-          } else {
-            window.electronAPI.sendToMainWindow('webrtc-ice-candidate', candidateData);
-          }
-        }
-      };
+      UIState.log('远程窗口初始化开始');
       
-      peerConnection.oniceconnectionstatechange = () => {
-        log('ICE连接状态: ' + peerConnection.iceConnectionState);
-      };
+      setupUnlockStateListener();
+      setupLockScreenFrameListener();
+      setupMatrixTransformer();
+      setupPanZoomEvents();
+      TouchHandler.setup(remoteScreenEl, function() { return matrixTransformer; });
+      setupPerformanceMonitor();
       
-      peerConnection.ontrack = (event) => {
-        log('收到远程媒体流，event对象:', event);
-        log('收到远程媒体流，track数量: ' + (event.tracks ? event.tracks.length : 0));
-        log('收到远程媒体流，streams数量: ' + (event.streams ? event.streams.length : 0));
-        log('收到远程媒体流，track:', event.track);
-        
-        let stream;
-        if (event.streams && event.streams.length > 0) {
-          stream = event.streams[0];
-          log('从 streams[0] 获取流');
-        } else {
-          stream = new MediaStream();
-          stream.addTrack(event.track);
-          log('创建新的 MediaStream 并添加 track');
-        }
-        
-        if (stream) {
-          log('流ID: ' + stream.id);
-          log('流 tracks 数量: ' + stream.getTracks().length);
-          stream.getTracks().forEach((tr, i) => {
-            log('  Stream track ' + i + ': kind=' + tr.kind + ', id=' + tr.id + ', enabled=' + tr.enabled);
-          });
-          
-          // 先显示视频元素和容器，再设置源
-          const placeholder = document.getElementById('placeholder');
-          const videoWrapper = document.getElementById('videoWrapper');
-          const screenVideo = document.getElementById('screenVideo');
-          const videoContainer = document.getElementById('videoContainer');
-          
-          placeholder.style.display = 'none';
-          videoWrapper.style.display = 'block';
-          videoWrapper.style.position = 'absolute';
-          videoWrapper.style.top = '0';
-          videoWrapper.style.left = '0';
-          videoWrapper.style.width = '100%';
-          videoWrapper.style.height = '100%';
-          videoWrapper.style.overflow = 'hidden';
-          
-          screenVideo.style.display = 'block';
-          screenVideo.style.width = '100%';
-          screenVideo.style.height = '100%';
-          screenVideo.style.objectFit = 'contain';
-          screenVideo.muted = true;
-          screenVideo.playsInline = true;
-          screenVideo.autoplay = true;
-          
-          // 设置 video-container 的默认尺寸
-          videoContainer.style.width = '100%';
-          videoContainer.style.height = '100%';
-          
-          log('Video elements made visible before setting srcObject (ontrack)');
-          
-          // 监听 track 事件
-          const track = event.track;
-          track.onmute = () => log('  Track muted (ontrack)');
-          track.onunmute = () => log('  Track unmuted (ontrack)');
-          track.onended = () => log('  Track ended (ontrack)');
-          
-          // 设置事件监听器
-          videoElement.onloadedmetadata = () => {
-            log('视频流加载成功，尺寸: ' + videoElement.videoWidth + 'x' + videoElement.videoHeight + ', duration=' + videoElement.duration);
-            
-            // 设置 video-container 的尺寸与视频实际尺寸一致
-            const videoContainer = document.getElementById('videoContainer');
-            videoContainer.style.width = videoElement.videoWidth + 'px';
-            videoContainer.style.height = videoElement.videoHeight + 'px';
-            log('Set video-container size (onloadedmetadata): ' + videoElement.videoWidth + 'x' + videoElement.videoHeight);
-            
-            showVideo();
-            updateStatus('已连接');
-            document.getElementById('resolution').textContent = 
-              `${videoElement.videoWidth}x${videoElement.videoHeight}`;
-            
-            if (matrixTransformer) {
-              matrixTransformer.videoWidth = videoElement.videoWidth;
-              matrixTransformer.videoHeight = videoElement.videoHeight;
-              
-              if (matrixTransformer.remoteScreenWidth === 1920 && matrixTransformer.remoteScreenHeight === 1080) {
-                log('使用视频尺寸更新 remoteScreenSize');
-                matrixTransformer.setRemoteScreenSize(videoElement.videoWidth, videoElement.videoHeight);
-              }
-              matrixTransformer.applyContainerSize(videoContainer, videoWrapper);
-              log('视频加载后更新 container: ' + matrixTransformer.displayWidth + 'x' + matrixTransformer.displayHeight);
-            }
-            
-            requestAnimationFrame(onVideoFrame);
-            setupInputEvents();
-            startLatencyCheck();
-          };
-          
-          videoElement.onloadeddata = () => log('  VIDEO DATA LOADED! (ontrack)');
-          videoElement.oncanplay = () => log('  VIDEO CAN PLAY! (ontrack)');
-          videoElement.onplay = () => log('  VIDEO PLAYING! (ontrack)');
-          videoElement.onplaying = () => log('  VIDEO PLAYING (onplaying)! (ontrack)');
-          
-          videoElement.onerror = (error) => {
-            console.error('视频错误:', error);
-            log('  VIDEO ERROR: ' + error + ', code=' + videoElement.error?.code + ', message=' + videoElement.error?.message);
-            showPlaceholder('连接失败', '视频流加载失败');
-            updateStatus('连接失败');
-          };
-          
-          // 最后设置 srcObject
-          videoElement.srcObject = stream;
-          log('已设置 videoElement.srcObject');
-          
-          // 尝试立即播放
-          log('尝试立即播放视频');
-          videoElement.play().then(() => {
-            log('  Video play started successfully (ontrack)');
-          }).catch(err => {
-            log('Video play failed: ' + err.message);
-          });
-          
-          // 添加一个定时器来检查视频状态
-          let checkCount = 0;
-          const checkInterval = setInterval(() => {
-            checkCount++;
-            log('  Video check (ontrack) ' + checkCount + ': videoWidth=' + videoElement.videoWidth + ', videoHeight=' + videoElement.videoHeight + ', readyState=' + videoElement.readyState + ', paused=' + videoElement.paused + ', currentTime=' + videoElement.currentTime);
-            
-            if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
-              log('  Video has valid dimensions! (ontrack)');
-              clearInterval(checkInterval);
-              
-              // 手动触发处理
-              const videoContainer = document.getElementById('videoContainer');
-              videoContainer.style.width = videoElement.videoWidth + 'px';
-              videoContainer.style.height = videoElement.videoHeight + 'px';
-              
-              showVideo();
-              updateStatus('已连接');
-              document.getElementById('resolution').textContent = 
-                `${videoElement.videoWidth}x${videoElement.videoHeight}`;
-              
-              if (matrixTransformer) {
-                matrixTransformer.videoWidth = videoElement.videoWidth;
-                matrixTransformer.videoHeight = videoElement.videoHeight;
-                
-                if (matrixTransformer.remoteScreenWidth === 1920 && matrixTransformer.remoteScreenHeight === 1080) {
-                  log('  Updating remoteScreenSize (ontrack)');
-                  matrixTransformer.setRemoteScreenSize(videoElement.videoWidth, videoElement.videoHeight);
-                }
-                matrixTransformer.applyContainerSize(videoContainer, videoWrapper);
-              }
-              
-              requestAnimationFrame(onVideoFrame);
-              setupInputEvents();
-              startLatencyCheck();
-            }
-            
-            if (checkCount >= 30) {
-              log('  Video check timeout after 30 attempts (ontrack)');
-              clearInterval(checkInterval);
-            }
-          }, 200);
-        }
-      };
+      window.electronAPI.on('signaling-mode-start', function(data) { initSignalingMode(data); });
+      window.electronAPI.on('direct-mode-start', function(data) { initDirectMode(data); });
       
-      peerConnection.onconnectionstatechange = () => {
-        log('连接状态: ' + peerConnection.connectionState);
-        if (peerConnection.connectionState === 'connected') {
-          log('[Remote] WebRTC连接已建立');
-          const receivers = peerConnection.getReceivers();
-          log('[Remote] 接收者数量: ' + receivers.length);
-          receivers.forEach((receiver, i) => {
-            if (receiver.track) {
-              log('[Remote] 接收者 ' + i + ': ' + receiver.track.kind + ', 启用: ' + receiver.track.enabled);
-            }
-          });
-        } else if (peerConnection.connectionState === 'failed') {
-          log('[Remote] WebRTC连接失败');
-        } else if (peerConnection.connectionState === 'disconnected') {
-          log('[Remote] WebRTC连接断开');
-        } else if (peerConnection.connectionState === 'closed') {
-          log('[Remote] WebRTC连接关闭');
-        }
-        if (peerConnection.connectionState === 'failed' || 
-            peerConnection.connectionState === 'closed' ||
-            peerConnection.connectionState === 'disconnected') {
-          resetInputModifiers();
-        }
-      };
-      
-      dataChannelManager = new DataChannelManager({ logger: { log: log, error: console.error } });
-      
-      dataChannelManager.setOnOpen(async () => {
-        log('数据通道已打开');
-        
-        try {
-          const screenInfo = await window.electronAPI.getScreenSize();
-          log('发送屏幕尺寸: ' + screenInfo.width + 'x' + screenInfo.height);
-          dataChannelManager.send({
-            type: 'screen-size',
-            width: screenInfo.width,
-            height: screenInfo.height,
-            scaleFactor: screenInfo.scaleFactor,
-            workArea: screenInfo.workArea
-          });
-        } catch (e) {
-          console.error('获取屏幕尺寸失败:', e);
-        }
-      });
-      
-      dataChannelManager.setOnMessage((data) => {
-        if (data.type === 'pong') {
-          const latency = Math.round(performance.now() - data.timestamp);
-          if (latency > 0 && latency < 5000) {
-            lastLatency = latency;
-            document.getElementById('latency').textContent = `${latency} ms`;
-          }
-        } else if (data.type === 'ping') {
-          dataChannelManager.send({ type: 'pong', timestamp: data.timestamp });
-        } else if (data.type === 'input') {
-          log('收到输入命令: ' + data.inputType + ', x=' + data.x + ', y=' + data.y);
-          window.electronAPI.send('remote-input', data);
-        } else if (data.type === 'screen-size') {
-          log('收到屏幕尺寸: ' + data.width + 'x' + data.height);
-        }
-      });
-      
-      dataChannelManager.setOnClose(() => {
-        log('数据通道已关闭');
-        resetInputModifiers();
-      });
-      
-      dataChannelManager.setOnError((error) => {
-        console.error('数据通道错误:', error);
-      });
-      
-      peerConnection.ondatachannel = (event) => {
-        log('收到数据通道');
-        dataChannelManager.setDataChannel(event.channel);
-      };
-      
-      if (connectionMode === 'signaling') {
-        if (isSignalingController) {
-          log('[信令模式-主控端] 添加视频接收transceiver');
-          peerConnection.addTransceiver('video', { direction: 'recvonly' });
-          
-          log('[信令模式-主控端] 创建数据通道');
-          const newDataChannel = peerConnection.createDataChannel('control');
-          dataChannelManager.setDataChannel(newDataChannel);
-          
-          try {
-            log('[信令模式-主控端] 创建offer');
-            const offer = await peerConnection.createOffer();
-            await peerConnection.setLocalDescription(offer);
-            
-            log('[信令模式 - 主控端] 发送 offer 到信令服务器');
-            log('[信令模式 - 主控端] offer 数据: sessionId=' + signalingSessionId + ', targetDeviceId=' + signalingTargetDeviceId);
-            window.electronAPI.sendSignalingMessage('send-signaling-offer', {
-              sessionId: signalingSessionId,
-              targetDeviceId: signalingTargetDeviceId,
-              offer: {
-                type: offer.type,
-                sdp: offer.sdp
-              }
-            });
-            log('[信令模式 - 主控端] sendSignalingMessage 已调用');
-          } catch (error) {
-            log('创建offer失败: ' + error.message);
-          }
-        } else {
-          log('[信令模式-被控端] 等待接收offer...');
-        }
-      } else {
-        log('[直连模式] 添加视频接收transceiver');
-        peerConnection.addTransceiver('video', { direction: 'recvonly' });
-        
-        log('[直连模式] 创建数据通道');
-        const newDataChannel = peerConnection.createDataChannel('control');
-        dataChannelManager.setDataChannel(newDataChannel);
-        
-        try {
-          log('[直连模式] 创建offer');
-          const offer = await peerConnection.createOffer();
-          await peerConnection.setLocalDescription(offer);
-          
-          log('[直连模式] 发送offer到主窗口');
-          log('[直连模式] offer 数据: ' + JSON.stringify({ offer: { type: offer.type, sdp: offer.sdp.substring(0, 100) } }));
-          try {
-            const result = await window.electronAPI.sendToMainWindow('webrtc-offer', {
-              offer: {
-                type: offer.type,
-                sdp: offer.sdp
-              }
-            });
-            log('[直连模式] sendToMainWindow 返回: ' + JSON.stringify(result));
-          } catch (error) {
-            log('[直连模式] sendToMainWindow 错误: ' + error.message);
-            console.error('[直连模式] sendToMainWindow 详细错误:', error);
-          }
-        } catch (error) {
-          log('创建offer失败: ' + error.message);
-        }
-      }
-    }
-
-    async function handleAnswer(answer) {
-      if (!answer) {
-        log('ERROR: answer is null');
-        return;
-      }
-      
-      try {
-        log('Setting answer...');
-        log('Answer type: ' + answer.type + ', SDP length: ' + (answer.sdp ? answer.sdp.length : 0));
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-        log('Answer set successfully');
-        
-        log('Checking transceivers...');
-        const transceivers = peerConnection.getTransceivers();
-        log('Transceivers count: ' + transceivers.length);
-        transceivers.forEach((t, i) => {
-          log('Transceiver ' + i + ': mid=' + t.mid + ', direction=' + t.direction + ', currentDirection=' + t.currentDirection);
-          if (t.receiver && t.receiver.track) {
-            log('  - receiver.track: id=' + t.receiver.track.id + ', kind=' + t.receiver.track.kind + ', enabled=' + t.receiver.track.enabled + ', readyState=' + t.receiver.track.readyState);
-          } else {
-            log('  - receiver.track: null');
-          }
-        });
-        
-        await addPendingIceCandidates();
-        
-        log('Manually checking and displaying video...');
-        checkAndDisplayVideo();
-      } catch (error) {
-        log('ERROR setting answer: ' + error.message);
-        console.error('handleAnswer error:', error);
-      }
-    }
-    
-    async function handleSignalingOffer(data) {
-      log('[信令模式] 收到offer');
-      isSignalingController = false;
-      
-      try {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
-        log('[信令模式-被控端] 远程描述设置成功');
-        
-        await addPendingIceCandidates();
-        
-        log('[信令模式-被控端] 开始捕获屏幕...');
-        await startScreenCapture();
-        
-        log('[信令模式-被控端] 创建answer...');
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-        log('[信令模式-被控端] 本地描述设置成功');
-        
-        log('[信令模式 - 被控端] 发送 answer 到信令服务器');
-        window.electronAPI.sendSignalingMessage('send-signaling-answer', {
-          sessionId: data.sessionId || signalingSessionId,
-          targetDeviceId: data.fromDeviceId || signalingTargetDeviceId,
-          answer: {
-            type: answer.type,
-            sdp: answer.sdp
-          }
-        });
-        
-        log('[信令模式-被控端] 已发送answer');
-      } catch (error) {
-        log('[信令模式] 处理offer失败: ' + error.message);
-        console.error('[信令模式] 处理offer详细错误:', error);
-      }
-    }
-    
-    async function startScreenCapture() {
-      try {
-        const sources = await window.electronAPI.getSources();
-        log('[信令模式-被控端] 可用屏幕源: ' + sources.length + ' 个');
-
-        if (sources.length > 0) {
-          const stream = await navigator.mediaDevices.getUserMedia({
-            audio: false,
-            video: {
-              mandatory: {
-                chromeMediaSource: 'desktop',
-                chromeMediaSourceId: sources[0].id,
-                maxWidth: 1920,
-                maxHeight: 1080,
-                maxFrameRate: 30
-              }
-            }
-          });
-
-          const tracks = stream.getTracks();
-          log('[信令模式-被控端] 获取到 ' + tracks.length + ' 个媒体轨道');
-
-          tracks.forEach(track => {
-            peerConnection.addTrack(track, stream);
-            log('[信令模式-被控端] 已添加媒体轨道: ' + track.kind + ', label: ' + track.label);
-          });
-
-          log('[信令模式-被控端] 屏幕捕获成功，分辨率: ' + 
-            stream.getVideoTracks()[0].getSettings().width + 'x' + 
-            stream.getVideoTracks()[0].getSettings().height);
-        } else {
-          log('[信令模式-被控端] 没有找到可用的屏幕源');
-        }
-      } catch (error) {
-        log('[信令模式-被控端] 屏幕捕获失败: ' + error.message);
-        console.error('[信令模式-被控端] 屏幕捕获详细错误:', error);
-      }
-    }
-
-    function checkAndDisplayVideo() {
-      log('checkAndDisplayVideo called');
-      const transceivers = peerConnection.getTransceivers();
-      log('Total transceivers: ' + transceivers.length);
-      
-      for (const t of transceivers) {
-        log('Checking transceiver: mid=' + t.mid + ', direction=' + t.direction + ', currentDirection=' + t.currentDirection);
-        if (t.receiver && t.receiver.track) {
-          const track = t.receiver.track;
-          log('  Found track: kind=' + track.kind + ', id=' + track.id + ', readyState=' + track.readyState + ', enabled=' + track.enabled + ', muted=' + track.muted);
-          
-          if (track.kind === 'video') {
-            log('  This is a VIDEO track!');
-            
-            // 先显示视频元素和容器，再设置源
-            const placeholder = document.getElementById('placeholder');
-            const videoWrapper = document.getElementById('videoWrapper');
-            const screenVideo = document.getElementById('screenVideo');
-            const videoContainer = document.getElementById('videoContainer');
-            
-            placeholder.style.display = 'none';
-            videoWrapper.style.display = 'block';
-            videoWrapper.style.position = 'absolute';
-            videoWrapper.style.top = '0';
-            videoWrapper.style.left = '0';
-            videoWrapper.style.width = '100%';
-            videoWrapper.style.height = '100%';
-            videoWrapper.style.overflow = 'hidden';
-            
-            screenVideo.style.display = 'block';
-            screenVideo.style.width = '100%';
-            screenVideo.style.height = '100%';
-            screenVideo.style.objectFit = 'contain';
-            screenVideo.muted = true;
-            screenVideo.playsInline = true;
-            screenVideo.autoplay = true;
-            
-            // 设置 video-container 的默认尺寸
-            videoContainer.style.width = '100%';
-            videoContainer.style.height = '100%';
-            
-            log('  Video elements made visible before setting srcObject');
-            
-            const stream = new MediaStream([track]);
-            log('  Created MediaStream: ' + stream.id + ', tracks: ' + stream.getTracks().length);
-            stream.getTracks().forEach((tr, i) => {
-              log('    Stream track ' + i + ': kind=' + tr.kind + ', id=' + tr.id + ', enabled=' + tr.enabled);
-            });
-            
-            // 监听 track 事件
-            track.onmute = () => log('  Track muted');
-            track.onunmute = () => log('  Track unmuted');
-            track.onended = () => log('  Track ended');
-            
-            // 设置 onloadedmetadata 事件监听器
-            videoElement.onloadedmetadata = () => {
-              log('  VIDEO METADATA LOADED! Size: ' + videoElement.videoWidth + 'x' + videoElement.videoHeight + ', duration=' + videoElement.duration);
-              
-              // 设置 video-container 的尺寸与视频实际尺寸一致
-              const videoContainer = document.getElementById('videoContainer');
-              videoContainer.style.width = videoElement.videoWidth + 'px';
-              videoContainer.style.height = videoElement.videoHeight + 'px';
-              log('  Set video-container size (checkAndDisplayVideo): ' + videoElement.videoWidth + 'x' + videoElement.videoHeight);
-              
-              showVideo();
-              updateStatus('Connected');
-              document.getElementById('resolution').textContent = 
-                `${videoElement.videoWidth}x${videoElement.videoHeight}`;
-              
-              if (matrixTransformer) {
-                matrixTransformer.videoWidth = videoElement.videoWidth;
-                matrixTransformer.videoHeight = videoElement.videoHeight;
-                
-                if (matrixTransformer.remoteScreenWidth === 1920 && matrixTransformer.remoteScreenHeight === 1080) {
-                  log('  Updating remoteScreenSize');
-                  matrixTransformer.setRemoteScreenSize(videoElement.videoWidth, videoElement.videoHeight);
-                }
-                matrixTransformer.applyContainerSize(videoContainer, videoWrapper);
-              }
-              
-              requestAnimationFrame(onVideoFrame);
-              setupInputEvents();
-              startLatencyCheck();
-            };
-            
-            videoElement.onloadeddata = () => log('  VIDEO DATA LOADED!');
-            videoElement.oncanplay = () => log('  VIDEO CAN PLAY!');
-            videoElement.onplay = () => log('  VIDEO PLAYING!');
-            videoElement.onplaying = () => log('  VIDEO PLAYING (onplaying)!');
-            
-            videoElement.onerror = (error) => {
-              log('  VIDEO ERROR: ' + error + ', code=' + videoElement.error?.code + ', message=' + videoElement.error?.message);
-              showPlaceholder('Connection failed', 'Video stream failed');
-              updateStatus('Connection failed');
-            };
-            
-            // 最后设置 srcObject
-            videoElement.srcObject = stream;
-            log('  Set videoElement.srcObject');
-            
-            // 尝试立即播放
-            log('  Attempting to play video...');
-            videoElement.play().then(() => {
-              log('  Video play started successfully');
-            }).catch(err => {
-              log('  Video play failed: ' + err.message);
-            });
-            
-            // 添加一个定时器来检查视频状态
-            let checkCount = 0;
-            const checkInterval = setInterval(() => {
-              checkCount++;
-              log('  Video check ' + checkCount + ': videoWidth=' + videoElement.videoWidth + ', videoHeight=' + videoElement.videoHeight + ', readyState=' + videoElement.readyState + ', paused=' + videoElement.paused + ', currentTime=' + videoElement.currentTime);
-              
-              if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
-                log('  Video has valid dimensions!');
-                clearInterval(checkInterval);
-                
-                // 手动触发处理
-                const videoContainer = document.getElementById('videoContainer');
-                videoContainer.style.width = videoElement.videoWidth + 'px';
-                videoContainer.style.height = videoElement.videoHeight + 'px';
-                
-                showVideo();
-                updateStatus('Connected');
-                document.getElementById('resolution').textContent = 
-                  `${videoElement.videoWidth}x${videoElement.videoHeight}`;
-                
-                if (matrixTransformer) {
-                  matrixTransformer.videoWidth = videoElement.videoWidth;
-                  matrixTransformer.videoHeight = videoElement.videoHeight;
-                  
-                  if (matrixTransformer.remoteScreenWidth === 1920 && matrixTransformer.remoteScreenHeight === 1080) {
-                    log('  Updating remoteScreenSize');
-                    matrixTransformer.setRemoteScreenSize(videoElement.videoWidth, videoElement.videoHeight);
-                  }
-                  matrixTransformer.applyContainerSize(videoContainer, videoWrapper);
-                }
-                
-                requestAnimationFrame(onVideoFrame);
-                setupInputEvents();
-                startLatencyCheck();
-              }
-              
-              if (checkCount >= 30) {
-                log('  Video check timeout after 30 attempts');
-                clearInterval(checkInterval);
-              }
-            }, 200);
-            
-            log('  Video track set to video element, waiting for metadata...');
-            return;
-          }
-        }
-      }
-      log('No video track found in transceivers');
-    }
-
-    async function handleIceCandidate(candidate) {
-      if (!candidate) {
-        return;
-      }
-      
-      try {
-        if (candidate.sdpMid === null && candidate.sdpMLineIndex === null) {
-          return;
-        }
-        
-        if (!peerConnection || !peerConnection.remoteDescription) {
-          log('缓存ICE候选（远程描述未设置）');
-          pendingIceCandidates.push(candidate);
-          return;
-        }
-        
-        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-        log('ICE候选添加成功');
-      } catch (error) {
-        log('添加ICE候选失败: ' + error.message);
-      }
-    }
-
-    async function addPendingIceCandidates() {
-      log('添加缓存的ICE候选: ' + pendingIceCandidates.length + ' 个');
-      for (const candidate of pendingIceCandidates) {
-        try {
-          await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-        } catch (error) {
-          log('添加缓存ICE候选失败: ' + error.message);
-        }
-      }
-      pendingIceCandidates = [];
-    }
-
-    async function init() {
-      videoElement = document.getElementById('screenVideo');
-      log('远程窗口初始化开始');
-      
-      let peerConnectionStarted = false;
-      let timeoutId = null;
-      
-      // 先设置 IPC 监听器，确保能收到消息
-      log('设置IPC监听器...');
-      
-      window.electronAPI.on('webrtc-answer', async (data) => {
-        log('[Remote] [直连模式] 收到answer事件');
-        log('[Remote] answer数据: ' + JSON.stringify(data).substring(0, 200));
-        log('[Remote] peerConnection存在: ' + (peerConnection ? '是' : '否'));
-        log('[Remote] peerConnection当前状态: ' + (peerConnection ? peerConnection.connectionState : 'N/A'));
-        await handleAnswer(data.answer);
-      });
-
-      window.electronAPI.on('webrtc-ice-candidate', async (data) => {
-        log('[直连模式] 收到ICE候选事件');
-        await handleIceCandidate(data.candidate);
-      });
-      
-      window.electronAPI.on('signaling-mode-start', async (data) => {
-        log('[信令模式] 收到启动信号: ' + JSON.stringify(data));
-        
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-          timeoutId = null;
-        }
-        
-        if (peerConnectionStarted) {
-          log('[信令模式] PeerConnection 已经启动，忽略重复信号');
-          return;
-        }
-        
-        peerConnectionStarted = true;
-        connectionMode = 'signaling';
-        signalingSessionId = data.sessionId;
-        signalingTargetDeviceId = data.targetDeviceId;
-        isSignalingController = data.mode === 'controller';
-        
-        updateStatus('信令模式连接中...');
-        showPlaceholder('信令模式正在建立连接...', '请稍候');
-        
-        await createPeerConnection();
-      });
-      
-      window.electronAPI.on('signaling-offer', async (data) => {
-        log('[信令模式] 收到offer');
-        await handleSignalingOffer(data);
-      });
-      
-      window.electronAPI.on('signaling-answer', async (data) => {
-        console.log('=== REMOTE WINDOW: signaling-answer RECEIVED ===');
-        console.log('Data:', data);
-        alert('Received answer from controlled device!');
-        log('[Signaling] Received answer event');
-        if (data && data.answer) {
-          await handleAnswer(data.answer);
-        } else {
-          log('[Signaling] Answer data format error');
-        }
-      });
-      
-      window.electronAPI.on('signaling-ice-candidate', async (data) => {
-        console.log('=== REMOTE WINDOW: signaling-ice-candidate RECEIVED ===');
-        log('[Signaling] Received ICE candidate event');
-        if (data && data.candidate) {
-          await handleIceCandidate(data.candidate);
-        } else {
-          log('[Signaling] ICE candidate data format error');
-        }
-      });
-      
-      window.electronAPI.on('signaling-disconnected', (data) => {
-        log('[信令模式] 信令服务器断开连接：' + data.reason);
-        updateStatus('连接已断开');
-        showPlaceholder('连接已断开', '信令服务器连接中断');
-      });
-      
-      window.electronAPI.on('direct-mode-start', async (data) => {
-        log('[直连模式] 收到启动信号：' + JSON.stringify(data));
-        
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-          timeoutId = null;
-        }
-        
-        if (peerConnectionStarted) {
-          log('[直连模式] PeerConnection 已经启动，忽略重复信号');
-          return;
-        }
-        
-        peerConnectionStarted = true;
-        connectionMode = 'direct';
-        directClientId = data.clientId;
-        isDirectController = data.mode === 'controller';
-        
-        updateStatus('直连模式连接中...');
-        showPlaceholder('直连模式正在建立连接...', '请稍候');
-        
-        await createPeerConnection();
-      });
-      
-      log('IPC 监听器设置完成');
-      
-      // 然后发送准备就绪信号
-      log('远程窗口准备就绪，请求启动信号...');
       window.electronAPI.send('remote-window-ready', {});
       
       try {
-        const screenSize = await window.electronAPI.getScreenSize();
-        document.getElementById('resolution').textContent = `${screenSize.width}x${screenSize.height}`;
-        log('获取屏幕尺寸成功');
+        window.electronAPI.getScreenSize().then(function(screenSize) {
+          var resEl = document.getElementById('resolution');
+          if (resEl) resEl.textContent = screenSize.width + 'x' + screenSize.height;
+        });
       } catch (error) {
-        log('获取屏幕尺寸失败: ' + error.message);
+        UIState.log('获取屏幕尺寸失败: ' + error.message);
       }
-
-      setupMatrixTransformer();
       
-      document.getElementById('videoWrapper').style.display = 'none';
-
-      updateStatus('正在连接...');
-      showPlaceholder('正在建立WebRTC连接...', '请稍候');
-
-      log('等待启动信号...');
-      timeoutId = setTimeout(async () => {
-        log('超时未收到启动信号，不执行任何操作');
-      }, 5000);
+      UIState.updateStatus('正在连接...');
+      UIState.showPlaceholder('正在建立连接...', '请稍候');
     }
 
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && document.fullscreenElement) {
-        document.exitFullscreen();
-      }
-    });
-
-    init();
+    // 启动
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
   </script>
 </body>
 </html>

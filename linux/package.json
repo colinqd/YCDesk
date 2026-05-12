@@ -1,31 +1,67 @@
 {
   "name": "ycdesk-linux",
-  "version": "3.1.1",
+  "version": "3.1.3",
   "description": "YCDesk Remote Desktop - Linux Version",
   "main": "src/main/main.js",
+  "author": "YCDesk Team",
+  "license": "MIT",
+  "private": true,
   "scripts": {
     "start": "electron .",
+    "dev": "cross-env NODE_ENV=development electron . --dev",
+    "dev:watch": "nodemon --exec 'npm run dev' --watch src --watch shared --ext js,html",
     "build": "electron-builder --linux",
     "build:deb": "electron-builder --linux deb",
     "build:rpm": "electron-builder --linux rpm",
     "build:appimage": "electron-builder --linux AppImage",
-    "build:tar.gz": "electron-builder --linux tar.gz"
+    "build:tar.gz": "electron-builder --linux tar.gz",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
-  "author": "YCDesk Team",
-  "license": "MIT",
+  "keywords": [
+    "remote",
+    "desktop",
+    "control",
+    "webrtc",
+    "electron",
+    "linux"
+  ],
   "devDependencies": {
+    "chokidar": "^3.6.0",
+    "cross-env": "^7.0.3",
     "electron": "^28.3.3",
-    "electron-builder": "^24.13.3"
+    "electron-builder": "^24.9.1",
+    "nodemon": "^3.0.0",
+    "vitest": "^1.6.0",
+    "@vitest/coverage-v8": "^1.6.0",
+    "jsdom": "^24.0.0"
   },
   "dependencies": {
-    "socket.io-client": "^4.7.2"
+    "socket.io-client": "^4.6.0",
+    "robotjs": "^0.6.0"
   },
   "build": {
     "appId": "com.ycdesk.linux",
     "productName": "YCDesk",
+    "asar": false,
+    "compression": "maximum",
+    "npmRebuild": false,
     "directories": {
-      "output": "dist"
+      "output": "dist-v2"
     },
+    "files": [
+      "**/*",
+      "!**/*.md",
+      "!**/*.log",
+      "!dist*/**",
+      "!resources/**",
+      "!assets/**",
+      "!data/**",
+      "!nodemon.json",
+      "!node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!node_modules/.bin"
+    ],
     "linux": {
       "target": [
         "deb",
@@ -33,22 +69,12 @@
         "tar.gz"
       ],
       "category": "Network",
-      "icon": "assets/icon.png",
       "maintainer": "YCDesk Team",
       "desktop": {
         "Name": "YCDesk",
         "Comment": "Remote Desktop Control",
         "Categories": "Network;RemoteAccess;"
       }
-    },
-    "files": [
-      "src/**/*",
-      "assets/**/*",
-      "index.html",
-      "remote.html",
-      "preload.js",
-      "server/**/*",
-      "shared/**/*"
-    ]
+    }
   }
 }

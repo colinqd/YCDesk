@@ -1,6 +1,5 @@
 const { BrowserWindow, Tray, Menu, nativeImage, app, dialog } = require('electron')
 const path = require('path')
-const autoUnlockService = require('./auto-unlock-service')
 
 let mainWindow = null
 let remoteWindow = null
@@ -30,8 +29,6 @@ function createMainWindow() {
 
   mainWindow.loadFile('index.html')
 
-  autoUnlockService.setMainWindow(mainWindow)
-
   mainWindow.once('ready-to-show', () => {
     mainWindow.show()
   })
@@ -54,14 +51,11 @@ function createMainWindow() {
 
   mainWindow.on('close', (event) => {
     if (isQuitting) {
-      // 如果是从托盘菜单退出，直接关闭
       return
     }
 
-    // 阻止默认关闭行为
     event.preventDefault()
 
-    // 弹出对话框询问用户
     const result = dialog.showMessageBoxSync(mainWindow, {
       type: 'question',
       buttons: ['直接关闭', '最小化到托盘', '取消'],
@@ -73,11 +67,9 @@ function createMainWindow() {
     })
 
     if (result === 0) {
-      // 直接关闭
       isQuitting = true
       app.quit()
     } else if (result === 1) {
-      // 最小化到托盘
       mainWindow.hide()
       if (tray && !tray.isDestroyed()) {
         tray.displayBalloon({
@@ -87,12 +79,10 @@ function createMainWindow() {
         })
       }
     }
-    // 取消则什么都不做
   })
 
   mainWindow.on('closed', () => {
     mainWindow = null
-    autoUnlockService.setMainWindow(null)
     if (remoteWindow) {
       remoteWindow.close()
     }
@@ -125,14 +115,13 @@ function createRemoteWindow() {
     icon: path.join(__dirname, '../../assets/icon.png'),
     show: false,
     backgroundColor: '#1a1a2e',
-    fullscreen: true
+    fullscreen: false
   })
 
   remoteWindow.loadFile('remote.html')
 
   remoteWindow.once('ready-to-show', () => {
     remoteWindow.show()
-    autoUnlockService.setRemoteWindow(remoteWindow)
   })
 
   remoteWindow.webContents.on('zoom-changed', (event, zoomDirection) => {
@@ -148,7 +137,6 @@ function createRemoteWindow() {
 
   remoteWindow.on('closed', () => {
     remoteWindow = null
-    autoUnlockService.setRemoteWindow(null)
   })
 
   return remoteWindow
@@ -156,16 +144,14 @@ function createRemoteWindow() {
 
 function createTray() {
   let icon
-  
+
   const iconPaths = [
     path.join(__dirname, '../../assets/icon.png'),
-    path.join(__dirname, '../../assets/icon.ico'),
-    path.join(__dirname, '../../build/icon.png'),
-    path.join(__dirname, '../../build/icon.ico')
+    path.join(__dirname, '../../build/icon.png')
   ]
-  
+
   console.log('尝试加载托盘图标，路径列表:', iconPaths)
-  
+
   for (const iconPath of iconPaths) {
     try {
       console.log('检查图标路径:', iconPath)
@@ -182,23 +168,7 @@ function createTray() {
       console.log('加载图标失败:', iconPath, e.message)
     }
   }
-  
-  if (!icon || icon.isEmpty()) {
-    console.log('所有图标加载失败，尝试使用内置图标')
-    try {
-      const builtInIconPath = path.join(process.resourcesPath, 'assets/icon.png')
-      console.log('尝试内置图标路径:', builtInIconPath)
-      if (require('fs').existsSync(builtInIconPath)) {
-        icon = nativeImage.createFromPath(builtInIconPath)
-        if (!icon.isEmpty()) {
-          console.log('内置托盘图标加载成功')
-        }
-      }
-    } catch (e) {
-      console.log('加载内置图标失败:', e.message)
-    }
-  }
-  
+
   if (!icon || icon.isEmpty()) {
     console.log('使用默认图标')
     icon = nativeImage.createEmpty()
