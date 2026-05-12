@@ -7,6 +7,7 @@ server-gui/node_modules/
 out/
 dist/
 dist-v2/
+dist-debug/
 dist_debug/
 dist_fixed*/
 dist_optimized/

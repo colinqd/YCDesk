@@ -1,4 +1,4 @@
-const { BrowserWindow, Tray, Menu, nativeImage, app } = require('electron')
+const { BrowserWindow, Tray, Menu, nativeImage, app, dialog } = require('electron')
 const path = require('path')
 const autoUnlockService = require('./auto-unlock-service')
 
@@ -53,6 +53,41 @@ function createMainWindow() {
   })
 
   mainWindow.on('close', (event) => {
+    if (isQuitting) {
+      // 如果是从托盘菜单退出，直接关闭
+      return
+    }
+
+    // 阻止默认关闭行为
+    event.preventDefault()
+
+    // 弹出对话框询问用户
+    const result = dialog.showMessageBoxSync(mainWindow, {
+      type: 'question',
+      buttons: ['直接关闭', '最小化到托盘', '取消'],
+      defaultId: 1,
+      cancelId: 2,
+      title: 'YCDesk',
+      message: '您想要怎么做？',
+      detail: '请选择您的操作：'
+    })
+
+    if (result === 0) {
+      // 直接关闭
+      isQuitting = true
+      app.quit()
+    } else if (result === 1) {
+      // 最小化到托盘
+      mainWindow.hide()
+      if (tray && !tray.isDestroyed()) {
+        tray.displayBalloon({
+          iconType: 'info',
+          title: 'YCDesk',
+          content: '程序已最小化到系统托盘，双击图标可恢复窗口'
+        })
+      }
+    }
+    // 取消则什么都不做
   })
 
   mainWindow.on('closed', () => {

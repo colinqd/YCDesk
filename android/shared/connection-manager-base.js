@@ -453,6 +453,24 @@ class BaseConnectionManager {
             stream = new MediaStream([event.track])
         }
         
+        const track = event.track
+        this.log('收到视频轨道: ' + track.id + ', kind=' + track.kind + ', enabled=' + track.enabled + ', muted=' + track.muted)
+        
+        track.onended = () => {
+            this.log('视频轨道已结束: ' + track.id)
+            this.emit('video-track-ended', { trackId: track.id })
+        }
+        
+        track.onmute = () => {
+            this.log('视频轨道进入静音状态: ' + track.id)
+            this.emit('video-track-muted', { trackId: track.id })
+        }
+        
+        track.onunmute = () => {
+            this.log('视频轨道解除静音: ' + track.id)
+            this.emit('video-track-unmuted', { trackId: track.id })
+        }
+        
         if (this.videoElement) {
             this.videoElement.srcObject = stream
             this.videoElement.muted = true
