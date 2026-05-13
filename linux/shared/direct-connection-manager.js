@@ -1,144 +1,330 @@
 class DirectConnectionManager extends BaseConnectionManager {
     constructor(options = {}) {
-        super(options);
-        this.role = null;
-        this.websocket = null;
-        this.isController = false;
-        this.address = null;
-        this.port = null;
+        super(options)
+        this.targetWindowId = null
+        this.isController = false
+        this.isConnectionStarted = false
+        this.modeData = null
+        this.offerReceived = false
+        this.offerResolve = null
+        this.answerResolve = null
+        this.renegotiateResolve = null
     }
 
-    async connectAsController(address, port) {
-        this.role = 'controller';
-        this.isController = true;
-        this.address = address;
-        this.port = port;
-        
-        this.log(`作为控制端连接到 ${address}:${port}`);
-        
-        return this.connect({
-            credentials: {
-                role: 'controller',
-                address,
-                port
-            }
-        });
-    }
-
-    async connectAsControlled(address, port) {
-        this.role = 'controlled';
-        this.isController = false;
-        this.address = address;
-        this.port = port;
-        
-        this.log(`作为被控端连接到 ${address}:${port}`);
-        
-        return this.connect({
-            credentials: {
-                role: 'controlled',
-                address,
-                port
-            }
-        });
+    setModeData(data) {
+        this.modeData = data
+        this.targetWindowId = data.targetWindowId
+        this.isController = data.mode === 'controller'
+        this.isConnectionStarted = true
+        this.log('setModeData 完成, isController=' + this.isController)
     }
 
     async establishSignaling(config) {
-        this.log('建立WebSocket信令通道');
+        this.log('直连模式: 使用IPC作为信令通道')
+        
+        window.electronAPI.on('webrtc-answer', async (data) => {
+            this.handleAnswer(data.answer)
+        })
+
+        window.electronAPI.on('webrtc-ice-candidate', async (data) => {
+            this.handleIceCandidate(data.candidate)
+        })
+        
+        window.electronAPI.on('webrtc-offer', async (data) => {
+            this.log('收到 webrtc-offer 事件')
+            if (this.isController) {
+                await this.handleSignalingOffer(data)
+            }
+        })
+        
+        if (this.modeData) {
+            this.log(`直连模式: 使用预设的模式数据 mode=${this.modeData.mode}`)
+            return
+        }
+        
+        window.electronAPI.on('direct-mode-start', async (data) => {
+            if (this.isConnectionStarted) return
+            
+            this.isConnectionStarted = true
+            this.targetWindowId = data.targetWindowId
+            this.isController = data.mode === 'controller'
+            
+            this.log(`直连模式启动: mode=${data.mode}, targetWindowId=${data.targetWindowId}`)
+            
+            this.emit('direct-mode-start', data)
+        })
         
         return new Promise((resolve, reject) => {
-            const wsUrl = `ws://${this.address}:${this.port}`;
-            this.log('连接到WebSocket:', wsUrl);
+            const timeout = setTimeout(() => {
+                reject(new Error('等待直连模式启动超时'))
+            }, 10000)
             
-            try {
-                this.websocket = new WebSocket(wsUrl);
-                
-                this.websocket.onopen = () => {
-                    this.log('WebSocket已连接');
-                    resolve();
-                };
-                
-                this.websocket.onmessage = (event) => {
-                    this.handleWebSocketMessage(event.data);
-                };
-                
-                this.websocket.onerror = (error) => {
-                    this.error('WebSocket错误:', error);
-                };
-                
-                this.websocket.onclose = (event) => {
-                    this.log('WebSocket已关闭:', event.code, event.reason);
-                    this.emit('websocket-close', event);
-                };
-            } catch (error) {
-                reject(error);
-            }
-        });
+            this.on('direct-mode-start', () => {
+                clearTimeout(timeout)
+                resolve()
+            })
+        })
     }
 
     async authenticate(credentials) {
-        this.log('发送角色信息');
-        this.sendSignalingMessage({
-            type: 'role',
-            role: this.role
-        });
-        return { success: true };
+        this.log('直连模式: 跳过身份验证')
+        return { success: true }
     }
 
     async negotiateCapabilities() {
-        this.log('协商能力');
-        return {
+        this.log('直连模式: 能力协商')
+        
+        const capabilities = {
             video: true,
             audio: false,
-            clipboard: true
-        };
+            clipboard: true,
+            fileTransfer: false
+        }
+        
+        return capabilities
     }
 
     sendSignalingMessage(message) {
-        if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) {
-            this.error('WebSocket未连接，无法发送消息');
-            return;
+        switch (message.type) {
+            case 'offer':
+                window.electronAPI.sendToMainWindow('webrtc-offer', {
+                    offer: message.offer
+                })
+                break
+            case 'answer':
+                window.electronAPI.sendToMainWindow('webrtc-answer', {
+                    answer: message.answer
+                })
+                break
+            case 'ice-candidate':
+                window.electronAPI.sendToMainWindow('webrtc-ice-candidate', {
+                    candidate: message.candidate
+                })
+                break
+            case 'renegotiate':
+                window.electronAPI.sendToMainWindow('webrtc-renegotiate', {
+                    offer: message.offer
+                })
+                break
+            default:
+                window.electronAPI.sendToMainWindow('webrtc-signaling', message)
         }
-        
-        this.websocket.send(JSON.stringify(message));
     }
 
-    handleWebSocketMessage(data) {
+    async connect(config) {
+        this.log('connect() 方法开始执行')
+        this.config = config
+        this.stateMachine.transition(ConnectionState.CONNECTING)
+        this.log('状态已转换为 CONNECTING')
+        
         try {
-            const message = JSON.parse(data);
-            this.log('收到信令消息:', message.type);
+            this.log('第一阶段：控制流（串行）开始')
             
-            switch (message.type) {
-                case 'offer':
-                    this.handleOffer(message.offer);
-                    break;
-                case 'answer':
-                    this.handleAnswer(message.answer);
-                    break;
-                case 'ice-candidate':
-                    this.handleIceCandidate(message.candidate);
-                    break;
-                case 'role-ack':
-                    this.log('角色确认收到');
-                    this.emit('role-ack');
-                    break;
-                default:
-                    this.log('未知信令消息类型:', message.type);
+            await this.establishSignaling(config)
+            this.log('establishSignaling 完成')
+            this.stateMachine.transition(ConnectionState.AUTHENTICATING)
+            
+            await this.authenticate(config.credentials || {})
+            this.stateMachine.transition(ConnectionState.NEGOTIATING)
+            
+            const capabilities = await this.negotiateCapabilities()
+            this.stateMachine.transition(ConnectionState.CREATING_CHANNEL)
+            
+            this.log('第二阶段：核心通道（优先）开始')
+            
+            await this.createPeerConnection(capabilities)
+            
+            if (this.isController) {
+                await this.connectAsController()
+            } else {
+                await this.connectAsControlled()
+            }
+            
+            this.stateMachine.transition(ConnectionState.CONNECTED)
+            this.log('连接建立完成')
+            
+            return { success: true }
+            
+        } catch (error) {
+            this.error('连接失败:', error)
+            this.stateMachine.transition(ConnectionState.ERROR, { error: error.message })
+            throw error
+        }
+    }
+
+    async connectAsController() {
+        this.log('主控端连接流程开始')
+        
+        await this.createDataChannel()
+        
+        this.log('创建初始 offer（不含视频）...')
+        const offer = await this.peerConnection.createOffer()
+        await this.peerConnection.setLocalDescription(offer)
+        
+        this.sendSignalingMessage({
+            type: 'offer',
+            offer: {
+                type: offer.type,
+                sdp: offer.sdp
+            }
+        })
+        
+        this.log('等待被控端发送初始 answer...')
+        await this.waitForAnswer()
+        
+        this.log('收到初始 answer，数据通道应该已打开')
+        
+        await this.waitForDataChannelOpen()
+        
+        this.log('数据通道已打开，发送分辨率请求...')
+        this.stateMachine.transition(ConnectionState.RESOLUTION_NEGOTIATING)
+        const displaySize = await this.negotiateResolution()
+        this.adjustVideoContainer(displaySize)
+        
+        this.log('分辨率协商完成，等待 renegotiation offer（含视频）...')
+        this.stateMachine.transition(ConnectionState.WAITING_VIDEO)
+        
+        await this.waitForRenegotiationOffer()
+        
+        this.log('收到 renegotiation offer，处理中...')
+        
+        await this.waitForFirstFrame()
+        
+        this.stateMachine.transition(ConnectionState.DISPLAYING_FIRST_FRAME)
+        this.log('首帧显示成功')
+        
+        this.stateMachine.transition(ConnectionState.LOADING_AUXILIARY)
+        this.loadAuxiliaryChannelsParallel()
+    }
+
+    async waitForAnswer() {
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error('等待 answer 超时'))
+            }, 30000)
+            
+            this.answerResolve = () => {
+                clearTimeout(timeout)
+                resolve()
+            }
+        })
+    }
+
+    async waitForRenegotiationOffer() {
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error('等待 renegotiation offer 超时'))
+            }, 30000)
+            
+            this.renegotiateResolve = () => {
+                clearTimeout(timeout)
+                resolve()
+            }
+        })
+    }
+
+    async connectAsControlled() {
+        this.log('被控端连接流程开始')
+        
+        await this.createDataChannel()
+        await this.waitForDataChannelOpen()
+        
+        this.stateMachine.transition(ConnectionState.RESOLUTION_NEGOTIATING)
+        
+        const displaySize = await this.negotiateResolution()
+        this.adjustVideoContainer(displaySize)
+        
+        this.stateMachine.transition(ConnectionState.WAITING_VIDEO)
+        
+        await this.startScreenCapture()
+        await this.createAndSendOffer()
+        
+        await this.waitForFirstFrame()
+        
+        this.stateMachine.transition(ConnectionState.DISPLAYING_FIRST_FRAME)
+        this.log('首帧显示成功')
+        
+        this.stateMachine.transition(ConnectionState.LOADING_AUXILIARY)
+        this.loadAuxiliaryChannelsParallel()
+    }
+
+    async waitForOffer() {
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error('等待 offer 超时'))
+            }, 30000)
+            
+            this.offerResolve = () => {
+                clearTimeout(timeout)
+                resolve()
+            }
+        })
+    }
+
+    async createAndSendOffer() {
+        this.log('创建并发送 offer')
+        
+        const offer = await this.peerConnection.createOffer()
+        await this.peerConnection.setLocalDescription(offer)
+        
+        this.sendSignalingMessage({
+            type: 'offer',
+            offer: {
+                type: offer.type,
+                sdp: offer.sdp
+            }
+        })
+        
+        this.log('offer 已发送')
+    }
+
+    async startScreenCapture() {
+        this.log('直连模式: 开始屏幕捕获')
+        
+        try {
+            const sources = await window.electronAPI.getSources()
+            
+            if (sources.length > 0) {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: false,
+                    video: {
+                        mandatory: {
+                            chromeMediaSource: 'desktop',
+                            chromeMediaSourceId: sources[0].id,
+                            maxWidth: 1920,
+                            maxHeight: 1080,
+                            maxFrameRate: 30
+                        }
+                    }
+                })
+                
+                stream.getTracks().forEach(track => {
+                    this.peerConnection.addTrack(track, stream)
+                })
+                
+                this.log('屏幕捕获成功')
             }
         } catch (error) {
-            this.error('解析WebSocket消息失败:', error);
+            this.error('屏幕捕获失败:', error)
+            throw error
         }
     }
 
-    async handleOffer(offer) {
-        this.log('收到offer，作为被控端处理');
+    async handleSignalingOffer(data) {
+        this.log('直连模式: 收到 offer')
+        
+        if (!this.isController) {
+            this.log('被控端收到 offer，这是初始连接')
+            return
+        }
         
         try {
-            await this.createPeerConnection({ video: true });
+            await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer))
+            await this.addPendingIceCandidates()
             
-            await this.peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-            
-            const answer = await this.peerConnection.createAnswer();
-            await this.peerConnection.setLocalDescription(answer);
+            this.log('创建 renegotiation answer...')
+            const answer = await this.peerConnection.createAnswer()
+            await this.peerConnection.setLocalDescription(answer)
             
             this.sendSignalingMessage({
                 type: 'answer',
@@ -146,201 +332,49 @@ class DirectConnectionManager extends BaseConnectionManager {
                     type: answer.type,
                     sdp: answer.sdp
                 }
-            });
+            })
             
-            this.log('answer已发送');
+            this.log('直连模式: renegotiation answer 已发送')
             
-            await this.startScreenCapture();
+            if (this.renegotiateResolve) {
+                this.renegotiateResolve()
+            }
             
         } catch (error) {
-            this.error('处理offer失败:', error);
+            this.error('处理 offer 失败:', error)
         }
     }
 
-    async startScreenCapture() {
-        this.log('开始屏幕捕获');
+    handleAnswer(answer) {
+        if (!answer) return
         
-        try {
-            if (typeof navigator.mediaDevices.getDisplayMedia !== 'undefined') {
-                const stream = await navigator.mediaDevices.getDisplayMedia({
-                    video: true,
-                    audio: false
-                });
+        this.log('收到 answer')
+        this.peerConnection.setRemoteDescription(new RTCSessionDescription(answer))
+            .then(() => {
+                this.log('设置远程描述成功')
+                this.addPendingIceCandidates()
                 
-                stream.getTracks().forEach(track => {
-                    this.peerConnection.addTrack(track, stream);
-                });
-                
-                this.log('屏幕捕获成功');
-            } else if (window.electronAPI) {
-                const sources = await window.electronAPI.getSources();
-                
-                if (sources && sources.length > 0) {
-                    const stream = await navigator.mediaDevices.getUserMedia({
-                        audio: false,
-                        video: {
-                            mandatory: {
-                                chromeMediaSource: 'desktop',
-                                chromeMediaSourceId: sources[0].id,
-                                maxWidth: 1920,
-                                maxHeight: 1080,
-                                maxFrameRate: 30
-                            }
-                        }
-                    });
-                    
-                    stream.getTracks().forEach(track => {
-                        this.peerConnection.addTrack(track, stream);
-                    });
-                    
-                    this.log('屏幕捕获成功（Electron）');
+                if (this.answerResolve) {
+                    this.answerResolve()
                 }
-            } else {
-                throw new Error('不支持屏幕捕获');
-            }
-        } catch (error) {
-            this.error('屏幕捕获失败:', error);
-            throw error;
-        }
+            })
+            .catch(error => {
+                this.error('设置远程描述失败:', error)
+            })
     }
 
-    async connect(config) {
-        this.config = config;
-        this.stateMachine.transition(ConnectionState.CONNECTING);
-        
-        try {
-            await this.establishSignaling(config);
-            this.stateMachine.transition(ConnectionState.AUTHENTICATING);
-            
-            await this.authenticate(config.credentials || {});
-            this.stateMachine.transition(ConnectionState.NEGOTIATING);
-            
-            const capabilities = await this.negotiateCapabilities();
-            this.stateMachine.transition(ConnectionState.CREATING_CHANNEL);
-            
-            if (this.isController) {
-                await this.createPeerConnection(capabilities);
-                await this.createDataChannel();
-                
-                const offer = await this.peerConnection.createOffer();
-                await this.peerConnection.setLocalDescription(offer);
-                
-                this.sendSignalingMessage({
-                    type: 'offer',
-                    offer: {
-                        type: offer.type,
-                        sdp: offer.sdp
-                    }
-                });
-                
-                this.log('offer已发送，等待answer...');
-                
-                await this.waitForDataChannelOpen();
-                this.stateMachine.transition(ConnectionState.RESOLUTION_NEGOTIATING);
-                
-                const displaySize = await this.negotiateResolution();
-                this.adjustVideoContainer(displaySize);
-                
-                this.stateMachine.transition(ConnectionState.WAITING_VIDEO);
-                await this.waitForFirstFrame();
-                
-                this.stateMachine.transition(ConnectionState.DISPLAYING_FIRST_FRAME);
-                this.stateMachine.transition(ConnectionState.LOADING_AUXILIARY);
-                this.loadAuxiliaryChannelsParallel();
-                this.stateMachine.transition(ConnectionState.CONNECTED);
-                
-            } else {
-                await new Promise((resolve) => {
-                    this.once('role-ack', () => {
-                        resolve();
-                    });
-                });
-                
-                this.log('等待offer...');
-                
-                await new Promise((resolve) => {
-                    this.once('data-channel-open', () => {
-                        this.stateMachine.transition(ConnectionState.RESOLUTION_NEGOTIATING);
-                        
-                        this.dataChannelManager.setOnMessage((data) => {
-                            if (data.type === 'resolution-request') {
-                                this.handleResolutionRequest(data);
-                                this.once('video-ready', () => {
-                                    this.stateMachine.transition(ConnectionState.CONNECTED);
-                                    resolve();
-                                });
-                            } else {
-                                this.handleDataChannelMessage(data);
-                            }
-                        });
-                    });
-                });
-            }
-            
-            return { success: true };
-            
-        } catch (error) {
-            this.error('连接失败:', error);
-            this.stateMachine.transition(ConnectionState.ERROR, { error: error.message });
-            throw error;
-        }
-    }
-
-    once(event, callback) {
-        const onceCallback = (data) => {
-            this.off(event, onceCallback);
-            callback(data);
-        };
-        this.on(event, onceCallback);
-    }
-
-    handleResolutionRequest(data) {
-        this.log('收到分辨率请求:', data);
-        
-        const remoteSize = this.getPhysicalScreenSize();
-        
-        if (this.dataChannelManager) {
-            this.dataChannelManager.send({
-                type: 'resolution-response',
-                width: remoteSize.width,
-                height: remoteSize.height,
-                originalWidth: remoteSize.originalWidth,
-                originalHeight: remoteSize.originalHeight
-            }, true);
-        }
-    }
-
-    getPhysicalScreenSize() {
-        if (window.electronAPI && window.electronAPI.getScreenSize) {
-            const size = window.electronAPI.getScreenSize();
-            return {
-                width: size.width,
-                height: size.height,
-                originalWidth: size.width,
-                originalHeight: size.height
-            };
-        }
-        
-        return {
-            width: screen.width,
-            height: screen.height,
-            originalWidth: screen.width,
-            originalHeight: screen.height
-        };
-    }
-
-    async disconnect() {
-        if (this.websocket) {
-            this.websocket.close();
-            this.websocket = null;
-        }
-        
-        return super.disconnect();
+    disconnect() {
+        this.isConnectionStarted = false
+        this.offerReceived = false
+        this.offerResolve = null
+        this.answerResolve = null
+        this.renegotiateResolve = null
+        return super.disconnect()
     }
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { DirectConnectionManager };
+    module.exports = { DirectConnectionManager }
 } else {
-    window.DirectConnectionManager = DirectConnectionManager;
+    window.DirectConnectionManager = DirectConnectionManager
 }

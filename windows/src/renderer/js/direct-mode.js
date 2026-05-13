@@ -14,6 +14,7 @@ class DirectModeManager {
     this.auxiliaryChannels = new Map()
     this.currentStream = null
     this.videoFrameTransmitter = null
+    this._controlledIpcListenersSetup = false
     this.useOptimizedTransfer = options.useOptimizedTransfer !== false
     this.OPTIMIZED_VIDEO_CHANNEL = 'optimized-video'
     this.optimizedVideoChannel = null
@@ -172,7 +173,8 @@ class DirectModeManager {
     await this.createPeerConnection(clientId)
     
     // 添加锁屏状态监听，发送给主控端
-    if (window.electronAPI) {
+    if (!this._controlledIpcListenersSetup && window.electronAPI) {
+      this._controlledIpcListenersSetup = true
       window.electronAPI.on('unlock-state-changed', (data) => {
         console.log('[DirectModeManager] 收到IPC锁屏状态变更: ' + JSON.stringify(data))
         this.logFn('收到本地锁屏状态变更: ' + JSON.stringify(data))
@@ -503,17 +505,43 @@ class DirectModeManager {
     try {
       this.stopScreenCapture()
       
+      var selectedSourceId = window.getSelectedSourceId ? window.getSelectedSourceId() : null
       const sources = await window.electronAPI.getSources()
       this.logFn('可用屏幕源: ' + sources.length + ' 个')
+      if (!selectedSourceId) {
+        selectedSourceId = sources.find(function(s) { return s.id && s.id.startsWith('screen:') })?.id || (sources.length > 0 ? sources[0].id : null)
+      }
+      this.logFn('选定捕获源: ' + (selectedSourceId || '无'))
 
-      if (sources.length > 0) {
-        const maxWidth = targetWidth || 1920
-        const maxHeight = targetHeight || 1080
+      var maxWidth = targetWidth || 1920
+      var maxHeight = targetHeight || 1080
+
+      var useServiceCapture = false
+      try { useServiceCapture = localStorage.getItem('ycdesk_use_service_capture') === 'true' } catch(e) {}
+      if (useServiceCapture && window.electronAPI && window.electronAPI.serviceStartCapture) {
+        this.logFn('尝试使用服务级捕获（绕过反截屏保护）')
+        try {
+          await window.electronAPI.serviceStartCapture({
+            fps: 30,
+            jpegQuality: 70,
+            maxWidth: maxWidth,
+            maxHeight: maxHeight,
+            desktopTarget: 'auto'
+          })
+          this.logFn('服务级捕获已启动')
+          this._setupServiceFrameReceiver()
+          return { width: maxWidth || 1920, height: maxHeight || 1080 }
+        } catch (e) {
+          this.logFn('服务捕获启动失败: ' + e.message + '，回退到标准模式')
+        }
+      }
+
+      if (selectedSourceId) {
 
         if (this.useOptimizedTransfer && this.videoFrameTransmitter && this.optimizedVideoChannel && this.optimizedVideoChannel.readyState === 'open') {
           this.logFn('使用优化传输模式捕获屏幕')
           this.videoFrameTransmitter.initialize(this.optimizedVideoChannel, maxWidth, maxHeight)
-          const resolution = await this.videoFrameTransmitter.start(sources[0].id, maxWidth, maxHeight)
+          const resolution = await this.videoFrameTransmitter.start(selectedSourceId, maxWidth, maxHeight)
           if (resolution) {
             this.logFn('优化屏幕捕获成功，分辨率: ' + resolution.width + 'x' + resolution.height)
             return resolution
@@ -526,7 +554,7 @@ class DirectModeManager {
           video: {
             mandatory: {
               chromeMediaSource: 'desktop',
-              chromeMediaSourceId: sources[0].id,
+              chromeMediaSourceId: selectedSourceId,
               maxWidth: maxWidth,
               maxHeight: maxHeight,
               maxFrameRate: this.config.screenCapture?.maxFrameRate || 30
@@ -596,6 +624,25 @@ class DirectModeManager {
     }
   }
 
+  _setupServiceFrameReceiver() {
+    var self = this
+    window.electronAPI.onServiceFrame(function(frameData) {
+      if (self.optimizedVideoChannel && self.optimizedVideoChannel.readyState === 'open') {
+        self.videoFrameTransmitter.sendEncodedFrame(frameData.jpeg, frameData.width, frameData.height)
+      }
+      if (self.dataChannelManager && self.dataChannelManager.isOpen()) {
+        self.dataChannelManager.send({
+          type: 'service-video-frame',
+          width: frameData.width,
+          height: frameData.height,
+          jpeg: frameData.jpeg,
+          timestamp: frameData.timestamp
+        })
+      }
+    })
+    this.logFn('服务帧接收器已就绪')
+  }
+
   async refreshVideoStream() {
     this.logFn('开始刷新视频流...')
     try {
@@ -607,15 +654,21 @@ class DirectModeManager {
         return
       }
 
-      const maxWidth = 1920
-      const maxHeight = 1080
+      const maxWidth = this.config.screenCapture?.maxWidth || 1920
+      const maxHeight = this.config.screenCapture?.maxHeight || 1080
+
+      var selectedSourceId = window.getSelectedSourceId ? window.getSelectedSourceId() : null
+      if (!selectedSourceId) {
+        selectedSourceId = sources.find(function(s) { return s.id && s.id.startsWith('screen:') })?.id || (sources.length > 0 ? sources[0].id : null)
+      }
+      this.logFn('刷新使用捕获源: ' + (selectedSourceId || '无'))
 
       this.currentStream = await navigator.mediaDevices.getUserMedia({
         audio: false,
         video: {
           mandatory: {
             chromeMediaSource: 'desktop',
-            chromeMediaSourceId: sources[0].id,
+            chromeMediaSourceId: selectedSourceId,
             maxWidth: maxWidth,
             maxHeight: maxHeight,
             maxFrameRate: 30
@@ -742,7 +795,9 @@ class DirectModeManager {
       }
       this.directPeerConnection = null
     }
-    
+
+    this._controlledIpcListenersSetup = false
+
     this.logFn('直连模式管理器已重置')
   }
 }

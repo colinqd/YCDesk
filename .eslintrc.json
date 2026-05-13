@@ -1,0 +1,67 @@
+{
+  "env": {
+    "browser": true,
+    "node": true,
+    "es2021": true
+  },
+  "extends": "eslint:recommended",
+  "parserOptions": {
+    "ecmaVersion": 2021,
+    "sourceType": "module",
+    "allowReserved": false
+  },
+  "globals": {
+    "require": "readonly",
+    "module": "readonly",
+    "process": "readonly",
+    "__dirname": "readonly",
+    "setTimeout": "readonly",
+    "clearTimeout": "readonly",
+    "setInterval": "readonly",
+    "clearInterval": "readonly",
+    "requestAnimationFrame": "readonly",
+    "performance": "readonly",
+    "document": "readonly",
+    "navigator": "readonly",
+    "console": "readonly",
+    "Image": "readonly",
+    "Uint8ClampedArray": "readonly",
+    "ImageData": "readonly",
+    "JSON": "readonly",
+    "Map": "readonly",
+    "Object": "readonly",
+    "Array": "readonly",
+    "Date": "readonly",
+    "Math": "readonly",
+    "Promise": "readonly"
+  },
+  "rules": {
+    "no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+    "no-console": "off",
+    "no-var": "off",
+    "prefer-const": "off",
+    "semi": ["warn", "never"],
+    "quotes": ["warn", "single", { "avoidEscape": true, "allowTemplateLiterals": true }],
+    "no-undef": "warn",
+    "no-redeclare": "warn",
+    "no-empty": "warn",
+    "no-constant-condition": "warn",
+    "no-prototype-builtins": "warn",
+    "no-case-declarations": "off",
+    "no-fallthrough": "off",
+    "no-useless-escape": "off",
+    "no-mixed-spaces-and-tabs": "warn",
+    "no-irregular-whitespace": "warn",
+    "no-unreachable": "warn",
+    "no-unsafe-negation": "error",
+    "no-unsafe-finally": "error"
+  },
+  "ignorePatterns": [
+    "node_modules/",
+    "dist/",
+    "build/",
+    "out/",
+    ".git/",
+    "*.min.js"
+  ]
+}

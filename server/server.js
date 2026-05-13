@@ -13,6 +13,8 @@ for (let i = 0; i < args.length; i++) {
     options.key = args[i + 1]
   } else if (args[i] === '--no-https') {
     options.noHttps = true
+  } else if (args[i] === '--token' && args[i + 1]) {
+    options.authToken = args[i + 1]
   } else if (args[i] === '--help' || args[i] === '-h') {
     console.log('YCDesk 信令服务器')
     console.log('用法: node server.js [选项]')
@@ -20,6 +22,7 @@ for (let i = 0; i < args.length; i++) {
     console.log('  --cert <path>   SSL 证书路径')
     console.log('  --key <path>    SSL 私钥路径')
     console.log('  --no-https      禁用 HTTPS')
+    console.log('  --token <token> 认证令牌 (也可设置环境变量 YC_DESK_AUTH_TOKEN)')
     console.log('  --help, -h      显示帮助')
     process.exit(0)
   }

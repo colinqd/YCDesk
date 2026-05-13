@@ -29,6 +29,9 @@ function log(message) {
     const div = document.createElement('div')
     div.textContent = logMessage
     s.connectionLogDiv.appendChild(div)
+    while (s.connectionLogDiv.children.length > 200) {
+      s.connectionLogDiv.removeChild(s.connectionLogDiv.firstChild)
+    }
     s.connectionLogDiv.scrollTop = s.connectionLogDiv.scrollHeight
   }
 }
@@ -170,12 +173,16 @@ function editSignalingServer(index) {
   const nameInput = document.getElementById('newServerName')
   const urlInput = document.getElementById('newServerUrl')
   const addBtn = document.getElementById('addServerBtn')
+  const panel = document.getElementById('serverManagePanel')
   
   if (nameInput) nameInput.value = server.name
   if (urlInput) urlInput.value = server.url
   if (addBtn) {
     addBtn.textContent = '更新'
     addBtn.setAttribute('data-edit-index', index)
+  }
+  if (panel) {
+    panel.style.display = 'block'
   }
   showToast('编辑服务器: ' + server.name)
 }
@@ -285,12 +292,16 @@ function editSignalingServerControlled(index) {
   const nameInput = document.getElementById('controlledNewServerName')
   const urlInput = document.getElementById('controlledNewServerUrl')
   const addBtn = document.getElementById('controlledAddServerBtn')
+  const panel = document.getElementById('controlledServerManagePanel')
 
   if (nameInput) nameInput.value = server.name
   if (urlInput) urlInput.value = server.url
   if (addBtn) {
     addBtn.textContent = '更新'
     addBtn.setAttribute('data-edit-index', index)
+  }
+  if (panel) {
+    panel.style.display = 'block'
   }
   showToast('编辑服务器: ' + server.name)
 }
@@ -1114,6 +1125,46 @@ function disconnect() {
   }
 }
 
+var exitBehavior = (function() {
+  try { return localStorage.getItem('ycdesk_exit_behavior') || 'lock_and_disconnect' } catch(e) { return 'lock_and_disconnect' }
+})()
+
+function disconnectAndLock() {
+  if (confirm('确定要退出连接并锁定远程屏幕吗？')) {
+    if (s.inputDispatcher && s.inputDispatcher.sendInputCommand) {
+      s.inputDispatcher.sendInputCommand({ type: 'lock_screen' })
+    }
+    setTimeout(function() { disconnect() }, 500)
+  }
+}
+
+function toggleExitMode() {
+  exitBehavior = exitBehavior === 'disconnect_only' ? 'lock_and_disconnect' : 'disconnect_only'
+  try { localStorage.setItem('ycdesk_exit_behavior', exitBehavior) } catch(e) {}
+  updateExitBtnDisplay()
+  showToast(exitBehavior === 'lock_and_disconnect' ? '退出模式：退出并锁屏' : '退出模式：仅退出')
+}
+
+function updateExitBtnDisplay() {
+  var btn = document.getElementById('exitBtn')
+  if (!btn) return
+  if (exitBehavior === 'lock_and_disconnect') {
+    btn.textContent = '✕ 锁'
+    btn.style.background = '#e94560'
+  } else {
+    btn.textContent = '✕'
+    btn.style.background = ''
+  }
+}
+
+function handleExit() {
+  if (exitBehavior === 'lock_and_disconnect') {
+    disconnectAndLock()
+  } else {
+    disconnect()
+  }
+}
+
 function requestUnlock() {
   console.log('[requestUnlock] Sending unlock request to controlled end...')
   
@@ -1242,6 +1293,10 @@ window.resetZoomAndPan = resetZoomAndPan
 window.sendKey = sendKey
 window.toggleModifier = toggleModifier
 window.disconnect = disconnect
+window.disconnectAndLock = disconnectAndLock
+window.toggleExitMode = toggleExitMode
+window.updateExitBtnDisplay = updateExitBtnDisplay
+window.handleExit = handleExit
 window.requestUnlock = requestUnlock
 window.requestLock = requestLock
 window.manualConnectToServer = manualConnectToServer

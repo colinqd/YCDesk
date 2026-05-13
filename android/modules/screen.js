@@ -59,6 +59,10 @@ function showRemoteScreen() {
   document.getElementById('mainContainer').style.display = 'none'
   document.getElementById('remoteScreen').classList.add('active')
   startStatsMonitoring()
+
+  if (typeof window.updateExitBtnDisplay === 'function') {
+    setTimeout(function() { window.updateExitBtnDisplay() }, 50)
+  }
   
   setTimeout(() => {
       if (typeof window.setupRemoteScreenInteraction === 'function') window.setupRemoteScreenInteraction();

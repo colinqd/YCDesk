@@ -62,6 +62,7 @@ const CONFIG = {
     keys: {
       directHistory: 'ycdesk_direct_history',
       signalingHistory: 'ycdesk_signaling_history',
+      signalingServers: 'ycdesk_signaling_servers',
       deviceId: 'ycdesk_device_id'
     }
   },

@@ -1,33 +1,36 @@
 const { app } = require('electron')
 const path = require('path')
 const os = require('os')
+const crypto = require('crypto')
 const { createMainWindow, createRemoteWindow, createTray } = require('./window-manager')
 const { init: initIpcHandlers, loadDeviceId } = require('./ipc-handlers')
 const { createLogger } = require('./logger')
 
-const isDevelopment = process.env.NODE_ENV === 'development'
+const isDevelopment = !app.isPackaged && process.env.NODE_ENV === 'development'
 
 const logger = createLogger({
   logLevel: isDevelopment ? 'debug' : 'info'
 })
 
-const instanceId = Math.random().toString(36).substr(2, 8)
-const userDataPath = path.join(os.tmpdir(), `ycdesk-${instanceId}`)
-const deviceId = loadDeviceId()
-
-app.setPath('userData', userDataPath)
+const instanceId = crypto.randomBytes(4).toString('hex')
+app.setPath('userData', path.join(os.homedir(), '.ycdesk'))
 app.setAppUserModelId(`com.ycdesk.linux.${instanceId}`)
 
-app.commandLine.appendSwitch('disable-features', 'SingleProcess')
-app.commandLine.appendSwitch('disable-gpu-sandbox')
+const deviceId = loadDeviceId()
 
-// 允许自签名证书（仅开发环境）
+app.commandLine.appendSwitch('disable-features', 'SingleProcess')
+
+if (!app.isPackaged && process.env.YCDESK_DISABLE_GPU_SANDBOX === '1') {
+  app.commandLine.appendSwitch('disable-gpu-sandbox')
+  logger.warn('GPU沙箱已禁用（YCDESK_DISABLE_GPU_SANDBOX=1）')
+}
+
 if (isDevelopment) {
   app.commandLine.appendSwitch('ignore-certificate-errors')
   app.commandLine.appendSwitch('allow-insecure-localhost')
+  logger.warn('开发模式：证书验证已禁用')
 }
 
-// 处理证书错误
 app.on('certificate-error', (event, webContents, url, error, certificate, callback) => {
   if (isDevelopment) {
     logger.warn('忽略证书错误（开发环境）:', { url, error })
@@ -38,15 +41,43 @@ app.on('certificate-error', (event, webContents, url, error, certificate, callba
   }
 })
 
+process.on('uncaughtException', (error) => {
+  logger.fatal('未捕获异常', { error: error.message, stack: error.stack?.split('\n').slice(0, 5).join('\n') })
+  setTimeout(() => process.exit(1), 1000)
+})
+
+process.on('unhandledRejection', (reason) => {
+  logger.error('未处理的Promise拒绝', {
+    reason: reason instanceof Error ? reason.message : String(reason),
+    stack: reason instanceof Error ? reason.stack?.split('\n').slice(0, 3).join('\n') : undefined
+  })
+})
+
+app.on('render-process-gone', (event, webContents, details) => {
+  logger.error('渲染进程崩溃', {
+    reason: details.reason,
+    exitCode: details.exitCode,
+    url: webContents.getURL()
+  })
+  if (details.reason === 'crashed' || details.reason === 'oom') {
+    webContents.reload()
+  }
+})
+
+app.on('child-process-gone', (event, details) => {
+  logger.error('子进程异常退出', { type: details.type, reason: details.reason, exitCode: details.exitCode })
+})
+
 app.whenReady().then(() => {
   logger.info('YCDesk Linux 启动中...')
   logger.info('Electron 版本:', { version: process.versions.electron })
   logger.info('Node 版本:', { version: process.versions.node })
   logger.info('平台:', { platform: process.platform })
   logger.info('设备ID:', { deviceId: deviceId })
-  
+  logger.info('用户数据目录:', { userData: app.getPath('userData') })
+
   initIpcHandlers(deviceId, logger)
-  
+
   createMainWindow()
   createTray()
 

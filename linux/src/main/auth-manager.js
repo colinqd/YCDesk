@@ -6,8 +6,12 @@ const IV_LENGTH = 16
 const SALT_LENGTH = 32
 const TAG_LENGTH = 16
 const ITERATIONS = 100000
+const MAX_ATTEMPTS = 5
+const LOCKOUT_DURATION = 30000
 
 let connectionPassword = null
+let failedAttempts = 0
+let lockoutUntil = 0
 
 function setPassword(password) {
   if (!password || password.length < 4) {
@@ -33,7 +37,32 @@ function verifyPassword(password) {
   if (!connectionPassword) {
     return true
   }
-  return password === connectionPassword
+
+  if (lockoutUntil > 0) {
+    if (Date.now() < lockoutUntil) {
+      const remaining = Math.ceil((lockoutUntil - Date.now()) / 1000)
+      return { success: false, error: `验证被锁定，请等待 ${remaining} 秒`, lockedOut: true }
+    }
+    failedAttempts = 0
+    lockoutUntil = 0
+  }
+
+  const isValid = crypto.timingSafeEqual(
+    Buffer.from(password, 'utf8'),
+    Buffer.from(connectionPassword, 'utf8')
+  )
+
+  if (!isValid) {
+    failedAttempts++
+    if (failedAttempts >= MAX_ATTEMPTS) {
+      lockoutUntil = Date.now() + LOCKOUT_DURATION
+      return { success: false, error: '验证失败次数过多，已锁定30秒', lockedOut: true }
+    }
+    return { success: false, error: '密码错误', remainingAttempts: MAX_ATTEMPTS - failedAttempts }
+  }
+
+  failedAttempts = 0
+  return { success: true }
 }
 
 function hashPassword(password) {

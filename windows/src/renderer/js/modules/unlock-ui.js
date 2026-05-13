@@ -19,10 +19,16 @@
   }
 
   UnlockUI.prototype.loadSavedPassword = function () {
-    try {
-      var saved = localStorage.getItem('ycdesk_unlock_password')
-      if (saved) { this.savedPassword = saved; this.savedPasswordAvailable = true; this.rememberCheckbox.checked = true }
-    } catch (e) {}
+    var self = this
+    if (window.electronAPI && window.electronAPI.getUnlockPassword) {
+      window.electronAPI.getUnlockPassword().then(function (result) {
+        if (result && result.success && result.password) {
+          self.savedPassword = result.password
+          self.savedPasswordAvailable = true
+          self.rememberCheckbox.checked = true
+        }
+      }).catch(function () {})
+    }
   }
 
   UnlockUI.prototype.showOverlay = function () {
@@ -77,7 +83,11 @@
   }
 
   UnlockUI.prototype.savePassword = function (password) {
-    try { localStorage.setItem('ycdesk_unlock_password', password); this.savedPassword = password; this.savedPasswordAvailable = true } catch (e) {}
+    if (window.electronAPI && window.electronAPI.saveUnlockPassword) {
+      window.electronAPI.saveUnlockPassword(password).then(function () {}).catch(function () {})
+    }
+    this.savedPassword = password
+    this.savedPasswordAvailable = true
   }
 
   UnlockUI.prototype.handlePasswordSave = function () {
@@ -86,7 +96,11 @@
   }
 
   UnlockUI.prototype.clearPassword = function () {
-    try { localStorage.removeItem('ycdesk_unlock_password'); this.savedPassword = null; this.savedPasswordAvailable = false } catch (e) {}
+    if (window.electronAPI && window.electronAPI.clearUnlockPassword) {
+      window.electronAPI.clearUnlockPassword().then(function () {}).catch(function () {})
+    }
+    this.savedPassword = null
+    this.savedPasswordAvailable = false
   }
 
   UnlockUI.prototype.showMessage = function (text, type) { this.messageEl.textContent = text; this.messageEl.className = 'unlock-message ' + type }

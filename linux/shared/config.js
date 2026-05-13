@@ -99,38 +99,38 @@ const CONFIG = {
 }
 
 function getIceConfig(customConfig = {}) {
-  const iceServers = [];
+  const iceServers = []
 
   CONFIG.stunServers.forEach(url => {
-    iceServers.push({ urls: url });
-  });
+    iceServers.push({ urls: url })
+  })
 
   CONFIG.turnServers.forEach(turn => {
     const server = {
       urls: turn.urls || turn.url
-    };
+    }
     if (turn.username) {
-      server.username = turn.username;
+      server.username = turn.username
     }
     if (turn.credential) {
-      server.credential = turn.credential;
+      server.credential = turn.credential
     }
     if (turn.credentialType) {
-      server.credentialType = turn.credentialType;
+      server.credentialType = turn.credentialType
     }
-    iceServers.push(server);
-  });
+    iceServers.push(server)
+  })
 
   if (customConfig.stunServers) {
     customConfig.stunServers.forEach(url => {
-      iceServers.push({ urls: url });
-    });
+      iceServers.push({ urls: url })
+    })
   }
 
   if (customConfig.turnServers) {
     customConfig.turnServers.forEach(turn => {
-      iceServers.push(turn);
-    });
+      iceServers.push(turn)
+    })
   }
 
   return {
@@ -140,7 +140,7 @@ function getIceConfig(customConfig = {}) {
     rtcpMuxPolicy: customConfig.rtcpMuxPolicy || CONFIG.webrtc.rtcpMuxPolicy,
     sdpSemantics: customConfig.sdpSemantics || CONFIG.webrtc.sdpSemantics,
     iceCandidatePoolSize: customConfig.iceCandidatePoolSize || CONFIG.webrtc.iceCandidatePoolSize
-  };
+  }
 }
 
 function getVideoConstraints(customConstraints = {}) {
@@ -156,62 +156,62 @@ function getVideoConstraints(customConstraints = {}) {
         minFrameRate: customConstraints.minFrameRate || CONFIG.screenCapture.minFrameRate
       }
     }
-  };
+  }
 }
 
 function normalizeServerUrl(url, preferSecure = null) {
   if (!url) {
-    return url;
+    return url
   }
   
-  let normalized = url.trim();
+  let normalized = url.trim()
   
   // 清理常见的输入错误（如 www.hnasvr:.asia:31300 → www.hnasvr.asia:31300）
   normalized = normalized
     .replace(/:\./g, '.') // 替换冒号点（如 www.hnasvr:.asia → www.hnasvr.asia）
     .replace(/\.{2,}/g, '.') // 替换多个点
-    .replace(/:\s*/g, ':'); // 清理冒号周围空格
+    .replace(/:\s*/g, ':') // 清理冒号周围空格
   
-  normalized = normalized.replace(/^wws:\/\//gi, 'wss://');
-  normalized = normalized.replace(/^wss:\/\//gi, 'wss://');
-  normalized = normalized.replace(/^ws:\/\//gi, 'ws://');
+  normalized = normalized.replace(/^wws:\/\//i, 'wss://')
+  normalized = normalized.replace(/^wss:\/\//i, 'wss://')
+  normalized = normalized.replace(/^ws:\/\//i, 'ws://')
   
-  if (normalized.match(/^wss?:\/\//gi)) {
-    return normalized;
+  if (normalized.match(/^wss?:\/\//i)) {
+    return normalized
   }
   
-  normalized = normalized.replace(/^https:\/\//gi, 'wss://');
-  normalized = normalized.replace(/^http:\/\//gi, 'ws://');
+  normalized = normalized.replace(/^https:\/\//i, 'wss://')
+  normalized = normalized.replace(/^http:\/\//i, 'ws://')
   
-  if (normalized.match(/^wss?:\/\//gi)) {
-    return normalized;
+  if (normalized.match(/^wss?:\/\//i)) {
+    return normalized
   }
   
   // 检测是否有非标准端口（非443/80）
-  const hasCustomPort = normalized.match(/:\d+$/) && !normalized.match(/:(443|80)$/);
+  const hasCustomPort = normalized.match(/:\d+$/) && !normalized.match(/:(443|80)$/)
   
   if (preferSecure === true) {
-    normalized = 'wss://' + normalized;
+    normalized = 'wss://' + normalized
   } else if (preferSecure === false) {
-    normalized = 'ws://' + normalized;
+    normalized = 'ws://' + normalized
   } else {
-    const isDomain = /^[a-zA-Z]/.test(normalized) && !/^(\d{1,3}\.){3}\d{1,3}(:\d+)?$/.test(normalized) && normalized !== 'localhost';
-    // 如果是域名且有自定义端口，默认用 ws://（Android-Server 通常没有SSL）
-    normalized = (isDomain && !hasCustomPort ? 'wss://' : 'ws://') + normalized;
+    const isDomain = /^[a-zA-Z]/.test(normalized) && !/^(\d{1,3}\.){3}\d{1,3}(:\d+)?$/.test(normalized) && normalized !== 'localhost'
+    // 如果是域名且有自定义端口，默认用 ws://（Android-Server 通常没有 SSL）
+    normalized = (isDomain && !hasCustomPort ? 'wss://' : 'ws://') + normalized
   }
   
-  return normalized;
+  return normalized
 }
 
-CONFIG.getIceConfig = getIceConfig;
-CONFIG.getVideoConstraints = getVideoConstraints;
-CONFIG.normalizeServerUrl = normalizeServerUrl;
+CONFIG.getIceConfig = getIceConfig
+CONFIG.getVideoConstraints = getVideoConstraints
+CONFIG.normalizeServerUrl = normalizeServerUrl
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = CONFIG;
+  module.exports = CONFIG
 } else {
-  window.CONFIG = CONFIG;
-  window.getIceConfig = getIceConfig;
-  window.getVideoConstraints = getVideoConstraints;
-  window.normalizeServerUrl = normalizeServerUrl;
+  window.CONFIG = CONFIG
+  window.getIceConfig = getIceConfig
+  window.getVideoConstraints = getVideoConstraints
+  window.normalizeServerUrl = normalizeServerUrl
 }

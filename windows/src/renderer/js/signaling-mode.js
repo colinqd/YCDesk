@@ -124,6 +124,8 @@ class SignalingModeManager {
     this.optimizedVideoChannel = null
     this.currentStream = null
     
+    this._controlledIpcListenersSetup = false
+
     this._setupRemoteWindowListeners()
   }
 
@@ -229,12 +231,14 @@ class SignalingModeManager {
   }
 
   async startControlledConnection() {
+    this.role = 'controlled'
     this.logFn('作为被控端建立连接，在主窗口创建PeerConnection')
     this.isController = false
     await this.createPeerConnection()
     
     // 添加锁屏状态监听，发送给主控端
-    if (window.electronAPI) {
+    if (!this._controlledIpcListenersSetup && window.electronAPI) {
+      this._controlledIpcListenersSetup = true
       window.electronAPI.on('unlock-state-changed', (data) => {
         console.log('[SignalingModeManager] 收到IPC锁屏状态变更: ' + JSON.stringify(data))
         this.logFn('收到本地锁屏状态变更: ' + JSON.stringify(data))
@@ -371,7 +375,7 @@ class SignalingModeManager {
       if (this.peerConnection.connectionState === 'connected') {
         this.logFn('[信令模式] WebRTC连接已建立')
         if (typeof this.onWebRTCConnected === 'function') {
-          this.onWebRTCConnected(this.targetDeviceId, this.currentServerUrl)
+          this.onWebRTCConnected(this.incomingFromDeviceId, this.serverUrl)
         }
       } else if (this.peerConnection.connectionState === 'failed') {
         this.logFn('[信令模式] WebRTC连接失败')
@@ -549,17 +553,43 @@ class SignalingModeManager {
 
   async startScreenCapture() {
     try {
+      var selectedSourceId = window.getSelectedSourceId ? window.getSelectedSourceId() : null
       const sources = await window.electronAPI.getSources()
       this.logFn('[信令模式] 可用屏幕源: ' + sources.length + ' 个')
+      if (!selectedSourceId) {
+        selectedSourceId = sources.find(function(s) { return s.id && s.id.startsWith('screen:') })?.id || (sources.length > 0 ? sources[0].id : null)
+      }
+      this.logFn('[信令模式] 选定捕获源: ' + (selectedSourceId || '无'))
 
-      if (sources.length > 0) {
-        var maxWidth = this.config.screenCapture?.maxWidth || 1920
-        var maxHeight = this.config.screenCapture?.maxHeight || 1080
+      var maxWidth = this.config.screenCapture?.maxWidth || 1920
+      var maxHeight = this.config.screenCapture?.maxHeight || 1080
+
+      var useServiceCapture = false
+      try { useServiceCapture = localStorage.getItem('ycdesk_use_service_capture') === 'true' } catch(e) {}
+      if (useServiceCapture && window.electronAPI && window.electronAPI.serviceStartCapture) {
+        this.logFn('[信令模式] 尝试使用服务级捕获（绕过反截屏保护）')
+        try {
+          await window.electronAPI.serviceStartCapture({
+            fps: 30,
+            jpegQuality: 70,
+            maxWidth: maxWidth,
+            maxHeight: maxHeight,
+            desktopTarget: 'auto'
+          })
+          this.logFn('[信令模式] 服务级捕获已启动')
+          this._setupServiceFrameReceiver()
+          return
+        } catch (e) {
+          this.logFn('[信令模式] 服务捕获启动失败: ' + e.message + '，回退到标准模式')
+        }
+      }
+
+      if (selectedSourceId) {
 
         if (this.useOptimizedTransfer && this.videoFrameTransmitter && this.optimizedVideoChannel && this.optimizedVideoChannel.readyState === 'open') {
           this.logFn('[信令模式] 使用优化传输模式捕获屏幕')
           this.videoFrameTransmitter.initialize(this.optimizedVideoChannel, maxWidth, maxHeight)
-          var resolution = await this.videoFrameTransmitter.start(sources[0].id, maxWidth, maxHeight)
+          var resolution = await this.videoFrameTransmitter.start(selectedSourceId, maxWidth, maxHeight)
           if (resolution) {
             this.logFn('[信令模式] 优化屏幕捕获成功，分辨率: ' + resolution.width + 'x' + resolution.height)
             return
@@ -572,7 +602,7 @@ class SignalingModeManager {
           video: {
             mandatory: {
               chromeMediaSource: 'desktop',
-              chromeMediaSourceId: sources[0].id,
+              chromeMediaSourceId: selectedSourceId,
               maxWidth: maxWidth,
               maxHeight: maxHeight,
               maxFrameRate: this.config.screenCapture?.maxFrameRate || 30,
@@ -637,6 +667,25 @@ class SignalingModeManager {
     }
   }
 
+  _setupServiceFrameReceiver() {
+    var self = this
+    window.electronAPI.onServiceFrame(function(frameData) {
+      if (self.optimizedVideoChannel && self.optimizedVideoChannel.readyState === 'open') {
+        self.videoFrameTransmitter.sendEncodedFrame(frameData.jpeg, frameData.width, frameData.height)
+      }
+      if (self.dataChannelManager && self.dataChannelManager.isOpen()) {
+        self.dataChannelManager.send({
+          type: 'service-video-frame',
+          width: frameData.width,
+          height: frameData.height,
+          jpeg: frameData.jpeg,
+          timestamp: frameData.timestamp
+        })
+      }
+    })
+    this.logFn('[信令模式] 服务帧接收器已就绪')
+  }
+
   async refreshVideoStream() {
     this.logFn('[信令模式] 开始刷新视频流...')
     try {
@@ -654,6 +703,12 @@ class SignalingModeManager {
       const maxWidth = this.config.screenCapture?.maxWidth || 1920
       const maxHeight = this.config.screenCapture?.maxHeight || 1080
 
+      var selectedSourceId = window.getSelectedSourceId ? window.getSelectedSourceId() : null
+      if (!selectedSourceId) {
+        selectedSourceId = sources.find(function(s) { return s.id && s.id.startsWith('screen:') })?.id || (sources.length > 0 ? sources[0].id : null)
+      }
+      this.logFn('[信令模式] 刷新使用捕获源: ' + (selectedSourceId || '无'))
+
       this.logFn('[信令模式] 请求屏幕捕获，最大分辨率: ' + maxWidth + 'x' + maxHeight)
       
       this.currentStream = await navigator.mediaDevices.getUserMedia({
@@ -661,7 +716,7 @@ class SignalingModeManager {
         video: {
           mandatory: {
             chromeMediaSource: 'desktop',
-            chromeMediaSourceId: sources[0].id,
+            chromeMediaSourceId: selectedSourceId,
             maxWidth: maxWidth,
             maxHeight: maxHeight,
             maxFrameRate: this.config.screenCapture?.maxFrameRate || 30
@@ -747,6 +802,8 @@ class SignalingModeManager {
       }
       this.peerConnection = null
     }
+
+    this._controlledIpcListenersSetup = false
     
     this.logFn('信令模式管理器已重置')
   }

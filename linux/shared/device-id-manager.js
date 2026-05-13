@@ -1,104 +1,92 @@
-const DEFAULT_DEVICE_ID_LENGTH = 9;
-const MIN_DEVICE_ID_LENGTH = 6;
-const MAX_DEVICE_ID_LENGTH = 16;
-const STORAGE_KEY = 'ycdesk_device_id';
-
-const ALLOWED_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-
 class DeviceIdManager {
-    constructor(options = {}) {
-        this.storage = options.storage || window.localStorage;
-        this.logger = options.logger || console;
-        this.deviceId = null;
-        this.loadDeviceId();
+  constructor(config) {
+    this.config = config || window.CONFIG || {}
+    this.storageKey = (this.config.storage && this.config.storage.keys && this.config.storage.keys.deviceId) || 'ycdesk_device_id'
+    this.deviceIdConfig = this.config.deviceId || {
+      minLength: 6,
+      maxLength: 16,
+      defaultLength: 9,
+      allowedChars: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
     }
+  }
 
-    loadDeviceId() {
-        try {
-            const stored = this.storage.getItem(STORAGE_KEY);
-            if (stored && this.isValidDeviceId(stored)) {
-                this.deviceId = stored;
-                this.logger.log('[DeviceIdManager] 从存储加载设备ID:', this.deviceId);
-            }
-        } catch (e) {
-            this.logger.error('[DeviceIdManager] 加载设备ID失败:', e);
-        }
+  generateRandomId() {
+    const chars = this.deviceIdConfig.allowedChars
+    let id = ''
+    for (let i = 0; i < this.deviceIdConfig.defaultLength; i++) {
+      id += chars.charAt(Math.floor(Math.random() * chars.length))
     }
+    return id.toUpperCase()
+  }
 
-    getDeviceId() {
-        if (!this.deviceId) {
-            this.deviceId = this.generateDeviceId(DEFAULT_DEVICE_ID_LENGTH);
-            this.saveDeviceId(this.deviceId);
-        }
-        return this.deviceId;
+  validateDeviceId(id) {
+    if (!id || typeof id !== 'string') {
+      return { valid: false, message: '设备ID不能为空' }
     }
+    const trimmedId = id.trim()
+    if (trimmedId.length < this.deviceIdConfig.minLength) {
+      return { valid: false, message: `设备ID长度不能少于${this.deviceIdConfig.minLength}个字符` }
+    }
+    if (trimmedId.length > this.deviceIdConfig.maxLength) {
+      return { valid: false, message: `设备ID长度不能超过${this.deviceIdConfig.maxLength}个字符` }
+    }
+    const allowedChars = new RegExp(`^[${this.deviceIdConfig.allowedChars}]+$`)
+    if (!allowedChars.test(trimmedId)) {
+      return { valid: false, message: '设备ID只能包含字母和数字' }
+    }
+    return { valid: true, message: '设备ID格式正确' }
+  }
 
-    setDeviceId(deviceId) {
-        if (!this.isValidDeviceId(deviceId)) {
-            throw new Error('无效的设备ID');
+  getDeviceId() {
+    try {
+      const storedId = localStorage.getItem(this.storageKey)
+      if (storedId) {
+        const validation = this.validateDeviceId(storedId)
+        if (validation.valid) {
+          return storedId.toUpperCase()
         }
-        this.deviceId = deviceId;
-        this.saveDeviceId(deviceId);
-        this.logger.log('[DeviceIdManager] 设置设备ID:', deviceId);
+      }
+    } catch (e) {
+      console.error('读取设备ID失败:', e)
     }
+    const newId = this.generateRandomId()
+    this.setDeviceId(newId)
+    return newId
+  }
 
-    generateDeviceId(length = DEFAULT_DEVICE_ID_LENGTH) {
-        const actualLength = Math.min(Math.max(length, MIN_DEVICE_ID_LENGTH), MAX_DEVICE_ID_LENGTH);
-        let result = '';
-        
-        for (let i = 0; i < actualLength; i++) {
-            const randomIndex = Math.floor(Math.random() * ALLOWED_CHARS.length);
-            result += ALLOWED_CHARS.charAt(randomIndex);
-        }
-        
-        this.logger.log('[DeviceIdManager] 生成设备ID:', result);
-        return result;
+  setDeviceId(id) {
+    const validation = this.validateDeviceId(id)
+    if (!validation.valid) {
+      throw new Error(validation.message)
     }
+    try {
+      localStorage.setItem(this.storageKey, id.trim().toUpperCase())
+      return true
+    } catch (e) {
+      console.error('保存设备ID失败:', e)
+      throw new Error('保存设备ID失败')
+    }
+  }
 
-    isValidDeviceId(deviceId) {
-        if (!deviceId || typeof deviceId !== 'string') {
-            return false;
-        }
-        
-        if (deviceId.length < MIN_DEVICE_ID_LENGTH || deviceId.length > MAX_DEVICE_ID_LENGTH) {
-            return false;
-        }
-        
-        for (let char of deviceId) {
-            if (!ALLOWED_CHARS.includes(char)) {
-                return false;
-            }
-        }
-        
-        return true;
-    }
+  resetDeviceId() {
+    const newId = this.generateRandomId()
+    this.setDeviceId(newId)
+    return newId
+  }
 
-    saveDeviceId(deviceId) {
-        try {
-            this.storage.setItem(STORAGE_KEY, deviceId);
-            this.logger.log('[DeviceIdManager] 设备ID已保存');
-        } catch (e) {
-            this.logger.error('[DeviceIdManager] 保存设备ID失败:', e);
-        }
+  clearDeviceId() {
+    try {
+      localStorage.removeItem(this.storageKey)
+      return true
+    } catch (e) {
+      console.error('清除设备ID失败:', e)
+      throw new Error('清除设备ID失败')
     }
-
-    resetDeviceId() {
-        this.deviceId = null;
-        try {
-            this.storage.removeItem(STORAGE_KEY);
-            this.logger.log('[DeviceIdManager] 设备ID已重置');
-        } catch (e) {
-            this.logger.error('[DeviceIdManager] 重置设备ID失败:', e);
-        }
-    }
-
-    hasDeviceId() {
-        return !!this.deviceId;
-    }
+  }
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { DeviceIdManager };
+  module.exports = DeviceIdManager
 } else {
-    window.DeviceIdManager = DeviceIdManager;
+  window.DeviceIdManager = DeviceIdManager
 }

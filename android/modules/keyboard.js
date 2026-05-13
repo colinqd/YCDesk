@@ -362,6 +362,15 @@ function toggleSystemKeyboard() {
     if (btn) btn.classList.remove('active')
     if (typeof window.showToast === 'function') window.showToast('已切换回虚拟键盘')
   }
+
+  var controlBtn = document.getElementById('controlSysKbBtn')
+  if (controlBtn) {
+    if (s.usingSystemKeyboard) {
+      controlBtn.classList.add('active')
+    } else {
+      controlBtn.classList.remove('active')
+    }
+  }
 }
 
 function setupSystemKeyboardListener() {

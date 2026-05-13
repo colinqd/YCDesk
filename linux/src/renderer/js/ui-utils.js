@@ -15,6 +15,9 @@ function log(message, type = 'info') {
       div.className = 'info'
     }
     connectionLogDiv.appendChild(div)
+    while (connectionLogDiv.children.length > 200) {
+      connectionLogDiv.removeChild(connectionLogDiv.firstChild)
+    }
     connectionLogDiv.scrollTop = connectionLogDiv.scrollHeight
   }
 }

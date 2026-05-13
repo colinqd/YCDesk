@@ -662,12 +662,16 @@ if (typeof window !== 'undefined') {
     window.MatrixTransformer = MatrixTransformer
 }
 
+export { MatrixTransformer }
+export default MatrixTransformer
+
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = MatrixTransformer
 }
 
 if (typeof exports !== 'undefined') {
     exports.MatrixTransformer = MatrixTransformer
+    exports.default = MatrixTransformer
 }
 
 if (typeof define === 'function' && define.amd) {

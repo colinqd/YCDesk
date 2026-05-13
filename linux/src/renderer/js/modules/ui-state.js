@@ -3,6 +3,7 @@
   var frameCount = 0
   var lastFpsTime = performance.now()
   var clickIndicator = null
+  var debugLogVisible = false
 
   window.UIState = {
     log: function (message) {
@@ -52,7 +53,8 @@
     toggleDebugLog: function () {
       var debugLog = document.getElementById('debugLog')
       if (debugLog) {
-        debugLog.style.display = (debugLog.style.display === 'none') ? 'block' : 'none'
+        debugLogVisible = !debugLogVisible
+        debugLog.style.display = debugLogVisible ? 'block' : 'none'
       }
     },
 

@@ -137,7 +137,7 @@ async function startDirectServerImpl(port) {
     directClientConnections.clear()
     
     directServer = net.createServer((clientSocket) => {
-      const clientId = Math.random().toString(36).substr(2, 8)
+      const clientId = Math.random().toString(36).slice(2, 10)
       directClientConnections.set(clientId, clientSocket)
       
       log('info', '新客户端连接:', { clientId, address: clientSocket.remoteAddress, port: clientSocket.remotePort })

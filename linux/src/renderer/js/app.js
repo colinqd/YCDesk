@@ -68,6 +68,9 @@ function log(message) {
     const div = document.createElement('div')
     div.textContent = logMessage
     uiManager.connectionLogDiv.appendChild(div)
+    while (uiManager.connectionLogDiv.children.length > 200) {
+      uiManager.connectionLogDiv.removeChild(uiManager.connectionLogDiv.firstChild)
+    }
     uiManager.connectionLogDiv.scrollTop = uiManager.connectionLogDiv.scrollHeight
   }
 }

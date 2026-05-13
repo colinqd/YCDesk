@@ -1,0 +1,19 @@
+directories:
+  output: dist_new
+  buildResources: build
+appId: com.ycdesk.server
+productName: YCDesk Server
+files:
+  - filter:
+      - src/**/*
+      - node_modules/**/*
+extraResources: []
+win:
+  target:
+    - nsis
+    - portable
+linux:
+  target:
+    - AppImage
+    - deb
+electronVersion: 28.3.3

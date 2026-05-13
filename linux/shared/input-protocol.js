@@ -1,3 +1,14 @@
+/**
+ * YCDesk 输入协议模块
+ * 
+ * 定义跨平台输入命令的标准格式和处理函数
+ * 用于 Android/Windows 主控端 -> Windows 被控端 的输入传输
+ * 
+ * 数据流:
+ * 主控端 用户输入 → InputDispatcher → createInputCommand() → 
+ * WebRTC数据通道 → 被控端 接收 → parseInputCommand() → 执行输入
+ */
+
 const INPUT_TYPES = {
   MOUSE_MOVE: 'mousemove',
   MOUSE_MOVE_DELTA: 'mousemove_delta',
@@ -12,127 +23,128 @@ const INPUT_TYPES = {
   UNLOCK_SCREEN: 'unlock_screen',
   LOCK_SCREEN: 'lock_screen',
   TEXT_INPUT: 'text_input'
-};
+}
 
 const MOUSE_BUTTONS = {
   LEFT: 0,
   MIDDLE: 1,
   RIGHT: 2
-};
+}
 
 const THROTTLE_CONFIG = {
   MOUSE_MOVE_INTERVAL_MS: 8,
   MOUSE_MOVE_MIN_DISTANCE_PX: 2,
   WHEEL_BATCH_INTERVAL_MS: 16,
   IDLE_TIMEOUT_MS: 100
-};
+}
 
 function createInputCommand(inputType, data = {}) {
   const command = {
     type: 'input',
     inputType: inputType,
     timestamp: Date.now()
-  };
+  }
   
+  // 解锁/锁屏命令特殊处理
   if (inputType === INPUT_TYPES.UNLOCK_SCREEN && data.password !== undefined) {
-    command.password = data.password;
-    return command;
+    command.password = data.password
+    return command
   }
   if (inputType === INPUT_TYPES.LOCK_SCREEN) {
-    return command;
+    return command
   }
   if (inputType === INPUT_TYPES.TEXT_INPUT && data.text !== undefined) {
-    command.text = data.text;
-    return command;
+    command.text = data.text
+    return command
   }
   
   if (data.x !== undefined) {
-    command.x = normalizeCoordinate(data.x, data.maxX);
+    command.x = normalizeCoordinate(data.x, data.maxX)
   }
   if (data.y !== undefined) {
-    command.y = normalizeCoordinate(data.y, data.maxY);
+    command.y = normalizeCoordinate(data.y, data.maxY)
   }
   if (data.dx !== undefined) {
-    command.dx = data.dx;
+    command.dx = data.dx
   }
   if (data.dy !== undefined) {
-    command.dy = data.dy;
+    command.dy = data.dy
   }
   if (data.button !== undefined) {
-    command.button = normalizeButton(data.button);
+    command.button = normalizeButton(data.button)
   }
   if (data.deltaY !== undefined) {
-    command.deltaY = data.deltaY;
+    command.deltaY = data.deltaY
   }
   if (data.deltaX !== undefined) {
-    command.deltaX = data.deltaX;
+    command.deltaX = data.deltaX
   }
   if (data.accumulatedDeltaY !== undefined) {
-    command.accumulatedDeltaY = data.accumulatedDeltaY;
+    command.accumulatedDeltaY = data.accumulatedDeltaY
   }
   if (data.accumulatedDeltaX !== undefined) {
-    command.accumulatedDeltaX = data.accumulatedDeltaX;
+    command.accumulatedDeltaX = data.accumulatedDeltaX
   }
   if (data.code !== undefined) {
-    command.code = data.code;
+    command.code = data.code
   }
   if (data.key !== undefined) {
-    command.key = data.key;
+    command.key = data.key
   }
   if (data.keyCode !== undefined) {
-    command.keyCode = data.keyCode;
+    command.keyCode = data.keyCode
   }
   if (data.ctrlKey !== undefined) {
-    command.ctrlKey = data.ctrlKey;
+    command.ctrlKey = data.ctrlKey
   }
   if (data.shiftKey !== undefined) {
-    command.shiftKey = data.shiftKey;
+    command.shiftKey = data.shiftKey
   }
   if (data.altKey !== undefined) {
-    command.altKey = data.altKey;
+    command.altKey = data.altKey
   }
   if (data.metaKey !== undefined) {
-    command.metaKey = data.metaKey;
+    command.metaKey = data.metaKey
   }
   if (data.sequenceId !== undefined) {
-    command.sequenceId = data.sequenceId;
+    command.sequenceId = data.sequenceId
   }
   
-  return command;
+  return command
 }
 
 function normalizeCoordinate(value, maxValue = 65535) {
   if (value >= 0 && value <= 1) {
-    return value;
+    return value
   }
   if (maxValue > 0) {
-    return value / maxValue;
+    return value / maxValue
   }
-  return value;
+  return value
 }
 
 function normalizeButton(button) {
   if (typeof button === 'number') {
-    return button;
+    return button
   }
   if (typeof button === 'string') {
     switch (button.toLowerCase()) {
       case 'left':
-        return MOUSE_BUTTONS.LEFT;
+        return MOUSE_BUTTONS.LEFT
       case 'middle':
-        return MOUSE_BUTTONS.MIDDLE;
+        return MOUSE_BUTTONS.MIDDLE
       case 'right':
-        return MOUSE_BUTTONS.RIGHT;
+        return MOUSE_BUTTONS.RIGHT
       default:
-        return MOUSE_BUTTONS.LEFT;
+        return MOUSE_BUTTONS.LEFT
     }
   }
-  return MOUSE_BUTTONS.LEFT;
+  return MOUSE_BUTTONS.LEFT
 }
 
 function parseInputCommand(command) {
   if (command.type !== 'input') {
-    return null;
+    return null
   }
   
   const result = {
@@ -155,17 +167,19 @@ function parseInputCommand(command) {
     metaKey: command.metaKey || false,
     timestamp: command.timestamp,
     sequenceId: command.sequenceId
-  };
+  }
   
+  // 解锁命令特殊处理
   if (command.inputType === INPUT_TYPES.UNLOCK_SCREEN && command.password !== undefined) {
-    result.password = command.password;
+    result.password = command.password
   }
   
+  // 文本输入特殊处理
   if (command.inputType === INPUT_TYPES.TEXT_INPUT && command.text !== undefined) {
-    result.text = command.text;
+    result.text = command.text
   }
   
-  return result;
+  return result
 }
 
 const KEY_CODE_MAP = {
@@ -183,7 +197,7 @@ const KEY_CODE_MAP = {
   'F1': 'F1', 'F2': 'F2', 'F3': 'F3', 'F4': 'F4', 'F5': 'F5', 'F6': 'F6',
   'F7': 'F7', 'F8': 'F8', 'F9': 'F9', 'F10': 'F10', 'F11': 'F11', 'F12': 'F12',
   'Minus': '-', 'Equal': '=', 'BracketLeft': '[', 'BracketRight': ']',
-  'Backslash': '\\', 'Semicolon': ';', 'Quote': '\'', 'Comma': ',', 'Period': '.', 'Slash': '/',
+  'Backslash': '\\', 'Semicolon': ';', 'Quote': "'", 'Comma': ',', 'Period': '.', 'Slash': '/',
   'Backquote': '`',
   'Numpad0': '0', 'Numpad1': '1', 'Numpad2': '2', 'Numpad3': '3',
   'Numpad4': '4', 'Numpad5': '5', 'Numpad6': '6', 'Numpad7': '7', 'Numpad8': '8', 'Numpad9': '9',
@@ -194,77 +208,80 @@ const KEY_CODE_MAP = {
   'AltLeft': 'Alt', 'AltRight': 'Alt',
   'MetaLeft': 'Meta', 'MetaRight': 'Meta',
   'CapsLock': 'CapsLock', 'NumLock': 'NumLock', 'ScrollLock': 'ScrollLock'
-};
+}
 
 function validateInputCommand(command) {
-  const errors = [];
+  const errors = []
   
   if (!command || typeof command !== 'object') {
-    errors.push('命令必须是对象');
-    return { valid: false, errors };
+    errors.push('命令必须是对象')
+    return { valid: false, errors }
   }
   
   if (command.type !== 'input') {
-    errors.push('命令类型必须是 "input"');
+    errors.push('命令类型必须是 "input"')
   }
   
   if (!command.inputType || typeof command.inputType !== 'string') {
-    errors.push('缺少有效的 inputType');
+    errors.push('缺少有效的 inputType')
   } else {
-    const validTypes = Object.values(INPUT_TYPES);
+    const validTypes = Object.values(INPUT_TYPES)
     if (!validTypes.includes(command.inputType)) {
-      errors.push(`无效的 inputType: ${command.inputType}`);
+      errors.push(`无效的 inputType: ${command.inputType}`)
     }
   }
   
+  // 解锁命令特殊验证
   if (command.inputType === INPUT_TYPES.UNLOCK_SCREEN) {
     if (command.password === undefined || command.password === '') {
-      errors.push('解锁命令必须包含 password');
+      errors.push('解锁命令必须包含 password')
     }
-    return { valid: errors.length === 0, errors };
+    return { valid: errors.length === 0, errors }
   }
   
+  // 锁屏命令特殊验证
   if (command.inputType === INPUT_TYPES.LOCK_SCREEN) {
-    return { valid: errors.length === 0, errors };
+    // 锁屏命令不需要任何附加字段
+    return { valid: errors.length === 0, errors }
   }
   
   if (command.x !== undefined && typeof command.x !== 'number') {
-    errors.push('x 必须是数字');
+    errors.push('x 必须是数字')
   }
   if (command.y !== undefined && typeof command.y !== 'number') {
-    errors.push('y 必须是数字');
+    errors.push('y 必须是数字')
   }
   if (command.dx !== undefined && typeof command.dx !== 'number') {
-    errors.push('dx 必须是数字');
+    errors.push('dx 必须是数字')
   }
   if (command.dy !== undefined && typeof command.dy !== 'number') {
-    errors.push('dy 必须是数字');
+    errors.push('dy 必须是数字')
   }
   if (command.button !== undefined) {
     if (typeof command.button !== 'number' || command.button < 0 || command.button > 2) {
-      errors.push('button 必须是 0-2 的数字');
+      errors.push('button 必须是 0-2 的数字')
     }
   }
   
-  return { valid: errors.length === 0, errors };
+  return { valid: errors.length === 0, errors }
 }
 
 function getKeyFromCode(code) {
-  return KEY_CODE_MAP[code] || code;
+  return KEY_CODE_MAP[code] || code
 }
 
 function isModifierKey(code) {
   return ['ControlLeft', 'ControlRight', 'ShiftLeft', 'ShiftRight', 
           'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight', 
-          'CapsLock', 'NumLock', 'ScrollLock'].includes(code);
+          'CapsLock', 'NumLock', 'ScrollLock'].includes(code)
 }
 
 function isDeltaInputType(inputType) {
-  return inputType === INPUT_TYPES.MOUSE_MOVE_DELTA;
+  return inputType === INPUT_TYPES.MOUSE_MOVE_DELTA
 }
 
 function isBatchInputType(inputType) {
-  return inputType === INPUT_TYPES.MOUSE_WHEEL_BATCH;
+  return inputType === INPUT_TYPES.MOUSE_WHEEL_BATCH
 }
 
 if (typeof module !== 'undefined' && module.exports) {
@@ -282,19 +299,19 @@ if (typeof module !== 'undefined' && module.exports) {
     isDeltaInputType,
     isBatchInputType,
     KEY_CODE_MAP
-  };
+  }
 } else {
-  window.INPUT_TYPES = INPUT_TYPES;
-  window.MOUSE_BUTTONS = MOUSE_BUTTONS;
-  window.THROTTLE_CONFIG = THROTTLE_CONFIG;
-  window.createInputCommand = createInputCommand;
-  window.parseInputCommand = parseInputCommand;
-  window.validateInputCommand = validateInputCommand;
-  window.normalizeCoordinate = normalizeCoordinate;
-  window.normalizeButton = normalizeButton;
-  window.getKeyFromCode = getKeyFromCode;
-  window.isModifierKey = isModifierKey;
-  window.isDeltaInputType = isDeltaInputType;
-  window.isBatchInputType = isBatchInputType;
-  window.KEY_CODE_MAP = KEY_CODE_MAP;
+  window.INPUT_TYPES = INPUT_TYPES
+  window.MOUSE_BUTTONS = MOUSE_BUTTONS
+  window.THROTTLE_CONFIG = THROTTLE_CONFIG
+  window.createInputCommand = createInputCommand
+  window.parseInputCommand = parseInputCommand
+  window.validateInputCommand = validateInputCommand
+  window.normalizeCoordinate = normalizeCoordinate
+  window.normalizeButton = normalizeButton
+  window.getKeyFromCode = getKeyFromCode
+  window.isModifierKey = isModifierKey
+  window.isDeltaInputType = isDeltaInputType
+  window.isBatchInputType = isBatchInputType
+  window.KEY_CODE_MAP = KEY_CODE_MAP
 }

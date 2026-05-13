@@ -1,4 +1,4 @@
-import MatrixTransformer from '../shared/components/matrix-transformer.js'
+import { MatrixTransformer } from '../shared/components/matrix-transformer.js'
 
 let passed = 0
 let failed = 0

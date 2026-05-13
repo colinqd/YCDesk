@@ -343,34 +343,30 @@
       opacity: 1;
     }
 
-    .info-bar {
-      position: fixed;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(22, 33, 62, 0.95);
-      padding: 10px 20px;
-      border-radius: 20px;
-      color: #aaa;
-      font-size: 13px;
+    .toolbar-stats {
       display: flex;
-      gap: 20px;
-      backdrop-filter: blur(10px);
-      z-index: 1000;
+      gap: 12px;
+      padding: 0 12px;
+      border-left: 1px solid #444;
+      border-right: 1px solid #444;
+      margin: 0 4px;
+      white-space: nowrap;
     }
 
-    .info-item {
+    .toolbar-stats .stats-item {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 3px;
+      font-size: 12px;
     }
 
-    .info-label {
+    .toolbar-stats .stats-item .info-label {
       color: #666;
     }
 
-    .info-value {
-      color: #fff;
+    .toolbar-stats .stats-item .info-value {
+      color: #4fc3f7;
+      font-weight: 600;
     }
 
     #debugLog {
@@ -442,9 +438,27 @@
       </select>
       <button class="toolbar-btn" onclick="window.ToolbarManager.unlockPanel()">🔓 解锁</button>
       <button class="toolbar-btn" onclick="window.ToolbarManager.lockRemoteScreen(window.connectionManager)">🔒 锁屏</button>
+      <span class="toolbar-stats">
+        <span class="stats-item">
+          <span class="info-label">延迟:</span>
+          <span class="info-value" id="latency">-- ms</span>
+        </span>
+        <span class="stats-item">
+          <span class="info-label">帧率:</span>
+          <span class="info-value" id="fps">-- fps</span>
+        </span>
+        <span class="stats-item">
+          <span class="info-label">分辨率:</span>
+          <span class="info-value" id="resolution">--</span>
+        </span>
+        <span class="stats-item">
+          <span class="info-label">状态:</span>
+          <span class="info-value" id="connectionState">--</span>
+        </span>
+      </span>
       <button class="toolbar-btn" onclick="UIState.toggleDebugLog()">日志</button>
       <button class="toolbar-btn" onclick="UIState.toggleFullscreen()">全屏</button>
-      <button class="toolbar-btn danger" onclick="window.ToolbarManager.disconnectAndLock(window.connectionManager)">🚪 退出并锁屏</button>
+      <button class="toolbar-btn danger" id="exitLockBtn" onclick="window.ToolbarManager.handleExit(window.connectionManager)" oncontextmenu="window.ToolbarManager.toggleExitBehavior(); return false;" title="右键切换退出模式">🚪 退出并锁屏</button>
       <button class="toolbar-btn danger" onclick="window.ToolbarManager.disconnect(window.connectionManager)">断开</button>
     </div>
   </div>
@@ -465,26 +479,7 @@
     </div>
   </div>
 
-  <div class="info-bar">
-    <div class="info-item">
-      <span class="info-label">延迟:</span>
-      <span class="info-value" id="latency">-- ms</span>
-    </div>
-    <div class="info-item">
-      <span class="info-label">帧率:</span>
-      <span class="info-value" id="fps">-- fps</span>
-    </div>
-    <div class="info-item">
-      <span class="info-label">分辨率:</span>
-      <span class="info-value" id="resolution">--</span>
-    </div>
-    <div class="info-item">
-      <span class="info-label">状态:</span>
-      <span class="info-value" id="connectionState">--</span>
-    </div>
-  </div>
-
-  <div id="debugLog">
+  <div id="debugLog" style="display:none;">
     <div id="debugLogContent"></div>
     <div id="debugLogToolbar">
       <button class="log-btn" onclick="UIState.copyAllLogs()">全部复制</button>
@@ -906,6 +901,67 @@
         return;
       }
       window.isInitialized = true;
+
+      window._cleanupFunctions = window._cleanupFunctions || []
+
+      var _uaHandler = function(data) {
+        UIState.log('收到锁定状态变化: isLocked=' + data.isLocked)
+        var lockCanvas = document.getElementById('lockScreenCanvas')
+        var vc = document.getElementById('videoContainer')
+        if (data.isLocked === false) {
+          UIState.log('屏幕已解锁，隐藏解锁面板和锁屏画面...')
+          if (window.unlockUI) window.unlockUI.hideOverlay()
+          if (lockCanvas) lockCanvas.style.display = 'none'
+          UIState.updateStatus('已连接')
+          if (vc) vc.classList.remove('video-frozen')
+          setTimeout(function() { UIState.log('发送第一次视频刷新请求...'); requestVideoRefresh() }, 1000)
+          setTimeout(function() { UIState.log('发送第二次视频刷新请求（备用）...'); requestVideoRefresh() }, 3000)
+        } else if (data.isLocked === true) {
+          UIState.log('屏幕已锁定，显示锁屏画面和解锁面板...')
+          UIState.updateStatus('已锁定', 'error')
+          if (vc) vc.classList.add('video-frozen')
+          if (lockCanvas) lockCanvas.style.display = 'block'
+          if (window.unlockUI) window.unlockUI.showOverlay()
+        }
+      }
+      window.electronAPI.on('unlock-state-changed', _uaHandler)
+      window._cleanupFunctions.push(function() { window.electronAPI.removeAllListeners('unlock-state-changed') })
+
+      var _lsHandler = function(data) {
+        var canvas = document.getElementById('lockScreenCanvas')
+        if (!canvas) return
+        var img = new Image()
+        img.onload = function() { canvas.width = img.width; canvas.height = img.height; var ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0) }
+        img.src = 'data:image/jpeg;base64,' + data.jpeg
+      }
+      window.electronAPI.on('lock-screen-frame', _lsHandler)
+      window._cleanupFunctions.push(function() { window.electronAPI.removeAllListeners('lock-screen-frame') })
+
+      var _sigOffer = function(offerData) { if (connectionManager) connectionManager.handleSignalingOffer(offerData) }
+      window.electronAPI.on('signaling-offer', _sigOffer)
+      window._cleanupFunctions.push(function() { window.electronAPI.removeAllListeners('signaling-offer') })
+
+      var _sigAnswer = function(answerData) { if (connectionManager) connectionManager.handleAnswer(answerData.answer) }
+      window.electronAPI.on('signaling-answer', _sigAnswer)
+      window._cleanupFunctions.push(function() { window.electronAPI.removeAllListeners('signaling-answer') })
+
+      var _sigIce = function(candidateData) { if (connectionManager) connectionManager.handleIceCandidate(candidateData.candidate) }
+      window.electronAPI.on('signaling-ice-candidate', _sigIce)
+      window._cleanupFunctions.push(function() { window.electronAPI.removeAllListeners('signaling-ice-candidate') })
+
+      var _sigStart = function(data) { initSignalingMode(data) }
+      window.electronAPI.on('signaling-mode-start', _sigStart)
+      window._cleanupFunctions.push(function() { window.electronAPI.removeAllListeners('signaling-mode-start') })
+
+      var _dirStart = function(data) { initDirectMode(data) }
+      window.electronAPI.on('direct-mode-start', _dirStart)
+      window._cleanupFunctions.push(function() { window.electronAPI.removeAllListeners('direct-mode-start') })
+
+      window.addEventListener('beforeunload', function() {
+        if (window._cleanupFunctions) {
+          window._cleanupFunctions.forEach(function(fn) { try { fn() } catch(e) {} })
+        }
+      })
       
       videoElement = document.getElementById('screenVideo');
       videoContainer = document.getElementById('videoContainer');
@@ -930,16 +986,11 @@
       window.ToolbarManager.unlockPanel = window.openUnlockPanel;
       
       UIState.log('远程窗口初始化开始');
-      
-      setupUnlockStateListener();
-      setupLockScreenFrameListener();
+
       setupMatrixTransformer();
       setupPanZoomEvents();
       TouchHandler.setup(remoteScreenEl, function() { return matrixTransformer; });
       setupPerformanceMonitor();
-      
-      window.electronAPI.on('signaling-mode-start', function(data) { initSignalingMode(data); });
-      window.electronAPI.on('direct-mode-start', function(data) { initDirectMode(data); });
       
       window.electronAPI.send('remote-window-ready', {});
       

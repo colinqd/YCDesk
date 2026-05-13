@@ -1,5 +1,5 @@
 import s from './state.js'
-import MatrixTransformer from '../shared/components/matrix-transformer.js'
+import { MatrixTransformer } from '../shared/components/matrix-transformer.js'
 import { registerPlugin } from '@capacitor/core'
 import { handleReceivedInput } from './input-executor.js'
 import { wsSend, sendDirectMessage } from './signaling.js'

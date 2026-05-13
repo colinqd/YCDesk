@@ -93,6 +93,8 @@ class DataChannelManager {
       const data = JSON.parse(event.data)
       
       if (data.ack && this.pendingMessages.has(data.ackId)) {
+        const entry = this.pendingMessages.get(data.ackId)
+        clearTimeout(entry.timer)
         this.pendingMessages.delete(data.ackId)
         return
       }
@@ -158,32 +160,55 @@ class DataChannelManager {
   }
 
   trackPendingMessage(message) {
-    const retryCount = 0
-    const timer = setTimeout(() => {
-      this.retryMessage(message, retryCount)
-    }, this.options.retryInterval)
-
-    this.pendingMessages.set(message.id, {
+    const entry = {
       message,
-      timer,
-      retryCount
-    })
+      timer: null,
+      retryCount: 0
+    }
+    entry.timer = setTimeout(() => {
+      this.retryMessage(message.id)
+    }, this.options.retryInterval)
+    this.pendingMessages.set(message.id, entry)
   }
 
-  retryMessage(message, retryCount) {
-    if (retryCount >= this.options.maxRetries) {
-      this.logger.error('[DataChannel] 消息重发失败，放弃:', message.id)
-      this.pendingMessages.delete(message.id)
+  retryMessage(messageId) {
+    const entry = this.pendingMessages.get(messageId)
+    if (!entry) return
+
+    const newRetryCount = entry.retryCount + 1
+    if (newRetryCount > this.options.maxRetries) {
+      this.logger.error('[DataChannel] 消息重发失败，放弃:', messageId)
+      clearTimeout(entry.timer)
+      this.pendingMessages.delete(messageId)
       return
     }
 
     if (!this.isOpen()) {
       this.logger.log('[DataChannel] 通道关闭，停止重发')
+      clearTimeout(entry.timer)
+      this.pendingMessages.delete(messageId)
       return
     }
 
-    this.pendingMessages.delete(message.id)
-    this.sendRaw(message, true)
+    entry.retryCount = newRetryCount
+
+    try {
+      const json = JSON.stringify(entry.message)
+      if (this.dataChannel.bufferedAmount > 1024 * 1024) {
+        entry.timer = setTimeout(() => {
+          this.retryMessage(messageId)
+        }, this.options.retryInterval)
+        return
+      }
+      this.dataChannel.send(json)
+      entry.timer = setTimeout(() => {
+        this.retryMessage(messageId)
+      }, this.options.retryInterval)
+    } catch (e) {
+      this.logger.error('[DataChannel] 重发失败:', e.message)
+      clearTimeout(entry.timer)
+      this.pendingMessages.delete(messageId)
+    }
   }
 
   enqueue(message, requireAck) {

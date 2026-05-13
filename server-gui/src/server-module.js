@@ -12,7 +12,8 @@ class SignalingServer {
       port: options.port || 3000,
       cert: options.cert || null,
       key: options.key || null,
-      noHttps: options.noHttps || false
+      noHttps: options.noHttps || false,
+      authToken: options.authToken || options.token || process.env.YC_DESK_AUTH_TOKEN || null
     };
     
     this.app = express();
@@ -142,12 +143,25 @@ class SignalingServer {
   _setupSocketIO() {
     this.io = new Server(this.server, {
       cors: {
-        origin: '*',
+        origin: process.env.CORS_ORIGIN || 'http://localhost:*',
         methods: ['GET', 'POST']
-      }
+      },
+      pingInterval: 5000,
+      pingTimeout: 10000,
+      connectTimeout: 5000,
+      maxHttpBufferSize: 5e6
     });
 
     this.io.on('connection', (socket) => {
+      const token = socket.handshake.auth?.token || socket.handshake.query?.token
+
+      if (this.options.authToken && token !== this.options.authToken) {
+        this.log('拒绝未授权连接: ' + socket.id + ' (token不匹配)', 'warning')
+        socket.emit('auth-error', { message: '认证失败: token无效' })
+        socket.disconnect(true)
+        return
+      }
+
       this.log('新连接: ' + socket.id, 'info');
 
       socket.on('register', (data) => {

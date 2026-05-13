@@ -16,17 +16,20 @@
     html, body {
       width: 100%;
       height: 100%;
-      overflow: hidden;
+      overflow-x: hidden;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
       padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
     }
 
     body {
-      background: transparent;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: center;
       padding: 10px;
+      min-height: 100vh;
     }
 
     .container {
@@ -34,9 +37,10 @@
       border-radius: 14px;
       box-shadow: 0 25px 80px rgba(0, 0, 0, 0.35);
       width: 100%;
-      max-width: 420px;
-      overflow: hidden;
+      max-width: 480px;
+      overflow: visible;
       animation: slideUp 0.4s ease-out;
+      margin: auto 0;
     }
 
     @keyframes slideUp {
@@ -53,32 +57,36 @@
     .header {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
-      padding: 18px 15px;
+      padding: 14px 12px;
       text-align: center;
     }
 
     .header h1 {
-      font-size: 24px;
-      margin-bottom: 4px;
+      font-size: 20px;
+      margin-bottom: 2px;
       font-weight: 700;
       letter-spacing: 1px;
     }
 
     .header p {
       opacity: 0.92;
-      font-size: 12px;
+      font-size: 11px;
     }
 
     .content {
-      padding: 15px 12px;
+      padding: 10px 8px;
     }
 
     .page {
       display: none;
+      content-visibility: auto;
+      contain: layout style;
     }
 
     .page.active {
       display: block;
+      content-visibility: visible;
+      contain: none;
     }
 
     .back-btn {
@@ -141,20 +149,20 @@
 
     .section {
       background: #f8f9fb;
-      border-radius: 12px;
-      padding: 14px;
+      border-radius: 10px;
+      padding: 10px;
       border: 1px solid #e9ecef;
-      margin-bottom: 14px;
+      margin-bottom: 10px;
     }
 
     .section-title {
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 700;
       color: #2d3748;
-      margin-bottom: 12px;
+      margin-bottom: 8px;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
     }
 
     .section-title::before {
@@ -351,56 +359,43 @@
       transform: none !important;
     }
 
-    .btn-group {
-      display: flex;
-      gap: 8px;
-    }
+    .history-list .history-item { font-size: 12px; padding: 8px; }
 
-    .btn-group .btn {
-      flex: 1;
+    .btn-group { display: flex; gap: 10px; }
+    .btn-group .btn { flex: 1; }
+
+    .server-manage-panel {
+      margin-top: 8px;
+      padding-bottom: 8px;
+      border-top: 1px dashed #d0d5dd;
+    }
+    .server-manage-panel[style*="display: block"],
+    .server-manage-panel[style*="display:block"] {
+      contain: layout style;
     }
 
     .log-box {
-      margin-top: 12px;
       background: #1a1a2e;
-      border-radius: 8px;
-      padding: 10px;
+      border-radius: 10px;
+      padding: 12px;
       overflow-y: auto;
     }
-
-    .log-box.collapsed .log-content {
-      display: none;
-    }
-
+    .log-box.collapsed .log-content { display: none; }
     .log-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 5px;
+      margin-bottom: 6px;
     }
-
-    .log-box.collapsed .log-header {
-      margin-bottom: 0;
-    }
-
-    .log-title {
-      color: #94a3b8;
-      font-size: 10px;
-      font-weight: 600;
-    }
-
+    .log-box.collapsed .log-header { margin-bottom: 0; }
     .log-toggle-btn {
       background: transparent;
       border: 1px solid #4a5568;
       color: #94a3b8;
-      font-size: 9px;
-      padding: 2px 8px;
+      padding: 2px 10px;
       border-radius: 4px;
       cursor: pointer;
-    }
-
-    .log-toggle-btn:hover {
-      background: #2d3748;
+      font-size: 11px;
     }
 
     .log-content {
@@ -567,9 +562,9 @@
 
     .footer {
       background: #f1f5f9;
-      padding: 10px;
+      padding: 8px;
       text-align: center;
-      font-size: 11px;
+      font-size: 10px;
       color: #64748b;
       border-top: 1px solid #e2e8f0;
     }
@@ -878,6 +873,7 @@
       width: fit-content;
       max-width: 100vw;
       height: auto;
+      contain: layout style paint;
     }
     
     .keyboard-overlay.position-bottom {
@@ -1223,62 +1219,62 @@
           </div>
           
           <div id="controllerDirectMode" class="mode-content active">
-            <div class="section" style="padding: 0; margin-bottom: 12px;">
-              <div class="section-title">历史连接记录</div>
-              <div class="history-list" id="directHistoryList">
+            <details class="section" style="padding:6px 8px;margin-bottom:8px;">
+              <summary style="font-size:11px;font-weight:700;color:#2d3748;cursor:pointer;">📋 历史连接记录</summary>
+              <div class="history-list" id="directHistoryList" style="margin-top:6px;">
                 <div class="history-empty">暂无历史连接记录</div>
               </div>
-            </div>
+            </details>
             <div class="two-col">
               <div class="input-group">
                 <label>对方 IP/域名</label>
-                <input type="text" id="remoteIp" placeholder="例如: 192.168.1.100 或 example.com">
+                <input type="text" id="remoteIp" placeholder="如:192.168.1.100">
               </div>
               <div class="input-group">
-                <label>对方端口</label>
+                <label>端口</label>
                 <input type="number" id="remotePort" placeholder="8080" value="8080" min="1024" max="65535">
               </div>
             </div>
-            <button class="btn btn-primary" style="margin-top: 15px;" onclick="connectDirect()">连接</button>
+            <button class="btn btn-primary" style="margin-top:8px;" onclick="connectDirect()">连接</button>
           </div>
           
           <div id="controllerSignalingMode" class="mode-content">
-            <div class="section" style="padding: 0; margin-bottom: 12px;">
-              <div class="section-title">信令服务器列表 <span class="server-manage-toggle" onclick="manageSignalingServer()">⚙️ 管理</span></div>
-              <div class="history-list" id="signalingServerList" style="margin-bottom: 0;">
-                <div class="history-empty">暂无已保存的信令服务器<br>请添加后从列表选择</div>
+            <details class="section" style="padding:6px 8px;margin-bottom:8px;">
+              <summary style="font-size:11px;font-weight:700;color:#2d3748;cursor:pointer;">📋 信令服务器列表 <span class="server-manage-toggle" onclick="event.stopPropagation();manageSignalingServer()">⚙️</span></summary>
+              <div class="history-list" id="signalingServerList" style="margin-top:6px;">
+                <div class="history-empty">暂无已保存的信令服务器</div>
               </div>
               <div class="server-manage-panel" id="serverManagePanel" style="display: none;">
-                <div class="server-manage-row">
-                  <input type="text" id="newServerName" placeholder="服务器名称（如：家庭电脑）">
-                  <input type="text" id="newServerUrl" placeholder="地址（如：192.168.1.100:3000）">
+                <div class="server-manage-row" style="flex-direction: column;">
+                  <input type="text" id="newServerName" placeholder="服务器名称" style="width: 100%;">
+                  <input type="text" id="newServerUrl" placeholder="地址 如:192.168.1.100:3000" style="width: 100%;">
                 </div>
                 <div class="server-manage-row" style="gap: 8px;">
                   <button class="server-manage-btn server-manage-btn-add" id="addServerBtn" onclick="onAddServerClick()">添加</button>
                   <button class="server-manage-btn server-manage-btn-cancel" onclick="cancelEditServer()">取消</button>
                 </div>
               </div>
-            </div>
-            <div class="section" style="padding: 0; margin-bottom: 12px;">
-              <div class="section-title">历史连接记录</div>
-              <div class="history-list" id="signalingHistoryList">
+            </details>
+            <details class="section" style="padding:6px 8px;margin-bottom:8px;">
+              <summary style="font-size:11px;font-weight:700;color:#2d3748;cursor:pointer;">📋 历史连接记录</summary>
+              <div class="history-list" id="signalingHistoryList" style="margin-top:6px;">
                 <div class="history-empty">暂无历史连接记录</div>
               </div>
-            </div>
+            </details>
             <div class="input-group">
               <label>信令服务器地址</label>
-              <input type="text" id="serverUrl" placeholder="例如: 192.168.1.100:3000 或 example.com:3000" value="10.0.2.2:3000" style="width: 100%;">
+              <input type="text" id="serverUrl" placeholder="如:192.168.1.100:3000" value="10.0.2.2:3000" style="width: 100%;">
             </div>
-            <div class="btn-group" style="margin-top: 10px;">
-              <button class="btn btn-secondary" onclick="manualConnectToServer()">连接服务器</button>
-              <button class="btn btn-danger" onclick="disconnectFromServer()">断开连接</button>
+            <div class="btn-group" style="margin-top:6px;">
+              <button class="btn btn-secondary" onclick="manualConnectToServer()" style="padding:10px;font-size:13px;">连接</button>
+              <button class="btn btn-danger" onclick="disconnectFromServer()" style="padding:10px;font-size:13px;">断开</button>
             </div>
-            <div class="input-group" style="margin-top: 15px;">
-              <label>设备列表 <span class="server-manage-toggle" onclick="manageDeviceList()">⚙️ 管理</span></label>
-              <div class="history-list" id="deviceListContainer" style="margin-bottom: 0; max-height: 100px; overflow-y: auto;">
-                <div class="history-empty">暂无已保存的设备<br>连接成功后会自动添加</div>
+            <details class="section" style="padding:6px 8px;margin-top:8px;">
+              <summary style="font-size:11px;font-weight:700;color:#2d3748;cursor:pointer;">📋 设备列表 <span class="server-manage-toggle" onclick="manageDeviceList()">⚙️</span></summary>
+              <div class="history-list" id="deviceListContainer" style="margin-top:6px;max-height:100px;overflow-y:auto;">
+                <div class="history-empty">暂无已保存的设备</div>
               </div>
-              <div class="server-manage-panel" id="deviceManagePanel" style="display: none; margin-top: 8px;">
+              <div class="server-manage-panel" id="deviceManagePanel" style="display: none;">
                 <div class="server-manage-row">
                   <input type="text" id="newDeviceId" placeholder="设备ID（必填）" maxlength="16" style="text-transform: uppercase;">
                   <input type="text" id="newDeviceAlias" placeholder="别名（可选）">
@@ -1288,18 +1284,18 @@
                   <button class="server-manage-btn server-manage-btn-cancel" onclick="cancelDeviceManage()">取消</button>
                 </div>
               </div>
-            </div>
-            <div class="input-group" style="margin-top: 15px;">
+            </details>
+            <div class="input-group">
               <label>对方设备 ID</label>
               <input type="text" id="targetDeviceId" placeholder="输入对方设备 ID" maxlength="16" class="uppercase">
             </div>
-            <button class="btn btn-primary" style="margin-top: 10px;" onclick="connectDevice()">连接</button>
+            <button class="btn btn-primary" style="margin-top:6px;" onclick="connectDevice()">连接</button>
           </div>
           
-          <div class="log-box" id="controllerLogBox">
+          <div class="log-box collapsed" id="controllerLogBox">
             <div class="log-header">
               <div class="log-title">连接日志</div>
-              <button class="log-toggle-btn" onclick="toggleLogBox('controllerLogBox')">收起</button>
+              <button class="log-toggle-btn" onclick="toggleLogBox('controllerLogBox')">展开</button>
             </div>
             <div id="connectionLog" class="log-content"></div>
           </div>
@@ -1310,22 +1306,24 @@
         <button class="back-btn" onclick="goBack()">← 返回选择</button>
         
         <div class="section">
-          <div class="section-title">设备信息</div>
-          <div class="device-id-box">
+          <div class="section-title" style="margin-bottom: 4px;">设备信息</div>
+          <div class="device-id-box" style="margin-bottom: 6px;">
             <label>设备 ID</label>
             <div class="device-id-value" id="deviceId" onclick="copyDeviceId()">
               加载中...
             </div>
           </div>
-          <div class="input-group" style="margin-top: 12px;">
-            <label>自定义设备 ID (6-16位字母数字)</label>
-            <input type="text" id="customDeviceId" placeholder="输入自定义设备ID" maxlength="16" class="uppercase">
-          </div>
-          <div class="btn-group" style="margin-top: 10px;">
-            <button class="btn btn-secondary" onclick="setCustomDeviceId()">设置ID</button>
-            <button class="btn btn-danger" onclick="resetDeviceId()">随机生成</button>
-          </div>
-          <div class="status-badge" id="serverStatus" style="margin-top: 12px;">
+          <details style="margin-top: 4px;">
+            <summary style="font-size:11px;color:#667eea;cursor:pointer;font-weight:600;">⚙️ 自定义设备 ID</summary>
+            <div class="input-group" style="margin-top:6px;">
+              <input type="text" id="customDeviceId" placeholder="6-16位字母数字" maxlength="16" class="uppercase" style="margin-bottom:6px;">
+              <div class="btn-group">
+                <button class="btn btn-secondary" onclick="setCustomDeviceId()" style="padding:8px 12px;font-size:12px;">设置ID</button>
+                <button class="btn btn-danger" onclick="resetDeviceId()" style="padding:8px 12px;font-size:12px;">随机生成</button>
+              </div>
+            </div>
+          </details>
+          <div class="status-badge" id="serverStatus" style="margin-top: 8px;">
             <span class="status-dot"></span>
             <span id="serverStatusText">就绪</span>
           </div>
@@ -1342,21 +1340,23 @@
             <div class="input-group">
               <label>监听端口</label>
               <input type="number" id="listenPort" placeholder="8080" value="8080" min="1024" max="65535">
-              <button class="btn btn-primary" onclick="startListening()">开始监听</button>
-              <button class="btn btn-danger" onclick="stopListening()">停止监听</button>
+              <div class="btn-group">
+                <button class="btn btn-primary" onclick="startListening()" style="padding:10px;font-size:13px;">开始监听</button>
+                <button class="btn btn-danger" onclick="stopListening()" style="padding:10px;font-size:13px;">停止监听</button>
+              </div>
             </div>
           </div>
           
           <div id="controlledSignalingMode" class="mode-content">
-            <div class="section" style="padding: 0; margin-bottom: 12px;">
+            <div class="section" style="padding: 0; margin-bottom: 8px;">
               <div class="section-title">信令服务器列表 <span class="server-manage-toggle" onclick="manageSignalingServerControlled()">⚙️ 管理</span></div>
               <div class="history-list" id="controlledSignalingServerList" style="margin-bottom: 0;">
                 <div class="history-empty">暂无已保存的信令服务器<br>请添加后从列表选择</div>
               </div>
               <div class="server-manage-panel" id="controlledServerManagePanel" style="display: none;">
-                <div class="server-manage-row">
-                  <input type="text" id="controlledNewServerName" placeholder="服务器名称（如：家庭电脑）">
-                  <input type="text" id="controlledNewServerUrl" placeholder="地址（如：192.168.1.100:3000）">
+                <div class="server-manage-row" style="flex-direction: column;">
+                  <input type="text" id="controlledNewServerName" placeholder="服务器名称" style="width: 100%;">
+                  <input type="text" id="controlledNewServerUrl" placeholder="地址 如:192.168.1.100:3000" style="width: 100%;">
                 </div>
                 <div class="server-manage-row" style="gap: 8px;">
                   <button class="server-manage-btn server-manage-btn-add" id="controlledAddServerBtn" onclick="onAddServerClickControlled()">添加</button>
@@ -1364,33 +1364,33 @@
                 </div>
               </div>
             </div>
-            <div class="input-group" style="margin-top: 10px;">
+            <div class="input-group" style="margin-top: 6px;">
               <label style="display: flex; align-items: center; gap: 8px;">
                 <input type="checkbox" id="autoAcceptConnection" style="width: auto; margin: 0; height: auto; min-height: auto; font-size: 14px;">
-                <span>自动接受连接（无需确认）</span>
+                <span>自动接受</span>
               </label>
             </div>
             <div class="input-group">
               <label>信令服务器地址</label>
-              <input type="text" id="controlledServerUrl" placeholder="例如: 192.168.1.100:3000 或 example.com:3000" value="10.0.2.2:3000" style="width: 100%;">
+              <input type="text" id="controlledServerUrl" placeholder="如:192.168.1.100:3000" value="10.0.2.2:3000" style="width: 100%;">
             </div>
-            <div class="btn-group" style="margin-top: 10px;">
-              <button class="btn btn-secondary" onclick="controlledConnectToServer()">连接服务器</button>
-              <button class="btn btn-danger" onclick="controlledDisconnectFromServer()">断开连接</button>
+            <div class="btn-group" style="margin-top: 6px;">
+              <button class="btn btn-secondary" onclick="controlledConnectToServer()" style="padding:10px;font-size:13px;">连接</button>
+              <button class="btn btn-danger" onclick="controlledDisconnectFromServer()" style="padding:10px;font-size:13px;">断开</button>
             </div>
           </div>
           
-          <div class="section" id="controlledDirectSection">
-            <div class="section-title">本机网络地址</div>
-            <div class="ip-list" id="localIpList">
+          <details class="section" id="controlledDirectSection" style="margin-top:8px;padding:8px;">
+            <summary style="font-size:11px;font-weight:700;color:#2d3748;cursor:pointer;">🌐 本机网络地址</summary>
+            <div class="ip-list" id="localIpList" style="margin-top:6px;">
               加载中...
             </div>
-          </div>
+          </details>
           
-          <div class="log-box" id="controlledLogBox">
+          <div class="log-box collapsed" id="controlledLogBox">
             <div class="log-header">
               <div class="log-title">连接日志</div>
-              <button class="log-toggle-btn" onclick="toggleLogBox('controlledLogBox')">收起</button>
+              <button class="log-toggle-btn" onclick="toggleLogBox('controlledLogBox')">展开</button>
             </div>
             <div id="connectionLogControlled" class="log-content"></div>
           </div>
@@ -1432,13 +1432,14 @@
         <button class="control-btn" onclick="requestUnlock()">🔓</button>
         <button class="control-btn" onclick="requestLock()">🔒</button>
         <button class="control-btn" onclick="toggleControlsHide()">👁️</button>
-        <button class="control-btn" onclick="toggleKeyboard()">⌨️</button>
+        <button class="control-btn" onclick="toggleKeyboard()" title="虚拟键盘">⌨️</button>
+        <button class="control-btn" id="controlSysKbBtn" onclick="toggleSystemKeyboard()" title="系统输入法(支持中文)">🔤</button>
       </div>
       <div class="control-row">
         <button class="control-btn" id="mouseModeBtn" onclick="toggleMouseMode()">🖱️</button>
         <button class="control-btn" onclick="resetZoomAndPan()">↺</button>
         <button class="control-btn" onclick="toggleFullscreen()">⛶</button>
-        <button class="control-btn danger" onclick="disconnect()">✕</button>
+        <button class="control-btn danger" id="exitBtn" onclick="handleExit()" oncontextmenu="toggleExitMode(); return false;">✕</button>
       </div>
     </div>
     <button class="control-toggle" id="controlToggle" onclick="showControls()">⚙️</button>

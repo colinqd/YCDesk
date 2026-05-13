@@ -25,7 +25,8 @@ function createMainWindow() {
     show: false,
     backgroundColor: '#ffffff',
     frame: true,
-    autoHideMenuBar: true
+    autoHideMenuBar: true,
+    skipTaskbar: false
   })
 
   mainWindow.loadFile('index.html')
@@ -33,6 +34,7 @@ function createMainWindow() {
   autoUnlockService.setMainWindow(mainWindow)
 
   mainWindow.once('ready-to-show', () => {
+    mainWindow.setSkipTaskbar(false)
     mainWindow.show()
   })
 
@@ -42,6 +44,7 @@ function createMainWindow() {
 
   mainWindow.on('minimize', (event) => {
     event.preventDefault()
+    mainWindow.setSkipTaskbar(true)
     mainWindow.hide()
     if (tray) {
       tray.displayBalloon({
@@ -50,6 +53,10 @@ function createMainWindow() {
         content: '程序已最小化到系统托盘，双击图标可恢复窗口'
       })
     }
+  })
+
+  mainWindow.on('show', () => {
+    mainWindow.setSkipTaskbar(false)
   })
 
   mainWindow.on('close', (event) => {
@@ -78,6 +85,7 @@ function createMainWindow() {
       app.quit()
     } else if (result === 1) {
       // 最小化到托盘
+      mainWindow.setSkipTaskbar(true)
       mainWindow.hide()
       if (tray && !tray.isDestroyed()) {
         tray.displayBalloon({
@@ -125,7 +133,8 @@ function createRemoteWindow() {
     icon: path.join(__dirname, '../../assets/icon.png'),
     show: false,
     backgroundColor: '#1a1a2e',
-    fullscreen: true
+    fullscreen: true,
+    skipTaskbar: true
   })
 
   remoteWindow.loadFile('remote.html')
@@ -164,44 +173,30 @@ function createTray() {
     path.join(__dirname, '../../build/icon.ico')
   ]
   
-  console.log('尝试加载托盘图标，路径列表:', iconPaths)
-  
   for (const iconPath of iconPaths) {
     try {
-      console.log('检查图标路径:', iconPath)
       if (require('fs').existsSync(iconPath)) {
-        console.log('图标文件存在，尝试加载:', iconPath)
         icon = nativeImage.createFromPath(iconPath)
-        console.log('加载后图标是否为空:', icon.isEmpty())
         if (!icon.isEmpty()) {
-          console.log('托盘图标加载成功:', iconPath)
           break
         }
       }
     } catch (e) {
-      console.log('加载图标失败:', iconPath, e.message)
     }
   }
   
   if (!icon || icon.isEmpty()) {
-    console.log('所有图标加载失败，尝试使用内置图标')
     try {
       const builtInIconPath = path.join(process.resourcesPath, 'assets/icon.png')
-      console.log('尝试内置图标路径:', builtInIconPath)
       if (require('fs').existsSync(builtInIconPath)) {
         icon = nativeImage.createFromPath(builtInIconPath)
-        if (!icon.isEmpty()) {
-          console.log('内置托盘图标加载成功')
-        }
       }
     } catch (e) {
-      console.log('加载内置图标失败:', e.message)
     }
   }
   
   if (!icon || icon.isEmpty()) {
-    console.log('使用默认图标')
-    icon = nativeImage.createEmpty()
+    icon = nativeImage.createFromDataURL('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAARklEQVQ4T2NkYPj/n4EBBJgYKAQMowYMfAgwUhI7jIMiDBgpScUM4yALMFLiFmYYB1mAkRLXMMM4yAKMlLiGGcZBFgAArR8OGRf/Yw8AAAAASUVORK5CYII=')
   }
 
   tray = new Tray(icon)
@@ -211,6 +206,7 @@ function createTray() {
       label: '显示主窗口',
       click: () => {
         if (mainWindow) {
+          mainWindow.setSkipTaskbar(false)
           mainWindow.show()
           mainWindow.focus()
         }
@@ -242,6 +238,7 @@ function createTray() {
 
   tray.on('double-click', () => {
     if (mainWindow) {
+      mainWindow.setSkipTaskbar(false)
       mainWindow.show()
       mainWindow.focus()
     }
@@ -258,6 +255,7 @@ function getRemoteWindow() {
 
 function minimizeMainWindow() {
   if (mainWindow) {
+    mainWindow.setSkipTaskbar(true)
     mainWindow.hide()
     return true
   }
@@ -287,6 +285,7 @@ function closeMainWindow() {
 
 function showMainWindow() {
   if (mainWindow) {
+    mainWindow.setSkipTaskbar(false)
     mainWindow.show()
     mainWindow.focus()
     return true

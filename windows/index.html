@@ -52,10 +52,32 @@
               加载中...
             </div>
           </div>
-          <div class="status-badge" id="serverStatus" style="margin-top: 12px;">
+          <details style="margin-top: 8px;">
+            <summary style="font-size:13px;color:#667eea;cursor:pointer;font-weight:600;">⚙️ 自定义设备 ID</summary>
+            <div class="input-group" style="margin-top:8px;">
+              <input type="text" id="customDeviceId" placeholder="6-16位字母数字" maxlength="16" class="uppercase" style="margin-bottom:6px;">
+              <div class="btn-group">
+                <button class="btn btn-secondary" onclick="setCustomDeviceId()">设置ID</button>
+                <button class="btn btn-danger" onclick="resetDeviceId()">随机生成</button>
+              </div>
+            </div>
+          </details>
+          <div class="status-badge" id="serverStatus" style="margin-top: 10px;">
             <span class="status-dot"></span>
             <span id="serverStatusText">就绪</span>
           </div>
+        </div>
+
+        <div class="section" id="sourceSelectorSection" style="display:none;">
+          <div class="section-title">🖥️ 屏幕捕获源 <button class="btn-small" onclick="refreshCaptureSources()" style="margin-left:8px;font-size:11px;">🔄 刷新</button> <button class="btn-small" id="bypassWdaBtn" onclick="bypassWdaProtection()" style="margin-left:4px;font-size:11px;background:#e94560;display:none;">🔓 解锁反截屏</button></div>
+          <select id="captureSource" style="width:100%;padding:6px;background:#1a1a2e;color:#eee;border:1px solid #333;border-radius:4px;">
+            <option value="" data-source-id="">整个屏幕（默认）</option>
+          </select>
+          <div id="wdaStatus" style="margin-top:4px;font-size:11px;color:#e94560;display:none;"></div>
+          <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;color:#aaa;">
+            <input type="checkbox" id="useServiceCapture" onchange="toggleServiceCapture()" style="width:auto;margin:0;">
+            <span>🛡️ 使用服务级捕获（绕过反截屏保护，需安装 Windows 服务）</span>
+          </label>
         </div>
 
         <div class="section">
@@ -69,15 +91,17 @@
             <div class="input-group">
               <label>监听端口</label>
               <input type="number" id="listenPort" placeholder="8080" value="8080" min="1024" max="65535">
-              <button class="btn btn-primary" onclick="startListening()">开始监听</button>
-              <button class="btn btn-danger" onclick="stopListening()">停止监听</button>
+            </div>
+            <div class="btn-group" style="margin-top:8px;">
+              <button class="btn btn-primary" onclick="startListening()" style="margin:0;">开始监听</button>
+              <button class="btn btn-danger" onclick="stopListening()" style="margin:0;">停止监听</button>
             </div>
           </div>
           
           <div id="controlledSignalingMode" class="mode-content">
-            <div class="section" style="padding: 0; margin-bottom: 12px;">
-              <div class="section-title">信令服务器列表 <span class="server-manage-toggle" onclick="manageSignalingServerControlled()">⚙️ 管理</span></div>
-              <div class="history-list" id="controlledSignalingServerList" style="margin-bottom: 0;">
+            <details class="section" style="padding:10px 16px;margin-bottom:10px;">
+              <summary>📋 信令服务器列表 <span class="server-manage-toggle" onclick="manageSignalingServerControlled()">⚙️</span></summary>
+              <div class="history-list" id="controlledSignalingServerList" style="margin-top:8px;">
                 <div class="history-empty">暂无已保存的信令服务器<br>请添加后从列表选择</div>
               </div>
               <div class="server-manage-panel" id="controlledServerManagePanel" style="display: none;">
@@ -90,22 +114,24 @@
                   <button class="server-manage-btn server-manage-btn-cancel" onclick="cancelEditServerControlled()">取消</button>
                 </div>
               </div>
-            </div>
-            <div class="input-group" style="margin-top: 10px;">
+            </details>
+            <div class="input-group" style="margin-top:6px;">
               <label style="display: flex; align-items: center; gap: 8px;">
                 <input type="checkbox" id="autoAcceptConnection" style="width: auto; margin: 0;">
-                <span>自动接受连接（无需确认）</span>
+                <span>自动接受连接</span>
               </label>
             </div>
             <div class="input-group">
               <label>信令服务器地址</label>
-              <input type="text" id="controlledServerUrl" placeholder="例如: 192.168.1.100:3000" value="localhost:3000" style="width: 100%;">
-              <button class="btn btn-primary" onclick="controlledConnectToServer()">连接服务器</button>
-              <button class="btn btn-danger" onclick="controlledDisconnectFromServer()">断开连接</button>
+              <input type="text" id="controlledServerUrl" placeholder="如:192.168.1.100:3000" value="localhost:3000" style="width: 100%;">
             </div>
-            <div class="section" style="margin-top: 15px; padding: 0;">
-              <div class="section-title">设备列表 <span class="server-manage-toggle" onclick="manageDeviceListControlled()">⚙️ 管理</span></div>
-              <div class="history-list" id="controlledDeviceListContainer" style="margin-bottom: 0; max-height: 120px; overflow-y: auto;">
+            <div class="btn-group" style="margin-top:8px;">
+              <button class="btn btn-primary" onclick="controlledConnectToServer()" style="margin:0;">连接</button>
+              <button class="btn btn-danger" onclick="controlledDisconnectFromServer()" style="margin:0;">断开</button>
+            </div>
+            <details class="section" style="padding:10px 16px;margin-top:10px;">
+              <summary>📋 设备列表 <span class="server-manage-toggle" onclick="manageDeviceListControlled()">⚙️</span></summary>
+              <div class="history-list" id="controlledDeviceListContainer" style="margin-top:8px;max-height:120px;overflow-y:auto;">
                 <div class="history-empty">暂无已保存的设备<br>连接成功后会自动添加</div>
               </div>
               <div class="server-manage-panel" id="controlledDeviceManagePanel" style="display: none;">
@@ -118,21 +144,21 @@
                   <button class="server-manage-btn server-manage-btn-cancel" onclick="cancelDeviceManageControlled()">取消</button>
                 </div>
               </div>
-            </div>
+            </details>
           </div>
         </div>
 
-        <div class="section" id="controlledDirectSection">
-          <div class="section-title">本机网络地址</div>
-          <div class="ip-list" id="localIpList">
+        <details class="section" id="controlledDirectSection" style="padding:10px 16px;">
+          <summary>🌐 本机网络地址</summary>
+          <div class="ip-list" id="localIpList" style="margin-top:8px;">
             加载中...
           </div>
-        </div>
+        </details>
 
-        <div class="log-box" id="controlledLogBox">
+        <div class="log-box collapsed" id="controlledLogBox">
           <div class="log-header">
             <div class="log-title">连接日志</div>
-            <button class="log-toggle-btn" onclick="toggleLogBox('controlledLogBox')">收起</button>
+            <button class="log-toggle-btn" onclick="toggleLogBox('controlledLogBox')">展开</button>
           </div>
           <div class="log-content" id="connectionLog"></div>
         </div>
@@ -221,12 +247,12 @@
           </div>
           
           <div id="controllerDirectMode" class="mode-content active">
-            <div class="section">
-              <div class="section-title">历史连接记录</div>
-              <div class="history-list" id="directHistoryList">
+            <details class="section" style="padding:10px 16px;margin-bottom:10px;">
+              <summary>📋 历史连接记录</summary>
+              <div class="history-list" id="directHistoryList" style="margin-top:8px;">
                 <div class="history-empty">暂无历史连接记录</div>
               </div>
-            </div>
+            </details>
             <div class="two-col">
               <div class="input-group">
                 <label>对方 IP 地址</label>
@@ -237,13 +263,13 @@
                 <input type="number" id="remotePort" placeholder="8080" value="8080" min="1024" max="65535">
               </div>
             </div>
-            <button class="btn btn-primary" onclick="connectDirect()" style="margin-top: 20px;">连接</button>
+            <button class="btn btn-primary" onclick="connectDirect()" style="margin-top:12px;">连接</button>
           </div>
           
           <div id="controllerSignalingMode" class="mode-content">
-            <div class="section">
-              <div class="section-title">信令服务器列表 <span class="server-manage-toggle" onclick="manageSignalingServer()">⚙️ 管理</span></div>
-              <div class="history-list" id="signalingServerList" style="margin-bottom: 0;">
+            <details class="section" style="padding:10px 16px;margin-bottom:10px;">
+              <summary>📋 信令服务器列表 <span class="server-manage-toggle" onclick="manageSignalingServer()">⚙️</span></summary>
+              <div class="history-list" id="signalingServerList" style="margin-top:8px;">
                 <div class="history-empty">暂无已保存的信令服务器<br>请添加后从列表选择</div>
               </div>
               <div class="server-manage-panel" id="serverManagePanel" style="display: none;">
@@ -256,22 +282,24 @@
                   <button class="server-manage-btn server-manage-btn-cancel" onclick="cancelEditServer()">取消</button>
                 </div>
               </div>
-            </div>
-            <div class="section">
-              <div class="section-title">历史连接记录</div>
-              <div class="history-list" id="signalingHistoryList">
+            </details>
+            <details class="section" style="padding:10px 16px;margin-bottom:10px;">
+              <summary>📋 历史连接记录</summary>
+              <div class="history-list" id="signalingHistoryList" style="margin-top:8px;">
                 <div class="history-empty">暂无历史连接记录</div>
               </div>
-            </div>
+            </details>
             <div class="input-group">
               <label>信令服务器地址</label>
               <input type="text" id="controllerServerUrl" placeholder="例如: 192.168.1.100:3000" value="localhost:3000" style="width: 100%;">
-              <button class="btn btn-secondary" style="margin-top: 10px;" onclick="controllerConnectToServer()">连接服务器</button>
-              <button class="btn btn-danger" style="margin-top: 10px;" onclick="controllerDisconnectFromServer()">断开连接</button>
             </div>
-            <div class="section">
-              <div class="section-title">设备列表 <span class="server-manage-toggle" onclick="manageDeviceList()">⚙️ 管理</span></div>
-              <div class="history-list" id="deviceListContainer" style="margin-bottom: 0; max-height: 150px; overflow-y: auto;">
+            <div class="btn-group" style="margin-top:8px;">
+              <button class="btn btn-secondary" onclick="controllerConnectToServer()" style="margin:0;">连接</button>
+              <button class="btn btn-danger" onclick="controllerDisconnectFromServer()" style="margin:0;">断开</button>
+            </div>
+            <details class="section" style="padding:10px 16px;margin-top:10px;">
+              <summary>📋 设备列表 <span class="server-manage-toggle" onclick="manageDeviceList()">⚙️</span></summary>
+              <div class="history-list" id="deviceListContainer" style="margin-top:8px;max-height:150px;overflow-y:auto;">
                 <div class="history-empty">暂无已保存的设备<br>连接成功后会自动添加</div>
               </div>
               <div class="server-manage-panel" id="deviceManagePanel" style="display: none;">
@@ -284,19 +312,19 @@
                   <button class="server-manage-btn server-manage-btn-cancel" onclick="cancelDeviceManage()">取消</button>
                 </div>
               </div>
-            </div>
-            <div class="input-group" style="margin-top: 20px;">
+            </details>
+            <div class="input-group" style="margin-top:10px;">
               <label>对方设备 ID</label>
               <input type="text" id="targetDeviceId" placeholder="输入对方设备 ID" maxlength="16" oninput="this.value = this.value.toUpperCase()">
-              <button class="btn btn-primary" style="margin-top: 10px;" onclick="connectDevice()">连接</button>
+              <button class="btn btn-primary" style="margin-top:8px;" onclick="connectDevice()">连接</button>
             </div>
           </div>
         </div>
 
-        <div class="log-box" id="controllerLogBox">
+        <div class="log-box collapsed" id="controllerLogBox">
           <div class="log-header">
             <div class="log-title">连接日志</div>
-            <button class="log-toggle-btn" onclick="toggleLogBox('controllerLogBox')">收起</button>
+            <button class="log-toggle-btn" onclick="toggleLogBox('controllerLogBox')">展开</button>
           </div>
           <div class="log-content" id="connectionLogController"></div>
         </div>

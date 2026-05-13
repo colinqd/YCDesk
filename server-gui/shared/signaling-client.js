@@ -17,6 +17,8 @@ class SignalingClient {
     this.onReconnecting = options.onReconnecting || null
     this.onError = options.onError || null
 
+    this.config = options.config || {}
+
     this.heartbeatTimer = null
     this.maxReconnectAttempts = options.maxReconnectAttempts || 10
     this.reconnectDelay = options.reconnectDelay || 1000
@@ -175,7 +177,10 @@ class SignalingClient {
         this.socket.disconnect()
       }
 
+      const authToken = this.config?.authToken || this.config?.token || null
+
       this.socket = io(httpUrl, {
+        auth: authToken ? { token: authToken } : {},
         transports: ['websocket', 'polling'],
         reconnection: true,
         reconnectionAttempts: this.maxReconnectAttempts,

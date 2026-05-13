@@ -3,117 +3,119 @@ const DATA_CHANNEL_STATE = {
   OPEN: 'open',
   CLOSING: 'closing',
   CLOSED: 'closed'
-};
+}
 
 class DataChannelManager {
   constructor(options = {}) {
-    this.dataChannel = null;
-    this.messageQueue = [];
-    this.messageIdCounter = 0;
-    this.pendingMessages = new Map();
+    this.dataChannel = null
+    this.messageQueue = []
+    this.messageIdCounter = 0
+    this.pendingMessages = new Map()
     this.options = {
       maxRetries: 3,
       retryInterval: 1000,
       maxQueueSize: 100,
       ...options
-    };
+    }
     this.callbacks = {
       onOpen: null,
       onClose: null,
       onError: null,
       onMessage: null,
       onBufferedAmountLow: null
-    };
-    this.isReconnecting = false;
-    this.logger = options.logger || console;
+    }
+    this.isReconnecting = false
+    this.logger = options.logger || console
   }
 
   setDataChannel(channel) {
     if (this.dataChannel) {
-      this.removeEventListeners();
+      this.removeEventListeners()
     }
 
-    this.dataChannel = channel;
-    this.addEventListeners();
+    this.dataChannel = channel
+    this.addEventListeners()
     
     // 如果新通道已经是 open 状态，直接刷新队列
     if (channel.readyState === 'open') {
-      this.flushQueue();
+      this.flushQueue()
     }
   }
 
   addEventListeners() {
-    if (!this.dataChannel) return;
+    if (!this.dataChannel) return
 
-    this.dataChannel.onopen = this.handleOpen.bind(this);
-    this.dataChannel.onclose = this.handleClose.bind(this);
-    this.dataChannel.onerror = this.handleError.bind(this);
-    this.dataChannel.onmessage = this.handleMessage.bind(this);
-    this.dataChannel.onbufferedamountlow = this.handleBufferedAmountLow.bind(this);
+    this.dataChannel.onopen = this.handleOpen.bind(this)
+    this.dataChannel.onclose = this.handleClose.bind(this)
+    this.dataChannel.onerror = this.handleError.bind(this)
+    this.dataChannel.onmessage = this.handleMessage.bind(this)
+    this.dataChannel.onbufferedamountlow = this.handleBufferedAmountLow.bind(this)
   }
 
   removeEventListeners() {
-    if (!this.dataChannel) return;
+    if (!this.dataChannel) return
 
-    this.dataChannel.onopen = null;
-    this.dataChannel.onclose = null;
-    this.dataChannel.onerror = null;
-    this.dataChannel.onmessage = null;
-    this.dataChannel.onbufferedamountlow = null;
+    this.dataChannel.onopen = null
+    this.dataChannel.onclose = null
+    this.dataChannel.onerror = null
+    this.dataChannel.onmessage = null
+    this.dataChannel.onbufferedamountlow = null
   }
 
   handleOpen() {
-    this.logger.log('[DataChannel] 数据通道已打开');
-    this.isReconnecting = false;
-    this.flushQueue();
+    this.logger.log('[DataChannel] 数据通道已打开')
+    this.isReconnecting = false
+    this.flushQueue()
     
     if (this.callbacks.onOpen) {
-      this.callbacks.onOpen();
+      this.callbacks.onOpen()
     }
   }
 
   handleClose() {
-    this.logger.log('[DataChannel] 数据通道已关闭');
+    this.logger.log('[DataChannel] 数据通道已关闭')
     
     if (this.callbacks.onClose) {
-      this.callbacks.onClose();
+      this.callbacks.onClose()
     }
   }
 
   handleError(error) {
-    this.logger.error('[DataChannel] 数据通道错误:', error);
+    this.logger.error('[DataChannel] 数据通道错误:', error)
     
     if (this.callbacks.onError) {
-      this.callbacks.onError(error);
+      this.callbacks.onError(error)
     }
   }
 
   handleMessage(event) {
     try {
-      const data = JSON.parse(event.data);
+      const data = JSON.parse(event.data)
       
       if (data.ack && this.pendingMessages.has(data.ackId)) {
-        this.pendingMessages.delete(data.ackId);
-        return;
+        const entry = this.pendingMessages.get(data.ackId)
+        clearTimeout(entry.timer)
+        this.pendingMessages.delete(data.ackId)
+        return
       }
       
       if (data.id) {
-        this.sendAck(data.id);
+        this.sendAck(data.id)
       }
       
       if (this.callbacks.onMessage) {
-        this.callbacks.onMessage(data);
+        this.callbacks.onMessage(data)
       }
     } catch (e) {
-      this.logger.error('[DataChannel] 解析消息失败:', e);
+      this.logger.error('[DataChannel] 解析消息失败:', e)
     }
   }
 
   handleBufferedAmountLow() {
     if (this.callbacks.onBufferedAmountLow) {
-      this.callbacks.onBufferedAmountLow();
+      this.callbacks.onBufferedAmountLow()
     }
-    this.flushQueue();
+    this.flushQueue()
   }
 
   send(data, requireAck = false) {
@@ -121,153 +123,176 @@ class DataChannelManager {
       ...data,
       id: requireAck ? ++this.messageIdCounter : undefined,
       timestamp: Date.now()
-    };
+    }
     
     if (!this.isOpen()) {
-      this.enqueue(message, requireAck);
-      return false;
+      this.enqueue(message, requireAck)
+      return false
     }
 
-    return this.sendRaw(message, requireAck);
+    return this.sendRaw(message, requireAck)
   }
 
   sendRaw(message, requireAck) {
     try {
-      const json = JSON.stringify(message);
+      const json = JSON.stringify(message)
       
       if (this.dataChannel.bufferedAmount > 1024 * 1024) {
-        this.enqueue(message, requireAck);
-        return false;
+        this.enqueue(message, requireAck)
+        return false
       }
 
-      this.dataChannel.send(json);
+      this.dataChannel.send(json)
       
       if (requireAck && message.id) {
-        this.trackPendingMessage(message);
+        this.trackPendingMessage(message)
       }
       
-      return true;
+      return true
     } catch (e) {
-      this.enqueue(message, requireAck);
-      return false;
+      this.enqueue(message, requireAck)
+      return false
     }
   }
 
   sendAck(messageId) {
-    this.send({ ack: true, ackId: messageId }, false);
+    this.send({ ack: true, ackId: messageId }, false)
   }
 
   trackPendingMessage(message) {
-    const retryCount = 0;
-    const timer = setTimeout(() => {
-      this.retryMessage(message, retryCount);
-    }, this.options.retryInterval);
-
-    this.pendingMessages.set(message.id, {
+    const entry = {
       message,
-      timer,
-      retryCount
-    });
+      timer: null,
+      retryCount: 0
+    }
+    entry.timer = setTimeout(() => {
+      this.retryMessage(message.id)
+    }, this.options.retryInterval)
+    this.pendingMessages.set(message.id, entry)
   }
 
-  retryMessage(message, retryCount) {
-    if (retryCount >= this.options.maxRetries) {
-      this.logger.error('[DataChannel] 消息重发失败，放弃:', message.id);
-      this.pendingMessages.delete(message.id);
-      return;
+  retryMessage(messageId) {
+    const entry = this.pendingMessages.get(messageId)
+    if (!entry) return
+
+    const newRetryCount = entry.retryCount + 1
+    if (newRetryCount > this.options.maxRetries) {
+      this.logger.error('[DataChannel] 消息重发失败，放弃:', messageId)
+      clearTimeout(entry.timer)
+      this.pendingMessages.delete(messageId)
+      return
     }
 
     if (!this.isOpen()) {
-      this.logger.log('[DataChannel] 通道关闭，停止重发');
-      return;
+      this.logger.log('[DataChannel] 通道关闭，停止重发')
+      clearTimeout(entry.timer)
+      this.pendingMessages.delete(messageId)
+      return
     }
 
-    this.pendingMessages.delete(message.id);
-    this.sendRaw(message, true);
+    entry.retryCount = newRetryCount
+
+    try {
+      const json = JSON.stringify(entry.message)
+      if (this.dataChannel.bufferedAmount > 1024 * 1024) {
+        entry.timer = setTimeout(() => {
+          this.retryMessage(messageId)
+        }, this.options.retryInterval)
+        return
+      }
+      this.dataChannel.send(json)
+      entry.timer = setTimeout(() => {
+        this.retryMessage(messageId)
+      }, this.options.retryInterval)
+    } catch (e) {
+      this.logger.error('[DataChannel] 重发失败:', e.message)
+      clearTimeout(entry.timer)
+      this.pendingMessages.delete(messageId)
+    }
   }
 
   enqueue(message, requireAck) {
     if (this.messageQueue.length >= this.options.maxQueueSize) {
-      this.logger.warn('[DataChannel] 队列已满，丢弃最早的消息');
-      this.messageQueue.shift();
+      this.logger.warn('[DataChannel] 队列已满，丢弃最早的消息')
+      this.messageQueue.shift()
     }
-    this.messageQueue.push({ message, requireAck });
+    this.messageQueue.push({ message, requireAck })
   }
 
   flushQueue() {
     if (!this.isOpen() || this.messageQueue.length === 0) {
-      return;
+      return
     }
     
     while (this.messageQueue.length > 0 && this.isOpen()) {
-      const { message, requireAck } = this.messageQueue[0];
+      const { message, requireAck } = this.messageQueue[0]
       if (this.sendRaw(message, requireAck)) {
-        this.messageQueue.shift();
+        this.messageQueue.shift()
       } else {
-        break;
+        break
       }
     }
   }
 
   isOpen() {
-    return this.dataChannel && this.dataChannel.readyState === 'open';
+    return this.dataChannel && this.dataChannel.readyState === 'open'
   }
 
   getReadyState() {
-    return this.dataChannel ? this.dataChannel.readyState : 'closed';
+    return this.dataChannel ? this.dataChannel.readyState : 'closed'
   }
 
   getBufferedAmount() {
-    return this.dataChannel ? this.dataChannel.bufferedAmount : 0;
+    return this.dataChannel ? this.dataChannel.bufferedAmount : 0
   }
 
   setOnOpen(callback) {
-    this.callbacks.onOpen = callback;
+    this.callbacks.onOpen = callback
   }
 
   setOnClose(callback) {
-    this.callbacks.onClose = callback;
+    this.callbacks.onClose = callback
   }
 
   setOnError(callback) {
-    this.callbacks.onError = callback;
+    this.callbacks.onError = callback
   }
 
   setOnMessage(callback) {
-    this.callbacks.onMessage = callback;
+    this.callbacks.onMessage = callback
   }
 
   setOnBufferedAmountLow(callback) {
-    this.callbacks.onBufferedAmountLow = callback;
+    this.callbacks.onBufferedAmountLow = callback
   }
 
   close() {
-    this.messageQueue = [];
+    this.messageQueue = []
     // 清理所有 pending 消息的定时器
     this.pendingMessages.forEach(({ timer }) => {
-      clearTimeout(timer);
-    });
-    this.pendingMessages.clear();
+      clearTimeout(timer)
+    })
+    this.pendingMessages.clear()
     
     if (this.dataChannel) {
-      this.removeEventListeners();
-      this.dataChannel.close();
-      this.dataChannel = null;
+      this.removeEventListeners()
+      this.dataChannel.close()
+      this.dataChannel = null
     }
   }
 
   reset() {
-    this.close();
-    this.messageIdCounter = 0;
+    this.close()
+    this.messageIdCounter = 0
   }
   
   /**
    * 销毁管理器，清理所有资源
    */
   destroy() {
-    this.close();
-    this.callbacks = {};
-    this.options = null;
+    this.close()
+    this.callbacks = {}
+    this.options = null
   }
 }
 
@@ -275,8 +300,8 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     DataChannelManager,
     DATA_CHANNEL_STATE
-  };
+  }
 } else {
-  window.DataChannelManager = DataChannelManager;
-  window.DATA_CHANNEL_STATE = DATA_CHANNEL_STATE;
+  window.DataChannelManager = DataChannelManager
+  window.DATA_CHANNEL_STATE = DATA_CHANNEL_STATE
 }

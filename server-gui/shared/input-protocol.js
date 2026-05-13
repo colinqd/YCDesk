@@ -174,6 +174,11 @@ function parseInputCommand(command) {
     result.password = command.password
   }
   
+  // 文本输入特殊处理
+  if (command.inputType === INPUT_TYPES.TEXT_INPUT && command.text !== undefined) {
+    result.text = command.text
+  }
+  
   return result
 }
 
@@ -231,6 +236,12 @@ function validateInputCommand(command) {
     if (command.password === undefined || command.password === '') {
       errors.push('解锁命令必须包含 password')
     }
+    return { valid: errors.length === 0, errors }
+  }
+  
+  // 锁屏命令特殊验证
+  if (command.inputType === INPUT_TYPES.LOCK_SCREEN) {
+    // 锁屏命令不需要任何附加字段
     return { valid: errors.length === 0, errors }
   }
   

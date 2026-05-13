@@ -68,6 +68,9 @@ function log(message) {
     const div = document.createElement('div')
     div.textContent = logMessage
     uiManager.connectionLogDiv.appendChild(div)
+    while (uiManager.connectionLogDiv.children.length > 200) {
+      uiManager.connectionLogDiv.removeChild(uiManager.connectionLogDiv.firstChild)
+    }
     uiManager.connectionLogDiv.scrollTop = uiManager.connectionLogDiv.scrollHeight
   }
 }
@@ -334,8 +337,10 @@ function editSignalingServer(index) {
   const nameInput = document.getElementById('newServerName')
   const urlInput = document.getElementById('newServerUrl')
   const addBtn = document.getElementById('addServerBtn')
+  const panel = document.getElementById('serverManagePanel')
   
-  if (nameInput) nameInput.value = server.name
+  if (panel) panel.style.display = 'block'
+  if (nameInput) { nameInput.value = server.name; nameInput.focus() }
   if (urlInput) urlInput.value = server.url
   if (addBtn) {
     addBtn.textContent = '更新'
@@ -412,8 +417,10 @@ function editSignalingServerControlled(index) {
   const nameInput = document.getElementById('controlledNewServerName')
   const urlInput = document.getElementById('controlledNewServerUrl')
   const addBtn = document.getElementById('controlledAddServerBtn')
+  const panel = document.getElementById('controlledServerManagePanel')
   
-  if (nameInput) nameInput.value = server.name
+  if (panel) panel.style.display = 'block'
+  if (nameInput) { nameInput.value = server.name; nameInput.focus() }
   if (urlInput) urlInput.value = server.url
   if (addBtn) {
     addBtn.textContent = '更新'
@@ -919,6 +926,7 @@ function toggleAdvancedSettings(sectionId) {
 
 function updateServerStatusDisplay(text, type) {
   const badge = document.getElementById('serverStatus')
+  if (!badge) return
   const dot = badge.querySelector('.status-dot')
   const textEl = document.getElementById('serverStatusText')
   if (textEl) textEl.textContent = text
@@ -1277,6 +1285,141 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   })
 })
+
+// === 屏幕捕获源选择 ===
+window.availableCaptureSources = []
+
+async function loadCaptureSources() {
+  try {
+    var sources = await window.electronAPI.getSources()
+    window.availableCaptureSources = sources
+
+    var select = document.getElementById('captureSource')
+    if (!select) return
+
+    var currentValue = select.value
+    select.innerHTML = '<option value="" data-source-id="">整个屏幕（默认）</option>'
+
+    var screens = sources.filter(function(s) { return s.id && s.id.startsWith('screen:') })
+    var windows = sources.filter(function(s) { return s.id && s.id.startsWith('window:') })
+
+    if (screens.length > 0) {
+      var screenGroup = document.createElement('optgroup')
+      screenGroup.label = '🖥️ 屏幕'
+      screens.forEach(function(s) {
+        var opt = document.createElement('option')
+        opt.value = s.id
+        opt.setAttribute('data-source-id', s.id)
+        opt.textContent = s.name
+        screenGroup.appendChild(opt)
+      })
+      select.appendChild(screenGroup)
+    }
+
+    if (windows.length > 0) {
+      var windowGroup = document.createElement('optgroup')
+      windowGroup.label = '🪟 窗口'
+      windows.forEach(function(s) {
+        var opt = document.createElement('option')
+        opt.value = s.id
+        opt.setAttribute('data-source-id', s.id)
+        opt.textContent = s.name
+        windowGroup.appendChild(opt)
+      })
+      select.appendChild(windowGroup)
+    }
+
+    if (currentValue) { select.value = currentValue }
+
+    var section = document.getElementById('sourceSelectorSection')
+    if (section) { section.style.display = 'block' }
+
+    try {
+      var useService = localStorage.getItem('ycdesk_use_service_capture') === 'true'
+      var checkbox = document.getElementById('useServiceCapture')
+      if (checkbox) checkbox.checked = useService
+    } catch(e) {}
+
+    detectWdaProtection()
+  } catch (e) {
+    console.error('加载捕获源列表失败:', e)
+  }
+}
+
+window.getSelectedSourceId = function() {
+  var select = document.getElementById('captureSource')
+  if (!select) return null
+  var selected = select.options[select.selectedIndex]
+  if (!selected) return null
+  return selected.getAttribute('data-source-id') || null
+}
+
+window.refreshCaptureSources = loadCaptureSources
+
+window.selectWindowSource = function(windowName) {
+  var select = document.getElementById('captureSource')
+  if (!select) return
+  for (var i = 0; i < select.options.length; i++) {
+    if (select.options[i].textContent.indexOf(windowName) !== -1) {
+      select.selectedIndex = i
+      return true
+    }
+  }
+  return false
+}
+
+async function detectWdaProtection() {
+  try {
+    if (!window.electronAPI.detectWdaProtection) return
+    var result = await window.electronAPI.detectWdaProtection()
+    var statusDiv = document.getElementById('wdaStatus')
+    var bypassBtn = document.getElementById('bypassWdaBtn')
+    if (!statusDiv) return
+
+    if (result.success && result.isWdaProtected) {
+      statusDiv.style.display = 'block'
+      statusDiv.textContent = '⚠️ 检测到微信反截屏保护 — 微信窗口内容可能显示为黑色。点击"🔓 解锁反截屏"尝试解除。'
+      if (bypassBtn) bypassBtn.style.display = 'inline-block'
+    } else if (result.success && !result.isWdaProtected) {
+      statusDiv.style.display = 'none'
+      if (bypassBtn) bypassBtn.style.display = 'none'
+    }
+  } catch (e) {
+    console.warn('WDA检测失败:', e)
+  }
+}
+
+window.bypassWdaProtection = async function() {
+  try {
+    if (!window.electronAPI.tryBypassWda) {
+      window.UIState && window.UIState.log('此版本不支持WDA绕过功能')
+      return
+    }
+    var statusDiv = document.getElementById('wdaStatus')
+    if (statusDiv) { statusDiv.textContent = '正在尝试解除反截屏保护...'; statusDiv.style.display = 'block' }
+    var result = await window.electronAPI.tryBypassWda()
+    if (result.success) {
+      if (statusDiv) { statusDiv.textContent = '✅ 反截屏保护已解除！请刷新捕获源列表。'; statusDiv.style.color = '#4caf50' }
+      var bypassBtn = document.getElementById('bypassWdaBtn')
+      if (bypassBtn) bypassBtn.style.display = 'none'
+      setTimeout(function() { loadCaptureSources() }, 500)
+    } else {
+      if (statusDiv) { statusDiv.textContent = '❌ 解除失败: ' + (result.error || '未知错误'); statusDiv.style.color = '#e94560' }
+    }
+  } catch (e) {
+    console.error('WDA绕过失败:', e)
+  }
+}
+
+function toggleServiceCapture() {
+  var enabled = document.getElementById('useServiceCapture').checked
+  try {
+    localStorage.setItem('ycdesk_use_service_capture', enabled ? 'true' : 'false')
+    log('服务级捕获模式: ' + (enabled ? '已启用' : '已禁用'))
+  } catch(e) {
+    log('保存服务捕获设置失败: ' + e.message)
+  }
+}
 
 // 被控端信令服务器管理函数暴露到window
 window.manageSignalingServerControlled = manageSignalingServerControlled

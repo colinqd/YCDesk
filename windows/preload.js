@@ -41,7 +41,8 @@ const RECEIVE_CHANNELS = Object.freeze([
   'answer',
   'ice-candidate',
   'lock-screen-frame',
-  'screen-capture-control'
+  'screen-capture-control',
+  'service-frame'
 ])
 
 const listenerRegistry = new Map()
@@ -52,6 +53,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   resetDeviceId: () => ipcRenderer.invoke('reset-device-id'),
   validateDeviceId: (id) => ipcRenderer.invoke('validate-device-id', id),
   getSources: () => ipcRenderer.invoke('get-sources'),
+  detectWdaProtection: () => ipcRenderer.invoke('detect-wda-protection'),
+  tryBypassWda: () => ipcRenderer.invoke('try-bypass-wda'),
+  serviceStartCapture: (config) => ipcRenderer.invoke('service:startCapture', config),
+  onServiceFrame: (callback) => {
+    const handler = (event, data) => callback(data)
+    if (!listenerRegistry.has('service-frame')) {
+      listenerRegistry.set('service-frame', new Set())
+    }
+    listenerRegistry.get('service-frame').add(handler)
+    ipcRenderer.on('service-frame', handler)
+  },
   openRemoteWindow: () => ipcRenderer.invoke('open-remote-window'),
   getScreenSize: () => ipcRenderer.invoke('get-screen-size'),
   getPlatform: () => ipcRenderer.invoke('get-platform'),
@@ -75,24 +87,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   on: (channel, callback) => {
     if (!RECEIVE_CHANNELS.includes(channel)) {
+      console.warn('[Preload] 拒绝未授权的IPC监听通道:', channel)
       return
     }
-    
     const handler = (event, ...args) => callback(...args)
-    
+    handler._callback = callback
     if (!listenerRegistry.has(channel)) {
       listenerRegistry.set(channel, new Set())
     }
     listenerRegistry.get(channel).add(handler)
-    
     ipcRenderer.on(channel, handler)
   },
-  
+
   removeListener: (channel, callback) => {
     const handlers = listenerRegistry.get(channel)
     if (handlers) {
       for (const handler of handlers) {
-        if (handler === callback || handler.callback === callback) {
+        if (handler === callback || handler._callback === callback) {
           ipcRenderer.removeListener(channel, handler)
           handlers.delete(handler)
           break
@@ -137,6 +148,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getUnlockStatus: () => ipcRenderer.invoke('auto-unlock-get-status'),
   saveUnlockPassword: (password) => ipcRenderer.invoke('auto-unlock-save-password', password),
   clearUnlockPassword: () => ipcRenderer.invoke('auto-unlock-clear-password'),
+  getUnlockPassword: () => ipcRenderer.invoke('auto-unlock-get-password'),
   
   // Credential Provider 相关
   checkCredProvider: () => ipcRenderer.invoke('credProvider:check'),

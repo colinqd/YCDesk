@@ -1,6 +1,6 @@
 import s from './state.js'
 import { InputDispatcher, createGestureHandler, convertToInputCommand } from './input.js'
-import MatrixTransformer from '../shared/components/matrix-transformer.js'
+import { MatrixTransformer } from '../shared/components/matrix-transformer.js'
 import { registerPlugin } from '@capacitor/core'
 
 const FloatingMouse = registerPlugin('FloatingMouse')
