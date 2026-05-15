@@ -833,7 +833,25 @@ function showMessage(msg) {
 }
 
 async function setCustomDeviceId() {
-  const customIdInput = document.getElementById('customDeviceId')
+  const inputs = document.querySelectorAll('#customDeviceId')
+  let customIdInput = null
+  for (const input of inputs) {
+    if (input.closest('#settingsPage') && input.offsetParent !== null) {
+      customIdInput = input
+      break
+    }
+  }
+  if (!customIdInput) {
+    for (const input of inputs) {
+      if (input.offsetParent !== null) {
+        customIdInput = input
+        break
+      }
+    }
+  }
+  if (!customIdInput) {
+    customIdInput = inputs[0]
+  }
   const customId = customIdInput.value.trim()
   
   if (!customId) {
@@ -848,7 +866,7 @@ async function setCustomDeviceId() {
       uiManager.setDeviceId(myDeviceId)
       signalingManager.setDeviceId(myDeviceId)
       directManager.setDeviceId(myDeviceId)
-      customIdInput.value = ''
+      customIdInput.value = myDeviceId
       showMessage('设备ID已设置为: ' + myDeviceId)
     }
   } catch (error) {
@@ -868,10 +886,14 @@ async function resetDeviceId() {
       uiManager.setDeviceId(myDeviceId)
       signalingManager.setDeviceId(myDeviceId)
       directManager.setDeviceId(myDeviceId)
-      alert('设备ID已重置为: ' + myDeviceId)
+      const inputs = document.querySelectorAll('#customDeviceId')
+      for (const input of inputs) {
+        input.value = myDeviceId
+      }
+      showMessage('设备ID已重置为: ' + myDeviceId)
     }
   } catch (error) {
-    alert('重置设备ID失败: ' + error.message)
+    showMessage('重置设备ID失败: ' + error.message)
   }
 }
 

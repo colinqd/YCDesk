@@ -1,6 +1,6 @@
 {
   "name": "ycdesk",
-  "version": "3.1.4",
+  "version": "3.2.0",
   "description": "远程桌面控制软件 - Windows 版本",
   "main": "src/main/main.js",
   "author": "",
@@ -29,14 +29,15 @@
     "windows"
   ],
   "devDependencies": {
+    "@vitest/coverage-v8": "^1.6.0",
     "chokidar": "^3.6.0",
     "cross-env": "^7.0.3",
     "electron": "^28.3.3",
     "electron-builder": "^24.9.1",
+    "jsdom": "^24.0.0",
     "nodemon": "^3.0.0",
-    "vitest": "^1.6.0",
-    "@vitest/coverage-v8": "^1.6.0",
-    "jsdom": "^24.0.0"
+    "rcedit": "^5.0.2",
+    "vitest": "^1.6.0"
   },
   "dependencies": {
     "robotjs": "0.6.0",
@@ -72,7 +73,21 @@
       {
         "from": "bin/",
         "to": "service/",
-        "filter": ["YCDeskService.exe"]
+        "filter": [
+          "YCDeskService.exe"
+        ]
+      },
+      {
+        "from": "bin/YCDeskCredentialProvider.dll",
+        "to": "cred-provider/YCDeskCredentialProvider.dll"
+      },
+      {
+        "from": "assets/",
+        "to": "assets/",
+        "filter": [
+          "icon.png",
+          "icon.ico"
+        ]
       }
     ],
     "win": {
@@ -93,10 +108,11 @@
     },
     "nsis": {
       "oneClick": false,
-      "perMachine": false,
+      "perMachine": true,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "artifactName": "YCDesk-Setup-${version}.exe"
+      "artifactName": "YCDesk-Setup-${version}.exe",
+      "include": "installer/install-cred-provider.nsh"
     },
     "portable": {
       "artifactName": "YCDesk-Portable-${version}.exe"

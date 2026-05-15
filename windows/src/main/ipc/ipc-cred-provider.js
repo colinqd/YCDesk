@@ -1,8 +1,135 @@
 const { ipcMain } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const os = require('os')
 
-async function verifyCredProviderInstallation(clsid, systemDllPath) {
+const CLSID = '{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}'
+const INSTALL_DIR = 'C:\\Program Files\\YCDesk'
+const TARGET_DLL = path.join(INSTALL_DIR, 'YCDeskCredentialProvider.dll')
+
+function getSourceDllPath() {
+  const projectRoot = path.resolve(__dirname, '../../..')
+  const devPaths = [
+    path.join(projectRoot, 'windows', 'credential_provider', 'YCDeskCredentialProvider.dll'),
+    path.join(projectRoot, 'windows', 'bin', 'YCDeskCredentialProvider.dll')
+  ]
+  const packagedPath = path.join(process.resourcesPath, 'cred-provider', 'YCDeskCredentialProvider.dll')
+
+  for (const p of [...devPaths, packagedPath]) {
+    if (fs.existsSync(p)) return p
+  }
+  return null
+}
+
+function buildInstallPsScript(sourceDllPath) {
+  return `
+$ErrorActionPreference = 'Stop'
+$CLSID = '${CLSID}'
+$installDir = '${INSTALL_DIR}'
+$targetDll = '${TARGET_DLL}'
+$sourceDll = '${sourceDllPath}'
+
+Write-Host 'INSTALL:BEGIN'
+
+if (!(Test-Path $installDir)) {
+  New-Item -ItemType Directory -Path $installDir -Force | Out-Null
+}
+Write-Host 'INSTALL:DIR_OK'
+
+Copy-Item $sourceDll $targetDll -Force
+Write-Host 'INSTALL:COPY_OK'
+
+$providerKey = "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Authentication\\Credential Providers\\$CLSID"
+if (!(Test-Path $providerKey)) { New-Item -Path $providerKey -Force | Out-Null }
+Set-ItemProperty -Path $providerKey -Name '(default)' -Value 'YCDesk Credential Provider'
+
+$clsidKey = "HKLM:\\SOFTWARE\\Classes\\CLSID\\$CLSID"
+if (!(Test-Path $clsidKey)) { New-Item -Path $clsidKey -Force | Out-Null }
+Set-ItemProperty -Path $clsidKey -Name '(default)' -Value 'YCDesk Credential Provider'
+
+$inprocKey = "$clsidKey\\InprocServer32"
+if (!(Test-Path $inprocKey)) { New-Item -Path $inprocKey -Force | Out-Null }
+Set-ItemProperty -Path $inprocKey -Name '(default)' -Value $targetDll
+Set-ItemProperty -Path $inprocKey -Name 'ThreadingModel' -Value 'Apartment'
+Write-Host 'INSTALL:REG_OK'
+
+$configKey = 'HKLM:\\SOFTWARE\\YCDesk'
+if (!(Test-Path $configKey)) { New-Item -Path $configKey -Force | Out-Null }
+Set-ItemProperty -Path $configKey -Name 'InstallPath' -Value $installDir
+
+Write-Host 'INSTALL:SUCCESS'
+`.trim()
+}
+
+function buildUninstallPsScript() {
+  return `
+$ErrorActionPreference = 'Stop'
+$CLSID = '${CLSID}'
+$installDir = '${INSTALL_DIR}'
+$targetDll = '${TARGET_DLL}'
+
+Write-Host 'UNINSTALL:BEGIN'
+
+$providerKey = "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Authentication\\Credential Providers\\$CLSID"
+if (Test-Path $providerKey) { Remove-Item -Path $providerKey -Force -Recurse }
+Write-Host 'UNINSTALL:CP_REMOVED'
+
+$clsidKey = "HKLM:\\SOFTWARE\\Classes\\CLSID\\$CLSID"
+if (Test-Path $clsidKey) { Remove-Item -Path $clsidKey -Force -Recurse }
+Write-Host 'UNINSTALL:CLSID_REMOVED'
+
+$configKey = 'HKLM:\\SOFTWARE\\YCDesk'
+if (Test-Path $configKey) { Remove-Item -Path $configKey -Force -Recurse }
+Write-Host 'UNINSTALL:CONFIG_REMOVED'
+
+if (Test-Path $targetDll) { Remove-Item -Path $targetDll -Force }
+Write-Host 'UNINSTALL:DLL_REMOVED'
+
+Write-Host 'UNINSTALL:SUCCESS'
+`.trim()
+}
+
+function runAsAdmin(psScriptContent, logFn) {
+  return new Promise((resolve) => {
+    const { spawn } = require('child_process')
+    const windir = process.env.windir || process.env.SystemRoot || 'C:\\Windows'
+    const psPath = path.join(windir, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+    const tmpDir = os.tmpdir()
+    const scriptFile = path.join(tmpDir, `ycdesk_cred_${Date.now()}.ps1`)
+
+    fs.writeFileSync(scriptFile, psScriptContent, 'utf8')
+    logFn('info', `临时脚本: ${scriptFile}`)
+
+    const proc = spawn(psPath, [
+      '-NoProfile', '-NonInteractive',
+      '-Command',
+      `Start-Process -FilePath '${psPath}' -ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File','${scriptFile}' -Verb RunAs -Wait`
+    ], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true
+    })
+
+    let stdout = ''
+    let stderr = ''
+
+    proc.stdout.on('data', (data) => { stdout += data.toString(); logFn('info', 'OUT: ' + data.toString().trim()) })
+    proc.stderr.on('data', (data) => { stderr += data.toString(); logFn('warn', 'ERR: ' + data.toString().trim()) })
+
+    proc.on('close', (code) => {
+      logFn('info', `UAC 进程结束: code=${code}`)
+      try { fs.unlinkSync(scriptFile) } catch (e) {}
+      resolve({ code: code === 0 ? 0 : code, stdout: stdout.trim(), stderr: stderr.trim() })
+    })
+
+    proc.on('error', (err) => {
+      logFn('error', 'UAC 进程错误: ' + err.message)
+      try { fs.unlinkSync(scriptFile) } catch (e) {}
+      resolve({ code: -1, stdout: '', stderr: err.message })
+    })
+  })
+}
+
+async function verifyCredProviderInstallation() {
   const result = {
     installed: false,
     dllExists: false,
@@ -12,22 +139,18 @@ async function verifyCredProviderInstallation(clsid, systemDllPath) {
   }
 
   try {
+    result.dllExists = fs.existsSync(TARGET_DLL)
+    result.details.push(result.dllExists ? 'DLL 文件存在' : 'DLL 文件不存在')
+
     const { execFile } = require('child_process')
     const { promisify } = require('util')
     const execFileAsync = promisify(execFile)
-
-    result.dllExists = fs.existsSync(systemDllPath)
-    if (result.dllExists) {
-      result.details.push('DLL 文件存在')
-    } else {
-      result.details.push('DLL 文件不存在')
-    }
 
     const windir = process.env.windir || process.env.SystemRoot || 'C:\\Windows'
     const regPath = path.join(windir, 'System32', 'reg.exe')
 
     try {
-      await execFileAsync(regPath, ['query', `HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Authentication\\Credential Providers\\${clsid}`], { timeout: 5000 })
+      await execFileAsync(regPath, ['query', `HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Authentication\\Credential Providers\\${CLSID}`], { timeout: 5000 })
       result.registered = true
       result.details.push('Credential Provider 已注册')
     } catch (e) {
@@ -35,7 +158,7 @@ async function verifyCredProviderInstallation(clsid, systemDllPath) {
     }
 
     try {
-      await execFileAsync(regPath, ['query', `HKCR\\CLSID\\${clsid}\\InprocServer32`], { timeout: 5000 })
+      await execFileAsync(regPath, ['query', `HKLM\\SOFTWARE\\Classes\\CLSID\\${CLSID}\\InprocServer32`], { timeout: 5000 })
       result.clsidRegistered = true
       result.details.push('CLSID 已注册')
     } catch (e) {
@@ -50,22 +173,6 @@ async function verifyCredProviderInstallation(clsid, systemDllPath) {
   }
 }
 
-async function verifyCredProviderState() {
-  const clsid = '{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}'
-  const possiblePaths = [
-    'C:\\Program Files\\YCDesk\\YCDeskCredentialProvider.dll',
-    'C:\\Windows\\System32\\YCDeskCredentialProvider.dll'
-  ]
-
-  for (const dllPath of possiblePaths) {
-    if (fs.existsSync(dllPath)) {
-      return await verifyCredProviderInstallation(clsid, dllPath)
-    }
-  }
-
-  return await verifyCredProviderInstallation(clsid, possiblePaths[0])
-}
-
 function register(safeHandler, logFn) {
   ipcMain.handle('credProvider:check', safeHandler(async () => {
     logFn('info', '检查 Credential Provider 状态')
@@ -74,9 +181,6 @@ function register(safeHandler, logFn) {
       const { promisify } = require('util')
       const execFileAsync = promisify(execFile)
 
-      const clsid = '{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}'
-      const systemDllPath1 = 'C:\\Windows\\System32\\YCDeskCredentialProvider.dll'
-      const systemDllPath2 = 'C:\\Program Files\\YCDesk\\YCDeskCredentialProvider.dll'
       const result = {
         installed: false,
         dllExists: false,
@@ -84,35 +188,27 @@ function register(safeHandler, logFn) {
         details: []
       }
 
-      if (fs.existsSync(systemDllPath1)) {
+      if (fs.existsSync(TARGET_DLL)) {
         result.dllExists = true
-        result.dllPath = systemDllPath1
-        const stat = fs.statSync(systemDllPath1)
-        result.dllSize = stat.size
-        result.dllModified = stat.mtime
-      } else if (fs.existsSync(systemDllPath2)) {
-        result.dllExists = true
-        result.dllPath = systemDllPath2
-        const stat = fs.statSync(systemDllPath2)
+        result.dllPath = TARGET_DLL
+        const stat = fs.statSync(TARGET_DLL)
         result.dllSize = stat.size
         result.dllModified = stat.mtime
       }
 
       const windir = process.env.windir || process.env.SystemRoot || 'C:\\Windows'
       const regPath = path.join(windir, 'System32', 'reg.exe')
-      const keyPath = `HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Authentication\\Credential Providers\\${clsid}`
 
       try {
-        await execFileAsync(regPath, ['query', keyPath], { timeout: 5000 })
+        await execFileAsync(regPath, ['query', `HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Authentication\\Credential Providers\\${CLSID}`], { timeout: 5000 })
         result.registered = true
         result.details.push('Credential Provider 已注册')
       } catch (e) {
         result.details.push('Credential Provider 未注册')
       }
 
-      const clsidKey = `HKCR\\CLSID\\${clsid}\\InprocServer32`
       try {
-        await execFileAsync(regPath, ['query', clsidKey], { timeout: 5000 })
+        await execFileAsync(regPath, ['query', `HKLM\\SOFTWARE\\Classes\\CLSID\\${CLSID}\\InprocServer32`], { timeout: 5000 })
         result.clsidRegistered = true
         result.details.push('CLSID 已注册')
       } catch (e) {
@@ -133,83 +229,29 @@ function register(safeHandler, logFn) {
     const steps = []
 
     try {
-      const { exec, spawn } = require('child_process')
-      const { promisify } = require('util')
-      const execAsync = promisify(exec)
-
-      const projectRoot = path.resolve(__dirname, '../../..')
-      const buildDllPath1 = path.join(projectRoot, 'windows', 'credential_provider', 'YCDeskCredentialProvider.dll')
-      const buildDllPath2 = path.join(projectRoot, 'windows', 'bin', 'YCDeskCredentialProvider.dll')
-
-      let buildDllPath = ''
-      if (fs.existsSync(buildDllPath1)) buildDllPath = buildDllPath1
-      else if (fs.existsSync(buildDllPath2)) buildDllPath = buildDllPath2
-
-      if (!buildDllPath) {
-        return { success: false, error: '找不到 YCDeskCredentialProvider.dll', steps }
-      }
-
       const sendProgress = (step, status, message) => {
         if (event && event.sender && !event.sender.isDestroyed()) {
           event.sender.send('credProvider:progress', { step, status, message })
         }
       }
 
-      steps.push({ step: 'check_dll', status: 'success', message: '找到 DLL 文件' })
-      sendProgress('check_dll', 'success', '找到 DLL 文件')
-      sendProgress('uac_install', 'running', '正在请求管理员权限...')
+      const sourceDll = getSourceDllPath()
+      if (!sourceDll) {
+        return { success: false, error: '找不到 YCDeskCredentialProvider.dll', steps }
+      }
 
-      const installScriptPath = path.join(projectRoot, 'windows', 'credential_provider', 'install.ps1')
-      logFn('info', '准备启动 UAC: ' + installScriptPath)
+      steps.push({ step: 'check_dll', status: 'success', message: `找到 DLL: ${sourceDll}` })
+      sendProgress('check_dll', 'success', `找到 DLL: ${sourceDll}`)
+      logFn('info', `源 DLL 路径: ${sourceDll}`)
 
-      const tempBat = path.join(projectRoot, 'windows', 'install_with_uac.bat')
-      const windir = process.env.windir || process.env.SystemRoot || 'C:\\Windows'
-      const system32Path = path.join(windir, 'System32')
-      const powershellPath = path.join(system32Path, 'WindowsPowerShell', 'v1.0', 'powershell.exe')
-      const netPath = path.join(system32Path, 'net.exe')
-      const timeoutPath = path.join(windir, 'System32', 'timeout.exe')
+      sendProgress('install', 'running', '正在请求管理员权限安装...')
+      const psScript = buildInstallPsScript(sourceDll)
+      const result = await runAsAdmin(psScript, logFn)
 
-      const batLines = [
-        '@echo off',
-        ':: Check admin rights',
-        `"${netPath}" session >nul 2>&1`,
-        'if %errorLevel% == 0 (',
-        '    echo Already admin, running script...',
-        `    "${powershellPath}" -NoProfile -ExecutionPolicy Bypass -File "${installScriptPath}" -Silent`,
-        '    echo INSTALL_DONE',
-        `    "${timeoutPath}" /t 3`,
-        ') else (',
-        '    echo Requesting admin access...',
-        `    "${powershellPath}" -NoProfile -ExecutionPolicy Bypass -Command "Start-Process '%~f0' -Verb RunAs"`,
-        '    exit /b',
-        ')'
-      ]
-
-      const batContent = batLines.join('\n') + '\n'
-      fs.writeFileSync(tempBat, batContent, 'ascii')
-      logFn('info', '执行批处理文件弹出 UAC')
-
-      await new Promise((resolve) => {
-        const cmdPath = path.join(windir, 'System32', 'cmd.exe')
-        exec(`"${cmdPath}" /c start "" "${tempBat}"`, {
-          windowsHide: false,
-          timeout: 120000
-        }, (error, stdout, stderr) => {
-          if (error) {
-            logFn('error', '启动批处理失败: ' + error.message)
-            resolve({ code: -1, error: error.message })
-          } else {
-            logFn('info', '批处理已启动')
-            resolve({ code: 0, stdout, stderr })
-          }
-        })
-      })
-
-      try { fs.unlinkSync(tempBat) } catch (e) {}
-      await new Promise(r => setTimeout(r, 3000))
+      await new Promise(r => setTimeout(r, 2000))
 
       sendProgress('verify', 'running', '正在验证安装...')
-      const verifyResult = await verifyCredProviderState()
+      const verifyResult = await verifyCredProviderInstallation()
 
       steps.push({
         step: 'verify',
@@ -217,7 +259,7 @@ function register(safeHandler, logFn) {
         message: verifyResult.details.join(', ')
       })
       sendProgress('verify', verifyResult.installed ? 'success' : 'warning', verifyResult.details.join(', '))
-      logFn('info', '安装流程完成，验证结果: ' + verifyResult.installed)
+      logFn('info', '安装流程完成: ' + JSON.stringify(verifyResult))
 
       return {
         success: verifyResult.installed,
@@ -237,83 +279,21 @@ function register(safeHandler, logFn) {
     const steps = []
 
     try {
-      const { spawn } = require('child_process')
-
-      const projectRoot = path.resolve(__dirname, '../../..')
-      const uninstallScriptPath = path.join(projectRoot, 'windows', 'credential_provider', 'uninstall.ps1')
-      const windir = process.env.windir || process.env.SystemRoot || 'C:\\Windows'
-      const system32Path = path.join(windir, 'System32')
-      const psPath = path.join(system32Path, 'WindowsPowerShell', 'v1.0', 'powershell.exe')
-
       const sendProgress = (step, status, message) => {
         if (event && event.sender && !event.sender.isDestroyed()) {
           event.sender.send('credProvider:progress', { step, status, message })
         }
       }
 
-      sendProgress('uac_uninstall', 'running', '正在请求管理员权限...')
+      sendProgress('uninstall', 'running', '正在请求管理员权限卸载...')
+      logFn('info', '执行 UAC 提升卸载脚本...')
 
-      const psCommand = `
-$ErrorActionPreference = 'Stop'
-try {
-  $process = Start-Process -FilePath '${psPath}' -ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File','${uninstallScriptPath}','-Silent' -Verb RunAs -PassThru -Wait
-  Write-Host "UAC_UNINSTALL_SUCCESS"
-  exit 0
-} catch {
-  Write-Host "UAC_DENIED_OR_FAILED"
-  exit 1
-}
-`
-      logFn('info', '执行卸载 PowerShell 命令...')
-
-      const result = await new Promise((resolve) => {
-        const proc = spawn(psPath, [
-          '-NoProfile', '-NonInteractive', '-Command', psCommand
-        ], {
-          windowsHide: false,
-          timeout: 60000
-        })
-
-        let stdout = ''
-        let stderr = ''
-
-        proc.stdout.on('data', (data) => {
-          stdout += data.toString()
-          logFn('info', '卸载输出: ' + data.toString().trim())
-        })
-
-        proc.stderr.on('data', (data) => {
-          stderr += data.toString()
-          logFn('warn', '卸载警告: ' + data.toString().trim())
-        })
-
-        proc.on('close', (code) => {
-          logFn('info', `卸载进程结束，代码: ${code}`)
-          resolve({ code, stdout: stdout.trim(), stderr: stderr.trim() })
-        })
-
-        proc.on('error', (err) => {
-          logFn('error', '卸载进程错误: ' + err.message)
-          resolve({ code: -1, stdout: '', stderr: err.message })
-        })
-      })
-
-      logFn('info', `UAC卸载结果: code=${result.code}, stdout=${result.stdout}, stderr=${result.stderr}`)
-
-      if (result.stdout.includes('UAC_UNINSTALL_SUCCESS')) {
-        steps.push({ step: 'uac_uninstall', status: 'success', message: '卸载成功！' })
-        sendProgress('uac_uninstall', 'success', '卸载成功！')
-      } else if (result.stdout.includes('UAC_DENIED') || result.code === 1) {
-        steps.push({ step: 'uac_uninstall', status: 'error', message: '用户取消了 UAC 请求或卸载失败' })
-        sendProgress('uac_uninstall', 'error', '用户取消了 UAC 请求或卸载失败')
-        return { success: false, error: '用户取消了 UAC 请求或卸载失败', steps }
-      } else {
-        steps.push({ step: 'uac_uninstall', status: 'warning', message: 'UAC 请求完成，需要验证' })
-        sendProgress('uac_uninstall', 'warning', 'UAC 请求完成，需要验证')
-      }
+      const psScript = buildUninstallPsScript()
+      const result = await runAsAdmin(psScript, logFn)
 
       await new Promise(r => setTimeout(r, 1000))
-      const verifyResult = await verifyCredProviderState()
+      sendProgress('verify', 'running', '正在验证卸载...')
+      const verifyResult = await verifyCredProviderInstallation()
 
       return {
         success: !verifyResult.installed,

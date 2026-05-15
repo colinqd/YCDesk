@@ -7,6 +7,23 @@ let remoteWindow = null
 let tray = null
 let isQuitting = false
 
+function resolveIconPath() {
+  const candidates = [
+    path.join(__dirname, '../../assets/icon.png'),
+    path.join(__dirname, '../../assets/icon.ico'),
+    path.join(__dirname, '../../build/icon.png'),
+    path.join(__dirname, '../../build/icon.ico'),
+    path.join(process.resourcesPath, 'assets', 'icon.png'),
+    path.join(process.resourcesPath, 'assets', 'icon.ico')
+  ]
+  for (const p of candidates) {
+    try {
+      if (require('fs').existsSync(p)) return p
+    } catch (e) {}
+  }
+  return null
+}
+
 function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1050,
@@ -21,7 +38,7 @@ function createMainWindow() {
       sandbox: true
     },
     title: 'YCDesk - 远程桌面控制',
-    icon: path.join(__dirname, '../../assets/icon.png'),
+    icon: resolveIconPath(),
     show: false,
     backgroundColor: '#ffffff',
     frame: true,
@@ -130,7 +147,7 @@ function createRemoteWindow() {
       sandbox: true
     },
     title: 'YCDesk - 远程控制中',
-    icon: path.join(__dirname, '../../assets/icon.png'),
+    icon: resolveIconPath(),
     show: false,
     backgroundColor: '#1a1a2e',
     fullscreen: true,
@@ -166,37 +183,13 @@ function createRemoteWindow() {
 function createTray() {
   let icon
   
-  const iconPaths = [
-    path.join(__dirname, '../../assets/icon.png'),
-    path.join(__dirname, '../../assets/icon.ico'),
-    path.join(__dirname, '../../build/icon.png'),
-    path.join(__dirname, '../../build/icon.ico')
-  ]
-  
-  for (const iconPath of iconPaths) {
-    try {
-      if (require('fs').existsSync(iconPath)) {
-        icon = nativeImage.createFromPath(iconPath)
-        if (!icon.isEmpty()) {
-          break
-        }
-      }
-    } catch (e) {
-    }
+  const iconPath = resolveIconPath()
+  if (iconPath) {
+    icon = nativeImage.createFromPath(iconPath)
   }
   
   if (!icon || icon.isEmpty()) {
-    try {
-      const builtInIconPath = path.join(process.resourcesPath, 'assets/icon.png')
-      if (require('fs').existsSync(builtInIconPath)) {
-        icon = nativeImage.createFromPath(builtInIconPath)
-      }
-    } catch (e) {
-    }
-  }
-  
-  if (!icon || icon.isEmpty()) {
-    icon = nativeImage.createFromDataURL('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAARklEQVQ4T2NkYPj/n4EBBJgYKAQMowYMfAgwUhI7jIMiDBgpScUM4yALMFLiFmYYB1mAkRLXMMM4yAKMlLiGGcZBFgAArR8OGRf/Yw8AAAAASUVORK5CYII=')
+    icon = nativeImage.createFromDataURL('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAGaSURBVFhH7ZY9TsNAEIVnvQk/EhQUNFBxADgCx+AOHINbUHEDHsAjUJxqoLCC6gk0UVFR0kLJ7u6d3qVzd3d3ZvYbTvaTfP3N7M7sLJjZx0n/TfJ7kt9Jv5vkt6VfTfJbku9Kf5vkt6VfTfJbku9Kf5vkt6VfTfJbku9Kf5vkt6VfTfJbku9Kf5vkt6VfTfJbku9Kf5vkt6VfTfJbku9Kf5vkt6VfTfJbku9Kf5vkt6VfTfJbku9Kf5vkt6VfTfJbku9Kf5vkt6VfTfJbku9Kf5vkt6VfTfJbku9Kf5vkt6VfTfJbku9Kf5vkt6VfTfJbku9Kf5vkt6VfTfJbku9Kf5vkt6VfTfJbku9Kf5vkt6VfTfJbku9Kf5vkt6VfTfJbku9Kf5vkt6VfTfJbku9Kf5vkt6VfTfJbku9Kf5vkt6VfTfJbku9Kf5vkt6VfTfJbku9Kf5vkt6VfTfJbku9Kf5vkt6VfTfJbku9Kf5vkt6VfTfJbku9Kf5vkt6VfTfJbku9Kf5vkt6VfTfJbku9Kf5vkt6VfTfJbku9Kf5vkt6VfTfJbku9Kf5vkt6VfTfJbku9Kf5vkt6VfTfJbku9Kf5vkt6VfTfJ7kt8T4Vf9Bd9m4QXr2F7KAAAAAElFTkSuQmCC')
   }
 
   tray = new Tray(icon)

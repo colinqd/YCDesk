@@ -1,6 +1,6 @@
 {
   "name": "ycdesk-server-gui",
-  "version": "3.1.4",
+  "version": "3.2.0",
   "description": "YCDesk 信令服务器 - GUI 版本",
   "main": "src/main.js",
   "scripts": {
