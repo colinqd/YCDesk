@@ -41,6 +41,32 @@ const SYNC_TARGETS = [
     name: 'android/shared/renderer',
     dir: path.join(PROJECT_ROOT, 'android', 'shared', 'renderer'),
     filter: () => true
+  },
+  {
+    name: 'linux/shared',
+    dir: path.join(PROJECT_ROOT, 'linux', 'shared'),
+    filter: (relPath) => {
+      const normalized = relPath.replace(/\\/g, '/')
+      const exclude = [
+        'core/',
+        'managers/',
+        'platform/',
+        'utils/',
+        'video/',
+        'gestures/',
+        'input-manager.js',
+        'input-protocol-usage.js',
+        'components/matrix-transformer-dom.js'
+      ]
+      if (exclude.some(e => normalized.includes(e))) return false
+      if (normalized.endsWith('.test.js')) return false
+      return true
+    }
+  },
+  {
+    name: 'linux/shared/renderer',
+    dir: path.join(PROJECT_ROOT, 'linux', 'shared', 'renderer'),
+    filter: () => true
   }
 ]
 

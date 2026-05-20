@@ -8,6 +8,10 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    environmentMatchGlobs: [
+      ['**/renderer/**/*.test.js', 'jsdom'],
+      ['**/*.dom.test.js', 'jsdom']
+    ],
     include: [
       '../shared/**/__tests__/**/*.test.js',
       '../shared/**/*.test.js',
