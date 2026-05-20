@@ -104,7 +104,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   logger.info('YCDesk 正在退出...')
-  try { getServiceIntegration().disconnect() } catch (e) {}
+  try { getServiceIntegration().disconnect() } catch (e) { logger.debug('断开服务连接时出错（正常退出）:', e.message) }
 })
 
 logger.info('YCDesk 主进程已加载')

@@ -404,7 +404,7 @@ class InputSession {
             this.robot.keyToggle(key, 'up')
           }
         }
-      } catch (e) {}
+      } catch (e) { /* 按键复位失败，状态已重置 */ }
     }
     this.pressedModifiers = { Control: false, Shift: false, Alt: false, Meta: false }
   }
@@ -414,7 +414,7 @@ class InputSession {
 
     for (const btn of ['left', 'right', 'middle']) {
       if (this.pressedButtons[btn] && this.robot) {
-        try { this.robot.mouseToggle('up', btn) } catch (e) {}
+        try { this.robot.mouseToggle('up', btn) } catch (e) { /* 鼠标按键复位失败，状态已重置 */ }
       }
     }
     this.pressedButtons = { left: false, right: false, middle: false }

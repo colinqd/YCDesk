@@ -19,7 +19,7 @@ function resolveIconPath() {
   for (const p of candidates) {
     try {
       if (require('fs').existsSync(p)) return p
-    } catch (e) {}
+    } catch (e) { /* 检查路径时出错，跳过 */ }
   }
   return null
 }
