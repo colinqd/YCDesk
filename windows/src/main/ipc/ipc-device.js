@@ -2,6 +2,7 @@ const { ipcMain } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const os = require('os')
+const crypto = require('crypto')
 
 const deviceIdFilePath = path.join(os.homedir(), '.ycdesk_device_id')
 let deviceId = null
@@ -10,8 +11,9 @@ let logger = null
 function generateDeviceId() {
   const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
   let id = ''
+  const bytes = crypto.randomBytes(9)
   for (let i = 0; i < 9; i++) {
-    id += chars.charAt(Math.floor(Math.random() * chars.length))
+    id += chars.charAt(bytes[i] % chars.length)
   }
   return id.toUpperCase()
 }

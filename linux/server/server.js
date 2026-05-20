@@ -1,5 +1,6 @@
 const express = require('express');
 const http = require('http');
+const crypto = require('crypto');
 const { Server } = require('socket.io');
 const cors = require('cors');
 
@@ -271,7 +272,7 @@ io.on('connection', (socket) => {
 });
 
 function generateSessionId() {
-  return Math.random().toString(36).substr(2, 9).toUpperCase();
+  return crypto.randomBytes(6).toString('hex').toUpperCase();
 }
 
 const PORT = process.env.PORT || 3000;

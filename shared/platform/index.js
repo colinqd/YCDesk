@@ -13,6 +13,8 @@ export { platformAdapter as electronAdapter } from './electron-adapter.js'
 // Linux 适配器
 export { platformAdapter as linuxAdapter } from './linux-adapter.js'
 
+import { secureDeviceId } from '../utils/id-generator.js'
+
 /**
  * 平台枚举
  */
@@ -78,7 +80,7 @@ export function getPlatformAdapter() {
             // Web 平台返回默认实现
             return {
                 name: Platform.WEB,
-                getDeviceId: async () => 'WEB-' + Math.random().toString(36).substr(2, 9).toUpperCase(),
+                getDeviceId: async () => secureDeviceId('WEB'),
                 getStorage: async (key) => localStorage.getItem(key),
                 setStorage: async (key, value) => localStorage.setItem(key, value),
                 getNetworkStatus: async () => ({

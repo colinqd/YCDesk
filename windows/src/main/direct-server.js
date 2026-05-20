@@ -1,5 +1,6 @@
 const net = require('net')
 const os = require('os')
+const crypto = require('crypto')
 const { getMainWindow } = require('./window-manager')
 
 let directServer = null
@@ -137,7 +138,7 @@ async function startDirectServerImpl(port) {
     directClientConnections.clear()
     
     directServer = net.createServer((clientSocket) => {
-      const clientId = Math.random().toString(36).slice(2, 10)
+      const clientId = crypto.randomBytes(4).toString('hex')
       directClientConnections.set(clientId, clientSocket)
       
       log('info', '新客户端连接:', { clientId, address: clientSocket.remoteAddress, port: clientSocket.remotePort })
@@ -185,7 +186,7 @@ async function stopDirectServerImpl() {
 async function connectDirectClientImpl(host, port) {
   return new Promise((resolve, reject) => {
     const clientSocket = new net.Socket()
-    const clientId = Math.random().toString(36).substr(2, 8)
+    const clientId = crypto.randomBytes(4).toString('hex')
     
     clientSocket.on('error', (err) => {
       log('error', '连接错误:', err.message)

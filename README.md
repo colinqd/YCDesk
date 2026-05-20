@@ -64,6 +64,18 @@ node server.js
 - 直连模式
 - 跨平台支持
 
+## 疑难解答
+
+### GPU 硬件编码问题
+
+若屏幕捕获无画面或编码失败（常见于 NVIDIA 旧版驱动），尝试在开发模式下禁用 GPU 沙箱：
+
+```bash
+YCDESK_DISABLE_GPU_SANDBOX=1 npm start
+```
+
+打包后的应用始终启用 GPU 沙箱以保障安全。如遇硬件编码问题，建议更新显卡驱动至最新版本。
+
 ## 许可证
 
 MIT

@@ -3,6 +3,7 @@ const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { Server } = require('socket.io');
 const cors = require('cors');
 
@@ -279,7 +280,7 @@ class SignalingServer {
   }
 
   _generateSessionId() {
-    return Math.random().toString(36).substr(2, 9).toUpperCase();
+    return crypto.randomBytes(6).toString('hex').toUpperCase();
   }
 }
 
