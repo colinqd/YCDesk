@@ -1,6 +1,6 @@
 {
   "name": "ycdesk-server-gui",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "description": "YCDesk 信令服务器 - GUI 版本",
   "main": "src/main.js",
   "scripts": {
@@ -9,7 +9,12 @@
     "build:win": "node sync-server-module.js && electron-builder --win --publish never",
     "build:linux": "node sync-server-module.js && electron-builder --linux"
   },
-  "keywords": ["ycdesk", "signaling", "server", "electron"],
+  "keywords": [
+    "ycdesk",
+    "signaling",
+    "server",
+    "electron"
+  ],
   "author": "YCDesk Team",
   "license": "MIT",
   "devDependencies": {
