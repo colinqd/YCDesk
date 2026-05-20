@@ -119,7 +119,7 @@ function diagLog(message) {
     if (!fs.existsSync(flagDir)) fs.mkdirSync(flagDir, { recursive: true })
     const ts = new Date().toISOString()
     fs.appendFileSync(DIAG_LOG_FILE, `[${ts}] ${message}\n`, 'utf8')
-  } catch (e) {}
+  } catch (e) { /* 诊断日志写入失败不影响主功能 */ }
 }
 
 async function handleRemoteInput(event, inputData) {
