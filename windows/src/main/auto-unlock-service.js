@@ -2,12 +2,15 @@ const { powerMonitor, ipcMain } = require('electron')
 const credentialsManager = require('./credentials-manager')
 const unlockIpcServer = require('./unlock-ipc-server')
 const os = require('os')
+const { createLogger } = require('./logger')
+
+const logger = createLogger()
 
 let robot = null
 try {
   robot = require('robotjs')
 } catch (e) {
-  console.error('[AutoUnlockService] robotjs 加载失败:', e.message)
+  logger.error('[AutoUnlockService] robotjs 加载失败:', e.message)
 }
 
 class AutoUnlockService {
@@ -24,9 +27,9 @@ class AutoUnlockService {
   startIpcServer() {
     try {
       this.ipcServerStarted = unlockIpcServer.start()
-      console.log('[AutoUnlockService] IPC 服务器启动状态:', this.ipcServerStarted)
+      logger.info('[AutoUnlockService] IPC 服务器启动状态:', this.ipcServerStarted)
     } catch (error) {
-      console.error('[AutoUnlockService] IPC 服务器启动失败:', error)
+      logger.error('[AutoUnlockService] IPC 服务器启动失败:', error)
     }
   }
 
@@ -40,28 +43,28 @@ class AutoUnlockService {
 
   setMainWindow(window) {
     this.currentMainWindow = window
-    console.log('[AutoUnlockService] mainWindow 已设置, id=' + (window ? window.id : 'null'))
+    logger.info('[AutoUnlockService] mainWindow 已设置, id=' + (window ? window.id : 'null'))
   }
 
   setupListeners() {
     powerMonitor.on('lock-screen', () => {
       this.isLocked = true
-      console.log('[AutoUnlockService] 检测到屏幕锁定')
+      logger.info('[AutoUnlockService] 检测到屏幕锁定')
       this.notifyLockState()
       
       if (this.currentMainWindow && !this.currentMainWindow.isDestroyed()) {
-        console.log('[AutoUnlockService] 通知渲染进程停止屏幕捕获')
+        logger.info('[AutoUnlockService] 通知渲染进程停止屏幕捕获')
         this.currentMainWindow.webContents.send('screen-capture-control', { action: 'stop' })
       }
     })
 
     powerMonitor.on('unlock-screen', () => {
       this.isLocked = false
-      console.log('[AutoUnlockService] 屏幕已解锁')
+      logger.info('[AutoUnlockService] 屏幕已解锁')
       this.notifyLockState()
       
       if (this.currentMainWindow && !this.currentMainWindow.isDestroyed()) {
-        console.log('[AutoUnlockService] 通知渲染进程恢复屏幕捕获')
+        logger.info('[AutoUnlockService] 通知渲染进程恢复屏幕捕获')
         this.currentMainWindow.webContents.send('screen-capture-control', { action: 'start' })
       }
     })
@@ -100,36 +103,36 @@ class AutoUnlockService {
       autoUnlockEnabled: this.autoUnlockEnabled
     }
 
-    console.log('[AutoUnlockService] ========== notifyLockState 被调用 ==========')
-    console.log('[AutoUnlockService] payload:', JSON.stringify(payload))
-    console.log('[AutoUnlockService] remoteWindow 存在:', !!this.currentRemoteWindow, ', 销毁:', this.currentRemoteWindow ? this.currentRemoteWindow.isDestroyed() : 'N/A')
-    console.log('[AutoUnlockService] mainWindow 存在:', !!this.currentMainWindow, ', 销毁:', this.currentMainWindow ? this.currentMainWindow.isDestroyed() : 'N/A')
+    logger.info('[AutoUnlockService] ========== notifyLockState 被调用 ==========')
+    logger.info('[AutoUnlockService] payload:', JSON.stringify(payload))
+    logger.info('[AutoUnlockService] remoteWindow 存在:', !!this.currentRemoteWindow, ', 销毁:', this.currentRemoteWindow ? this.currentRemoteWindow.isDestroyed() : 'N/A')
+    logger.info('[AutoUnlockService] mainWindow 存在:', !!this.currentMainWindow, ', 销毁:', this.currentMainWindow ? this.currentMainWindow.isDestroyed() : 'N/A')
 
     if (this.currentRemoteWindow && !this.currentRemoteWindow.isDestroyed()) {
-      console.log('[AutoUnlockService] 正在发送到 remoteWindow...')
+      logger.info('[AutoUnlockService] 正在发送到 remoteWindow...')
       this.currentRemoteWindow.webContents.send('unlock-state-changed', payload)
-      console.log('[AutoUnlockService] remoteWindow 发送完成')
+      logger.info('[AutoUnlockService] remoteWindow 发送完成')
     } else {
-      console.log('[AutoUnlockService] remoteWindow 不可用，跳过')
+      logger.info('[AutoUnlockService] remoteWindow 不可用，跳过')
     }
 
     if (this.currentMainWindow && !this.currentMainWindow.isDestroyed()) {
-      console.log('[AutoUnlockService] 正在发送到 mainWindow...')
+      logger.info('[AutoUnlockService] 正在发送到 mainWindow...')
       this.currentMainWindow.webContents.send('unlock-state-changed', payload)
-      console.log('[AutoUnlockService] mainWindow 发送完成')
+      logger.info('[AutoUnlockService] mainWindow 发送完成')
     } else {
-      console.log('[AutoUnlockService] mainWindow 不可用，跳过 (存在=' + !!this.currentMainWindow + ')')
+      logger.info('[AutoUnlockService] mainWindow 不可用，跳过 (存在=' + !!this.currentMainWindow + ')')
     }
 
     try {
       const { notifyLockStateToClients, notifyLockStateToServer } = require('./direct-server')
       const sent = notifyLockStateToClients(payload) || notifyLockStateToServer(payload)
-      console.log('[AutoUnlockService] TCP旁路通知结果: ' + sent + ' 个客户端')
+      logger.info('[AutoUnlockService] TCP旁路通知结果: ' + sent + ' 个客户端')
     } catch (e) {
-      console.log('[AutoUnlockService] TCP旁路通知失败: ' + e.message)
+      logger.info('[AutoUnlockService] TCP旁路通知失败: ' + e.message)
     }
 
-    console.log('[AutoUnlockService] ========== notifyLockState 完成 ==========')
+    logger.info('[AutoUnlockService] ========== notifyLockState 完成 ==========')
 
     // 通知服务切换采集桌面
     try {
@@ -137,13 +140,13 @@ class AutoUnlockService {
       const svc = getServiceIntegration()
       if (svc.isServiceModeEnabled() && svc.isRunning()) {
         if (this.isLocked) {
-          svc.switchToWinlogon().catch(e => console.log('[AutoUnlockService] switchToWinlogon failed:', e.message))
+          svc.switchToWinlogon().catch(e => logger.info('[AutoUnlockService] switchToWinlogon failed:', e.message))
         } else {
-          svc.switchToDefault().catch(e => console.log('[AutoUnlockService] switchToDefault failed:', e.message))
+          svc.switchToDefault().catch(e => logger.info('[AutoUnlockService] switchToDefault failed:', e.message))
         }
       }
     } catch (e) {
-      console.log('[AutoUnlockService] 服务通知失败:', e.message)
+      logger.info('[AutoUnlockService] 服务通知失败:', e.message)
     }
   }
 
@@ -164,12 +167,12 @@ class AutoUnlockService {
       if (result.success) {
         return { success: true, message: '自动解锁成功 (Credential Provider)' }
       } else {
-        console.log('[AutoUnlockService] Credential Provider 不可用，回退到 robotjs')
+        logger.info('[AutoUnlockService] Credential Provider 不可用，回退到 robotjs')
         await this.simulatePasswordInput(password)
         return { success: true, message: '自动解锁成功' }
       }
     } catch (error) {
-      console.error('[AutoUnlockService] 自动解锁失败:', error)
+      logger.error('[AutoUnlockService] 自动解锁失败:', error)
       return { 
         success: false, 
         message: error.message || '自动解锁失败' 
@@ -189,12 +192,12 @@ class AutoUnlockService {
       if (result.success) {
         return { success: true, message: '解锁成功 (Credential Provider)' }
       } else {
-        console.log('[AutoUnlockService] Credential Provider 不可用，回退到 robotjs')
+        logger.info('[AutoUnlockService] Credential Provider 不可用，回退到 robotjs')
         await this.simulatePasswordInput(password)
         return { success: true, message: '解锁成功' }
       }
     } catch (error) {
-      console.error('[AutoUnlockService] 手动解锁失败:', error)
+      logger.error('[AutoUnlockService] 手动解锁失败:', error)
       return { 
         success: false, 
         message: error.message || '解锁失败' 
@@ -207,13 +210,13 @@ class AutoUnlockService {
       throw new Error('robotjs 不可用')
     }
 
-    console.log('[AutoUnlockService] 开始模拟输入密码...')
+    logger.info('[AutoUnlockService] 开始模拟输入密码...')
     
     try {
       robot.keyTap('escape')
       await this.sleep(300)
     } catch (e) {
-      console.warn('[AutoUnlockService] ESC 失败:', e.message)
+      logger.warn('[AutoUnlockService] ESC 失败:', e.message)
     }
     
     try {
@@ -227,21 +230,21 @@ class AutoUnlockService {
       robot.mouseClick()
       await this.sleep(200)
     } catch (e) {
-      console.warn('[AutoUnlockService] 点击屏幕失败:', e.message)
+      logger.warn('[AutoUnlockService] 点击屏幕失败:', e.message)
     }
     
     try {
       robot.typeString(password)
       await this.sleep(200)
     } catch (e) {
-      console.error('[AutoUnlockService] 输入密码失败:', e.message)
+      logger.error('[AutoUnlockService] 输入密码失败:', e.message)
       throw new Error('密码输入失败')
     }
     
     try {
       robot.keyTap('enter')
     } catch (e) {
-      console.error('[AutoUnlockService] Enter 失败:', e.message)
+      logger.error('[AutoUnlockService] Enter 失败:', e.message)
       throw new Error('Enter 失败')
     }
   }

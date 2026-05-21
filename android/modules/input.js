@@ -79,27 +79,34 @@ class InputDispatcher {
     sendInputCommand(command) {
         const inputCommand = convertToInputCommand(command);
         const message = JSON.stringify(inputCommand);
-        
-        const inputReady = s.inputChannel && s.inputChannelReady && s.inputChannel.readyState === 'open';
+
+        // 优先使用 control 通道（可靠，已知可用）
+        // input 通道作为后备
         const dataReady = s.dataChannel && s.dataChannel.readyState === 'open';
-        
-        if (!inputReady && !dataReady) {
-            if (!this._lastNoChannelWarn || Date.now() - this._lastNoChannelWarn > 1000) {
-                this._lastNoChannelWarn = Date.now();
-                const log = typeof window.log === 'function' ? window.log : console.log;
-                log('[SIGNALING] 输入通道均未就绪! inputReady=' + inputReady + ' dataReady=' + dataReady);
-            }
+        const inputReady = s.inputChannel && s.inputChannel.readyState === 'open';
+
+        if (dataReady) {
+            s.dataChannel.send(message);
             return;
         }
-        
+
         if (inputReady) {
             if (s.inputChannel.bufferedAmount < 65536) {
                 s.inputChannel.send(message);
             } else {
-                s.dataChannel.send(message);
+                if (!this._lastNoChannelWarn || Date.now() - this._lastNoChannelWarn > 1000) {
+                    this._lastNoChannelWarn = Date.now();
+                    const log = typeof window.log === 'function' ? window.log : console.log;
+                    log('[SIGNALING] inputChannel缓冲已满且无可用control通道');
+                }
             }
-        } else if (dataReady) {
-            s.dataChannel.send(message);
+            return;
+        }
+
+        if (!this._lastNoChannelWarn || Date.now() - this._lastNoChannelWarn > 1000) {
+            this._lastNoChannelWarn = Date.now();
+            const log = typeof window.log === 'function' ? window.log : console.log;
+            log('[SIGNALING] 输入通道均未就绪! dataReady=' + dataReady + ' inputReady=' + inputReady);
         }
     }
 }

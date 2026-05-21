@@ -475,7 +475,14 @@ class BaseConnectionManager {
             this.videoElement.srcObject = stream
             this.videoElement.muted = true
             this.videoElement.playsInline = true
-            
+
+            // 确保视频元素可见（除 display:none 外，还受 placeholder 影响）
+            this.videoElement.style.display = 'block'
+
+            // 隐藏 placeholder
+            var placeholder = document.getElementById('placeholder')
+            if (placeholder) placeholder.style.display = 'none'
+
             if (this.videoElement.readyState >= 1) {
                 this.onVideoMetadataLoaded()
             } else {
@@ -529,7 +536,9 @@ class BaseConnectionManager {
                     resolve()
                 }
                 
-                this.videoElement.play().catch(reject)
+                this.videoElement.play().catch(function (playErr) {
+                    this.log('play() 暂时失败（等待 loadeddata）: ' + playErr.message)
+                }.bind(this))
             } else {
                 clearTimeout(timeout)
                 reject(new Error('视频元素未就绪'))

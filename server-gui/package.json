@@ -7,7 +7,8 @@
     "dev": "node sync-shared.js && electron .",
     "build": "node sync-server-module.js && electron-builder",
     "build:win": "node sync-server-module.js && electron-builder --win --publish never",
-    "build:linux": "node sync-server-module.js && electron-builder --linux"
+    "build:linux": "node sync-server-module.js && electron-builder --linux",
+    "test": "echo \"No tests configured for server-gui. Run 'npm test' from windows/ to run shared tests.\" && exit 0"
   },
   "keywords": [
     "ycdesk",

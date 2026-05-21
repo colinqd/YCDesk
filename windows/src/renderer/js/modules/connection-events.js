@@ -85,7 +85,14 @@
 
       remoteVideoHandler.initialize(videoElement, optimizedCanvas, connectionManager.peerConnection)
 
+      // 保存原始 ondatachannel 处理器，链式调用而非替换
+      var originalOnDataChannel = connectionManager.peerConnection.ondatachannel
       connectionManager.peerConnection.ondatachannel = function (event) {
+        // 先调用原始处理器（处理 control/input/aux 通道）
+        if (originalOnDataChannel) {
+          originalOnDataChannel(event)
+        }
+        // 再处理 optimized-video 通道
         if (event.channel.label === 'optimized-video') {
           window.UIState && window.UIState.log('收到优化视频数据通道')
           remoteVideoHandler.setupDataChannel(event.channel)

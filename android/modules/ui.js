@@ -103,11 +103,8 @@ function handleOrientationChange() {
         type: 'screen-rotation',
         rotation: rotation
       }))
-      if (s.inputChannel && s.inputChannelReady && s.inputChannel.readyState === 'open') {
-        s.inputChannel.send(message)
-      } else if (s.dataChannel && s.dataChannel.readyState === 'open') {
-        s.dataChannel.send(message)
-      }
+      // 优先使用 control 通道
+      s.dataChannel.send(message)
     }
     
     setTimeout(() => {
@@ -218,14 +215,13 @@ function handleFloatingMouseEvent(event) {
       
       if (inputCmd) {
         const message = JSON.stringify(inputCmd)
-        if (s.inputChannel && s.inputChannelReady && s.inputChannel.readyState === 'open') {
+        // 优先使用 control 通道（可靠，已知可用）
+        if (s.dataChannel && s.dataChannel.readyState === 'open') {
+          s.dataChannel.send(message)
+        } else if (s.inputChannel && s.inputChannel.readyState === 'open') {
           if (s.inputChannel.bufferedAmount < 65536) {
             s.inputChannel.send(message)
-          } else if (s.dataChannel.readyState === 'open') {
-            s.dataChannel.send(message)
           }
-        } else if (s.dataChannel.readyState === 'open') {
-          s.dataChannel.send(message)
         }
       }
   }

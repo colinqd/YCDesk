@@ -128,20 +128,23 @@ function syncShared() {
       }
 
       if (needCopy) {
+        let content = fs.readFileSync(srcFile, 'utf8')
+
+        // 非 Android 平台（Windows/Linux）移除 ESM export 语法，兼容 <script> 加载
+        if (target.name !== 'android/shared' && (relPath.endsWith('.js'))) {
+          content = content.replace(/^export\s+(default\s+)?\S+/gm, '// $& (removed for non-module script)')
+        }
+
         // 如果是同步到 Android 并且是 matrix-transformer.js，我们需要添加 export default
         if (target.name === 'android/shared' && relPath === 'components/matrix-transformer.js') {
-          let content = fs.readFileSync(srcFile, 'utf8')
           // 检查是否已经有 export default
           if (!content.includes('export default MatrixTransformer')) {
             // 在文件末尾添加 export default
             content = content + '\n\n// ES 模块导出 (用于 Android Vite 构建)\nexport default MatrixTransformer\n'
-            fs.writeFileSync(destFile, content, 'utf8')
-          } else {
-            fs.copyFileSync(srcFile, destFile)
           }
-        } else {
-          fs.copyFileSync(srcFile, destFile)
         }
+
+        fs.writeFileSync(destFile, content, 'utf8')
         console.log(`  已同步: ${relPath}`)
         copied++
       }

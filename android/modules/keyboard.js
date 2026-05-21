@@ -267,17 +267,19 @@ function sendKey(keyCode) {
   console.log('发送键盘事件:', JSON.stringify(event))
   const inputCommand = convertToInputCommand(event)
   const message = JSON.stringify(inputCommand)
-  
-  if (s.inputChannel && s.inputChannelReady && s.inputChannel.readyState === 'open') {
+
+  // 优先使用 control 通道（可靠，已知可用）
+  const dataReady = s.dataChannel && s.dataChannel.readyState === 'open';
+  const inputReady = s.inputChannel && s.inputChannel.readyState === 'open';
+
+  if (dataReady) {
+    s.dataChannel.send(message);
+  } else if (inputReady) {
     if (s.inputChannel.bufferedAmount < 65536) {
-      s.inputChannel.send(message)
-    } else if (s.dataChannel && s.dataChannel.readyState === 'open') {
-      s.dataChannel.send(message)
+      s.inputChannel.send(message);
     }
-  } else if (s.dataChannel && s.dataChannel.readyState === 'open') {
-    s.dataChannel.send(message)
   }
-  
+
   setTimeout(() => {
     const upCommand = convertToInputCommand({
       type: 'keyup',
@@ -289,15 +291,16 @@ function sendKey(keyCode) {
       metaKey: s.activeModifiers.Meta
     })
     const upMessage = JSON.stringify(upCommand)
-    
-    if (s.inputChannel && s.inputChannelReady && s.inputChannel.readyState === 'open') {
+
+    const dataReady2 = s.dataChannel && s.dataChannel.readyState === 'open';
+    const inputReady2 = s.inputChannel && s.inputChannel.readyState === 'open';
+
+    if (dataReady2) {
+      s.dataChannel.send(upMessage);
+    } else if (inputReady2) {
       if (s.inputChannel.bufferedAmount < 65536) {
-        s.inputChannel.send(upMessage)
-      } else if (s.dataChannel && s.dataChannel.readyState === 'open') {
-        s.dataChannel.send(upMessage)
+        s.inputChannel.send(upMessage);
       }
-    } else if (s.dataChannel && s.dataChannel.readyState === 'open') {
-      s.dataChannel.send(upMessage)
     }
   }, 50)
   
@@ -400,27 +403,26 @@ function setupSystemKeyboardListener() {
 
 function sendTextInput(text) {
   if (!text) return
-  
-  const inputReady = s.inputChannel && s.inputChannelReady && s.inputChannel.readyState === 'open'
+
   const dataReady = s.dataChannel && s.dataChannel.readyState === 'open'
-  
-  if (!inputReady && !dataReady) return
-  
+  const inputReady = s.inputChannel && s.inputChannel.readyState === 'open'
+
+  if (!dataReady && !inputReady) return
+
   try {
     const inputCommand = window.createInputCommand(
       window.INPUT_TYPES.TEXT_INPUT,
       { text: text }
     )
     const message = JSON.stringify(inputCommand)
-    
-    if (inputReady) {
+
+    // 优先使用 control 通道
+    if (dataReady) {
+      s.dataChannel.send(message)
+    } else if (inputReady) {
       if (s.inputChannel.bufferedAmount < 65536) {
         s.inputChannel.send(message)
-      } else {
-        s.dataChannel.send(message)
       }
-    } else if (dataReady) {
-      s.dataChannel.send(message)
     }
   } catch (e) {
     console.error('sendTextInput error:', e)

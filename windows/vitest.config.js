@@ -4,6 +4,9 @@ import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
+// Windows-safe glob pattern for shared directory (forward slashes required)
+const sharedGlob = path.resolve(__dirname, '..', 'shared').replace(/\\/g, '/') + '/**/*.js'
+
 export default defineConfig({
   test: {
     globals: true,
@@ -24,9 +27,10 @@ export default defineConfig({
     ],
     coverage: {
       provider: 'v8',
+      all: true,
       reporter: ['text', 'html', 'lcov'],
       include: [
-        '../shared/**/*.js',
+        sharedGlob,
         'src/main/**/*.js',
         'src/renderer/**/*.js'
       ],

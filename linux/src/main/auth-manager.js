@@ -31,6 +31,8 @@ function hasPassword() {
 
 function clearPassword() {
   connectionPassword = null
+  failedAttempts = 0
+  lockoutUntil = 0
 }
 
 function verifyPassword(password) {
@@ -45,6 +47,20 @@ function verifyPassword(password) {
     }
     failedAttempts = 0
     lockoutUntil = 0
+  }
+
+  if (!password || typeof password !== 'string') {
+    return { success: false, error: '密码格式无效' }
+  }
+
+  // timingSafeEqual 要求两个 Buffer 长度相同，长度不同时直接返回 false
+  if (password.length !== connectionPassword.length) {
+    failedAttempts++
+    if (failedAttempts >= MAX_ATTEMPTS) {
+      lockoutUntil = Date.now() + LOCKOUT_DURATION
+      return { success: false, error: '验证失败次数过多，已锁定30秒', lockedOut: true }
+    }
+    return { success: false, error: '密码错误', remainingAttempts: MAX_ATTEMPTS - failedAttempts }
   }
 
   const isValid = crypto.timingSafeEqual(

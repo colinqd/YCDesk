@@ -4,6 +4,9 @@ const path = require('path')
 const { execSync } = require('child_process')
 const os = require('os')
 const unlockIpcServer = require('./unlock-ipc-server')
+const { createLogger } = require('./logger')
+
+const logger = createLogger()
 
 class CredentialsManager {
   constructor() {
@@ -59,7 +62,7 @@ class CredentialsManager {
   }
 
   async unlockWithCredentialProvider(username, password) {
-    console.log('[CredentialsManager] unlockWithCredentialProvider 被调用，用户:', username)
+    logger.info('[CredentialsManager] unlockWithCredentialProvider 被调用，用户:', username)
     
     try {
       unlockIpcServer.setCredentials(username, password)
@@ -69,7 +72,7 @@ class CredentialsManager {
         message: 'Credential Provider 解锁已触发' 
       }
     } catch (error) {
-      console.error('[CredentialsManager] 设置凭据失败:', error)
+      logger.error('[CredentialsManager] 设置凭据失败:', error)
       return { 
         success: false, 
         message: `设置凭据失败: ${error.message}` 
@@ -83,29 +86,29 @@ class CredentialsManager {
 
   async saveUnlockPassword(password, remember = true) {
     try {
-      console.log('[CredentialsManager] saveUnlockPassword 开始执行')
+      logger.info('[CredentialsManager] saveUnlockPassword 开始执行')
       
       if (!password) {
-        console.log('[CredentialsManager] 密码为空')
+        logger.info('[CredentialsManager] 密码为空')
         return { success: false, message: '密码不能为空' }
       }
 
-      console.log('[CredentialsManager] 检查加密可用性...')
+      logger.info('[CredentialsManager] 检查加密可用性...')
       const encryptionAvailable = safeStorage.isEncryptionAvailable()
-      console.log('[CredentialsManager] safeStorage.isEncryptionAvailable() =', encryptionAvailable)
+      logger.info('[CredentialsManager] safeStorage.isEncryptionAvailable() =', encryptionAvailable)
       
       if (!encryptionAvailable) {
-        console.error('[CredentialsManager] 系统加密不可用')
+        logger.error('[CredentialsManager] 系统加密不可用')
         return { success: false, message: '系统加密不可用。请确保应用程序已正确初始化。' }
       }
 
-      console.log('[CredentialsManager] 开始加密密码...')
+      logger.info('[CredentialsManager] 开始加密密码...')
       let encryptedPassword
       try {
         encryptedPassword = safeStorage.encryptString(password).toString('base64')
-        console.log('[CredentialsManager] 密码加密成功，长度:', encryptedPassword.length)
+        logger.info('[CredentialsManager] 密码加密成功，长度:', encryptedPassword.length)
       } catch (encryptError) {
-        console.error('[CredentialsManager] 密码加密失败:', encryptError.message)
+        logger.error('[CredentialsManager] 密码加密失败:', encryptError.message)
         return { success: false, message: '密码加密失败: ' + encryptError.message }
       }
 
@@ -116,7 +119,7 @@ class CredentialsManager {
         encrypted: true
       }
 
-      console.log('[CredentialsManager] 准备写入文件:', this.getCredentialsFile())
+      logger.info('[CredentialsManager] 准备写入文件:', this.getCredentialsFile())
       
       try {
         this.ensureConfigDir()
@@ -125,16 +128,16 @@ class CredentialsManager {
           JSON.stringify(credentials, null, 2), 
           'utf-8'
         )
-        console.log('[CredentialsManager] 文件写入成功')
+        logger.info('[CredentialsManager] 文件写入成功')
       } catch (writeError) {
-        console.error('[CredentialsManager] 文件写入失败:', writeError.message)
+        logger.error('[CredentialsManager] 文件写入失败:', writeError.message)
         return { success: false, message: '文件写入失败: ' + writeError.message }
       }
 
-      console.log('[CredentialsManager] 密码保存成功')
+      logger.info('[CredentialsManager] 密码保存成功')
       return { success: true, message: '密码保存成功' }
     } catch (error) {
-      console.error('[CredentialsManager] 保存解锁密码失败:', error)
+      logger.error('[CredentialsManager] 保存解锁密码失败:', error)
       return { 
         success: false, 
         message: error.message || '保存密码失败' 
@@ -164,7 +167,7 @@ class CredentialsManager {
           const encryptedBuffer = Buffer.from(credentials.encryptedPassword, 'base64')
           password = safeStorage.decryptString(encryptedBuffer)
         } catch (decryptError) {
-          console.error('[CredentialsManager] 密码解密失败:', decryptError.message)
+          logger.error('[CredentialsManager] 密码解密失败:', decryptError.message)
           try {
             fs.unlinkSync(credentialsFile)
           } catch (e) {
@@ -185,7 +188,7 @@ class CredentialsManager {
 
       return { success: true, password }
     } catch (error) {
-      console.error('[CredentialsManager] 获取解锁密码失败:', error)
+      logger.error('[CredentialsManager] 获取解锁密码失败:', error)
       try {
         fs.unlinkSync(this.getCredentialsFile())
       } catch (e) {
@@ -202,7 +205,7 @@ class CredentialsManager {
       }
       return { success: true, message: '密码已清除' }
     } catch (error) {
-      console.error('[CredentialsManager] 清除解锁密码失败:', error)
+      logger.error('[CredentialsManager] 清除解锁密码失败:', error)
       return { 
         success: false, 
         message: error.message || '清除密码失败' 

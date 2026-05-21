@@ -283,6 +283,7 @@ class DirectModeManager {
           try {
             const data = JSON.parse(e.data)
             if (data.type === 'input' || data.inputType) {
+              this.logFn('input通道收到输入: type=' + data.inputType + ' inputType=' + data.inputType)
               window.electronAPI.send('remote-input', data)
             }
           } catch (err) {
@@ -291,6 +292,9 @@ class DirectModeManager {
         }
         channel.onopen = () => {
           this.logFn('input数据通道已打开')
+        }
+        channel.onerror = (err) => {
+          this.logFn('input数据通道错误: ' + (err.message || err))
         }
       } else if (channel.label.startsWith('aux-')) {
         const channelType = channel.label.replace('aux-', '')
@@ -350,10 +354,12 @@ class DirectModeManager {
 
       this.logFn('已发送初始answer，等待数据通道打开...')
       
+      const resolutionPromise = this.waitForResolutionRequest()
+
       await this.waitForDataChannelOpen()
       
       this.logFn('数据通道已打开，等待分辨率请求...')
-      const resolution = await this.waitForResolutionRequest()
+      const resolution = await resolutionPromise
       
       this.logFn('收到分辨率请求: ' + resolution.width + 'x' + resolution.height)
       this.logFn('根据客户端窗口尺寸调整虚拟显示器分辨率...')
@@ -504,14 +510,21 @@ class DirectModeManager {
   async startScreenCapture(targetWidth, targetHeight) {
     try {
       this.stopScreenCapture()
-      
+
       var selectedSourceId = window.getSelectedSourceId ? window.getSelectedSourceId() : null
       const sources = await window.electronAPI.getSources()
       this.logFn('可用屏幕源: ' + sources.length + ' 个')
       if (!selectedSourceId) {
         selectedSourceId = sources.find(function(s) { return s.id && s.id.startsWith('screen:') })?.id || (sources.length > 0 ? sources[0].id : null)
       }
-      this.logFn('选定捕获源: ' + (selectedSourceId || '无'))
+
+      if (!selectedSourceId) {
+        this.logFn('【错误】没有找到可用的屏幕源，无法捕获屏幕')
+        // 仍然发送重协商 offer（可能不含视频），但返回空分辨率让上层知晓
+        this.logFn('警告: 将发送不含视频的 renegotiation offer')
+        return { width: 0, height: 0, noSource: true }
+      }
+      this.logFn('选定捕获源: ' + selectedSourceId)
 
       var maxWidth = targetWidth || 1920
       var maxHeight = targetHeight || 1080
@@ -548,7 +561,7 @@ class DirectModeManager {
           }
           this.logFn('优化传输启动失败，回退到标准模式')
         }
-        
+
         this.currentStream = await navigator.mediaDevices.getUserMedia({
           audio: false,
           video: {
@@ -565,10 +578,15 @@ class DirectModeManager {
         const tracks = this.currentStream.getVideoTracks()
         this.logFn('获取到 ' + tracks.length + ' 个媒体轨道')
 
+        if (tracks.length === 0) {
+          this.logFn('【错误】获取到0个视频轨道，屏幕捕获可能失败')
+          return { width: 0, height: 0, noSource: true }
+        }
+
         tracks.forEach(track => {
           const sender = this.directPeerConnection.addTrack(track, this.currentStream)
           this.logFn('已添加媒体轨道: ' + track.kind + ', label: ' + track.label)
-          
+
           try {
             const parameters = sender.getParameters()
             if (!parameters.encodings || parameters.encodings.length === 0) {
@@ -588,17 +606,17 @@ class DirectModeManager {
           width: settings.width || maxWidth,
           height: settings.height || maxHeight
         }
-        
+
         this.logFn('屏幕捕获成功，分辨率: ' + actualResolution.width + 'x' + actualResolution.height)
         return actualResolution
       } else {
         this.logFn('没有找到可用的屏幕源')
-        return { width: 1920, height: 1080 }
+        return { width: 0, height: 0, noSource: true }
       }
     } catch (error) {
       this.logFn('屏幕捕获失败: ' + error.message)
       console.error('屏幕捕获详细错误:', error)
-      return { width: 1920, height: 1080 }
+      return { width: 0, height: 0, noSource: true }
     }
   }
 

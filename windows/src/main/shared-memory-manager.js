@@ -2,6 +2,9 @@ const { execSync, spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { createLogger } = require('./logger');
+
+const logger = createLogger();
 
 /**
  * 共享内存管理器
@@ -18,7 +21,7 @@ class SharedMemoryManager {
      * @param {string} password - 密码
      */
     async writePassword(password) {
-        console.log('[SharedMemoryManager] 写入密码到共享内存...');
+        logger.info('[SharedMemoryManager] 写入密码到共享内存...');
         
         try {
             // 使用 temp ps1 脚本来实现，不需要编译 C++ 这么复杂
@@ -144,14 +147,14 @@ catch {
                 });
             });
             
-            console.log('[SharedMemoryManager] 结果:', result);
+            logger.info('[SharedMemoryManager] 结果:', result);
             
             try { fs.unlinkSync(tempPs1); } catch (e) {}
             
             return result;
         }
         catch (error) {
-            console.error('[SharedMemoryManager] 错误:', error);
+            logger.error('[SharedMemoryManager] 错误:', error);
             return {
                 success: false,
                 error: error.message
@@ -167,10 +170,10 @@ catch {
         try {
             const tempFile = path.join(os.tmpdir(), 'ycdesk_unlock_password.dat');
             fs.writeFileSync(tempFile, password, 'utf8');
-            console.log('[SharedMemoryManager] 密码已写入文件:', tempFile);
+            logger.info('[SharedMemoryManager] 密码已写入文件:', tempFile);
             return { success: true };
         } catch (error) {
-            console.error('[SharedMemoryManager] 错误:', error);
+            logger.error('[SharedMemoryManager] 错误:', error);
             return { success: false, error: error.message };
         }
     }
@@ -184,10 +187,10 @@ catch {
             if (fs.existsSync(tempFile)) {
                 fs.unlinkSync(tempFile);
             }
-            console.log('[SharedMemoryManager] 密码已清除');
+            logger.info('[SharedMemoryManager] 密码已清除');
             return { success: true };
         } catch (error) {
-            console.error('[SharedMemoryManager] 错误:', error);
+            logger.error('[SharedMemoryManager] 错误:', error);
             return { success: false, error: error.message };
         }
     }

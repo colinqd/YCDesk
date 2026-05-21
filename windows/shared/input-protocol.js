@@ -143,6 +143,9 @@ function normalizeButton(button) {
 }
 
 function parseInputCommand(command) {
+  if (!command) {
+    return null
+  }
   if (command.type !== 'input') {
     return null
   }

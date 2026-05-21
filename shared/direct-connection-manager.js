@@ -154,13 +154,13 @@ class DirectConnectionManager extends BaseConnectionManager {
 
     async connectAsController() {
         this.log('主控端连接流程开始')
-        
+
         await this.createDataChannel()
-        
+
         this.log('创建初始 offer（不含视频）...')
         const offer = await this.peerConnection.createOffer()
         await this.peerConnection.setLocalDescription(offer)
-        
+
         this.sendSignalingMessage({
             type: 'offer',
             offer: {
@@ -168,31 +168,37 @@ class DirectConnectionManager extends BaseConnectionManager {
                 sdp: offer.sdp
             }
         })
-        
+
         this.log('等待被控端发送初始 answer...')
         await this.waitForAnswer()
-        
+
         this.log('收到初始 answer，数据通道应该已打开')
-        
+
         await this.waitForDataChannelOpen()
-        
+
         this.log('数据通道已打开，发送分辨率请求...')
         this.stateMachine.transition(ConnectionState.RESOLUTION_NEGOTIATING)
         const displaySize = await this.negotiateResolution()
         this.adjustVideoContainer(displaySize)
-        
+
         this.log('分辨率协商完成，等待 renegotiation offer（含视频）...')
         this.stateMachine.transition(ConnectionState.WAITING_VIDEO)
-        
+
         await this.waitForRenegotiationOffer()
-        
+
         this.log('收到 renegotiation offer，处理中...')
-        
-        await this.waitForFirstFrame()
-        
-        this.stateMachine.transition(ConnectionState.DISPLAYING_FIRST_FRAME)
-        this.log('首帧显示成功')
-        
+
+        // 等待首帧，但如果超时或没有视频轨道，不阻塞连接
+        try {
+            await this.waitForFirstFrame()
+            this.stateMachine.transition(ConnectionState.DISPLAYING_FIRST_FRAME)
+            this.log('首帧显示成功')
+        } catch (error) {
+            this.log('首帧等待未完成（可能无视频轨道或屏幕捕获失败）: ' + error.message)
+            // 即使没有视频，数据通道和其他功能仍然可用
+            this.stateMachine.transition(ConnectionState.DISPLAYING_FIRST_FRAME)
+        }
+
         this.stateMachine.transition(ConnectionState.LOADING_AUXILIARY)
         this.loadAuxiliaryChannelsParallel()
     }

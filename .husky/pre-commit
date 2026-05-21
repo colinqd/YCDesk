@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+#
+# YCDesk pre-commit hook
+# Runs linting and basic checks before each commit.
+#
+
+set -e
+
+echo "🔍 YCDesk pre-commit hook running..."
+
+# 1. Check for debugger statements in staged .js files
+STAGED_JS=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.js$' || true)
+if [ -n "$STAGED_JS" ]; then
+  DEBUGGER_FILES=$(echo "$STAGED_JS" | xargs grep -l 'debugger;' 2>/dev/null || true)
+  if [ -n "$DEBUGGER_FILES" ]; then
+    echo "❌ Error: 'debugger;' found in staged files:"
+    echo "$DEBUGGER_FILES"
+    exit 1
+  fi
+fi
+
+# 2. Check for merge conflicts in staged files
+CONFLICT_FILES=$(echo "$STAGED_JS" | xargs grep -l '<<<<<<< HEAD\|=======\|>>>>>>>' 2>/dev/null || true)
+if [ -n "$CONFLICT_FILES" ]; then
+  echo "❌ Error: Merge conflict markers found in:"
+  echo "$CONFLICT_FILES"
+  exit 1
+fi
+
+# 3. Run ESLint via npm script (if eslint is available)
+if npm run lint 2>/dev/null; then
+  echo "  ✅ ESLint passed"
+else
+  echo "❌ ESLint failed. Fix errors before committing."
+  exit 1
+fi
+
+echo "✅ Pre-commit checks passed"

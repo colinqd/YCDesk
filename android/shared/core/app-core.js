@@ -12,6 +12,7 @@ import { ErrorHandler, ErrorCode } from '../utils/error-handler.js'
 import { MatrixTransformer } from '../components/matrix-transformer.js'
 import { ConnectionManager, ConnectionMode, ConnectionRole } from '../managers/connection-manager.js'
 import { MediaTransport } from '../video/transport/media-transport.js'
+import { secureDeviceId } from '../utils/id-generator.js'
 import { BrowserCapture } from '../video/capture/browser-capture.js'
 import { ElectronCapture } from '../video/capture/electron-capture.js'
 
@@ -574,7 +575,7 @@ export class AppCore {
         }
         
         // 默认随机生成
-        return 'DEV-' + Math.random().toString(36).substr(2, 9).toUpperCase()
+        return secureDeviceId('DEV')
     }
     
     /**

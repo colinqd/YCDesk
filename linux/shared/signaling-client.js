@@ -110,7 +110,7 @@ class SignalingClient {
       try {
         this.socket.removeAllListeners()
         this.socket.disconnect()
-      } catch (e) { /* ignore */ }
+      } catch (e) { this.logFn && this.logFn('清理 Socket.IO 连接时出错: ' + (e.message || e), 'debug') }
     }
     this.socket = null
   }
@@ -122,7 +122,7 @@ class SignalingClient {
 
     try {
       if (this.socket) {
-        try { this.socket.close() } catch (e) { /* ignore */ }
+        try { this.socket.close() } catch (e) { this.logFn && this.logFn('关闭 WebSocket 时出错: ' + (e.message || e), 'debug') }
       }
 
       this.socket = new WebSocket(wsUrl)

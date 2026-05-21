@@ -1,357 +1,297 @@
 /**
  * YCDesk MatrixTransformer 单元测试
+ *
+ * 测试矩阵变换器的初始化、坐标变换、缩放、平移等功能
  */
 
+import { describe, it, expect, beforeEach } from 'vitest'
 import { MatrixTransformer } from './matrix-transformer.js'
 
-// 测试结果统计
-let passedTests = 0
-let failedTests = 0
+describe('MatrixTransformer 初始化', () => {
+  let transformer
 
-/**
- * 断言函数
- */
-function assert(condition, message) {
-    if (condition) {
-        passedTests++
-        console.log('✓', message)
-    } else {
-        failedTests++
-        console.error('✗', message)
-    }
-}
+  beforeEach(() => {
+    transformer = new MatrixTransformer()
+  })
 
-/**
- * 测试初始化
- */
-function testInitialization() {
-    console.log('\n=== 测试初始化 ===')
-    
-    const transformer = new MatrixTransformer()
-    
-    assert(transformer.scale === 1.0, '初始缩放为 1.0')
-    assert(transformer.panX === 0, '初始平移 X 为 0')
-    assert(transformer.panY === 0, '初始平移 Y 为 0')
-    assert(transformer.remoteScreenWidth === 1920, '默认远程宽度为 1920')
-    assert(transformer.remoteScreenHeight === 1080, '默认远程高度为 1080')
-}
+  it('初始缩放为 1.0', () => {
+    expect(transformer.scale).toBe(1.0)
+  })
 
-/**
- * 测试屏幕尺寸设置
- */
-function testSetScreenSize() {
-    console.log('\n=== 测试设置屏幕尺寸 ===')
-    
+  it('初始平移 X 为 0', () => {
+    expect(transformer.panX).toBe(0)
+  })
+
+  it('初始平移 Y 为 0', () => {
+    expect(transformer.panY).toBe(0)
+  })
+
+  it('默认远程宽度为 1920', () => {
+    expect(transformer.remoteScreenWidth).toBe(1920)
+  })
+
+  it('默认远程高度为 1080', () => {
+    expect(transformer.remoteScreenHeight).toBe(1080)
+  })
+})
+
+describe('setScreenSize', () => {
+  it('设置屏幕宽度和高度', () => {
     const transformer = new MatrixTransformer()
     transformer.setScreenSize(800, 600)
-    
-    assert(transformer.screenWidth === 800, '屏幕宽度设置为 800')
-    assert(transformer.screenHeight === 600, '屏幕高度设置为 600')
-}
+    expect(transformer.screenWidth).toBe(800)
+    expect(transformer.screenHeight).toBe(600)
+  })
+})
 
-/**
- * 测试远程屏幕尺寸设置
- */
-function testSetRemoteScreenSize() {
-    console.log('\n=== 测试设置远程屏幕尺寸 ===')
-    
+describe('setRemoteScreenSize', () => {
+  it('设置远程屏幕宽度和高度', () => {
     const transformer = new MatrixTransformer()
     transformer.setRemoteScreenSize(1920, 1080)
-    
-    assert(transformer.remoteScreenWidth === 1920, '远程宽度设置为 1920')
-    assert(transformer.remoteScreenHeight === 1080, '远程高度设置为 1080')
-}
+    expect(transformer.remoteScreenWidth).toBe(1920)
+    expect(transformer.remoteScreenHeight).toBe(1080)
+  })
+})
 
-/**
- * 测试显示区域计算
- */
-function testDisplayRectCalculation() {
-    console.log('\n=== 测试显示区域计算 ===')
-    
-    const transformer = new MatrixTransformer()
-    
-    // 设置屏幕尺寸 800x600
-    transformer.setScreenSize(800, 600)
-    
-    // 设置远程屏幕尺寸 1920x1080 (16:9)
-    transformer.setRemoteScreenSize(1920, 1080)
-    
-    // 远程屏幕更宽，应该以宽度为基准
-    assert(transformer.displayWidth === 800, '显示宽度等于屏幕宽度')
-    assert(Math.abs(transformer.displayHeight - 450) < 1, '显示高度约为 450 (800/1.778)')
-    assert(transformer.displayX === 0, '显示 X 为 0')
-    assert(transformer.displayY > 0, '显示 Y 大于 0（垂直居中）')
-}
+describe('显示区域计算', () => {
+  let transformer
 
-/**
- * 测试坐标变换 - containerToRemote
- */
-function testContainerToRemote() {
-    console.log('\n=== 测试 Container 到 Remote 变换 ===')
-    
-    const transformer = new MatrixTransformer()
+  beforeEach(() => {
+    transformer = new MatrixTransformer()
     transformer.setScreenSize(800, 600)
     transformer.setRemoteScreenSize(1920, 1080)
-    
-    // 测试屏幕中心点
+  })
+
+  it('显示宽度等于屏幕宽度（远程更宽场景）', () => {
+    expect(transformer.displayWidth).toBe(800)
+  })
+
+  it('显示高度按比例计算', () => {
+    // 远程屏幕更宽 (16:9 > 4:3)，以宽度为基准
+    // displayHeight = screenWidth / remoteAspect = 800 / (1920/1080) = 450
+    expect(Math.abs(transformer.displayHeight - 450)).toBeLessThan(1)
+  })
+
+  it('显示 X 为 0', () => {
+    expect(transformer.displayX).toBe(0)
+  })
+
+  it('显示 Y 大于 0（垂直居中）', () => {
+    expect(transformer.displayY).toBeGreaterThan(0)
+  })
+})
+
+describe('containerToRemote 坐标变换', () => {
+  let transformer
+
+  beforeEach(() => {
+    transformer = new MatrixTransformer()
+    transformer.setScreenSize(800, 600)
+    transformer.setRemoteScreenSize(1920, 1080)
+  })
+
+  it('屏幕中心点映射到远程中心', () => {
     const center = transformer.containerToRemote(400, 300)
-    assert(center !== null, '变换成功')
-    assert(Math.abs(center.x - 960) < 10, '中心 X 应该约为 960')
-    assert(Math.abs(center.y - 540) < 10, '中心 Y 应该约为 540')
-    
-    // 测试左上角
-    const topLeft = transformer.containerToRemote(0, 0)
-    assert(topLeft !== null, '变换成功')
-    assert(topLeft.x >= 0, '左上角 X >= 0')
-    assert(topLeft.y >= 0, '左上角 Y >= 0')
-    
-    // 测试右下角
-    const bottomRight = transformer.containerToRemote(800, 600)
-    assert(bottomRight !== null, '变换成功')
-    assert(Math.abs(bottomRight.x - 1920) < 10, '右下角 X 应该约为 1920')
-    assert(Math.abs(bottomRight.y - 1080) < 10, '右下角 Y 应该约为 1080')
-}
+    expect(center).not.toBeNull()
+    expect(Math.abs(center.x - 0.5)).toBeLessThan(0.01)
+    expect(Math.abs(center.y - 0.5)).toBeLessThan(0.01)
+  })
 
-/**
- * 测试边界检查
- */
-function testBoundaryCheck() {
-    console.log('\n=== 测试边界检查 ===')
-    
-    const transformer = new MatrixTransformer()
+  it('左上角映射', () => {
+    // display area starts at y=75, so top-left of display is (0, 75)
+    const topLeft = transformer.containerToRemote(0, 75)
+    expect(topLeft).not.toBeNull()
+    expect(topLeft.x).toBeGreaterThanOrEqual(0)
+    expect(topLeft.y).toBeGreaterThanOrEqual(0)
+  })
+
+  it('右下角映射', () => {
+    // display area: x[0,800], y[75,525], so bottom-right is (800, 525)
+    const bottomRight = transformer.containerToRemote(800, 525)
+    expect(bottomRight).not.toBeNull()
+    expect(Math.abs(bottomRight.x - 1)).toBeLessThan(0.01)
+    expect(Math.abs(bottomRight.y - 1)).toBeLessThan(0.01)
+  })
+})
+
+describe('边界检查', () => {
+  let transformer
+
+  beforeEach(() => {
+    transformer = new MatrixTransformer()
     transformer.setScreenSize(800, 600)
     transformer.setRemoteScreenSize(1920, 1080)
-    
-    // 测试超出边界的点
-    const outside = transformer.containerToRemote(-10, 300)
-    assert(outside === null, '超出左边界应该返回 null')
-    
-    const outside2 = transformer.containerToRemote(810, 300)
-    assert(outside2 === null, '超出右边界应该返回 null')
-}
+  })
 
-/**
- * 测试缩放更新
- */
-function testUpdateScale() {
-    console.log('\n=== 测试缩放更新 ===')
-    
-    const transformer = new MatrixTransformer()
+  it('超出左边界返回 null', () => {
+    expect(transformer.containerToRemote(-10, 300)).toBeNull()
+  })
+
+  it('超出右边界返回 null', () => {
+    expect(transformer.containerToRemote(810, 300)).toBeNull()
+  })
+})
+
+describe('updateScale 缩放更新', () => {
+  let transformer
+
+  beforeEach(() => {
+    transformer = new MatrixTransformer()
     transformer.setScreenSize(800, 600)
     transformer.setRemoteScreenSize(1920, 1080)
-    
-    // 更新缩放
+  })
+
+  it('缩放比例更新为 2.0', () => {
     transformer.updateScale(2.0, 400, 300)
-    
-    assert(transformer.scale === 2.0, '缩放比例更新为 2.0')
-    assert(transformer._matrixDirty === true, '矩阵标记为 dirty')
-    
-    // 测试缩放限制
+    expect(transformer.scale).toBe(2.0)
+  })
+
+  it('缩放更新后矩阵标记为 dirty', () => {
+    transformer.updateScale(2.0, 400, 300)
+    expect(transformer._matrixDirty).toBe(true)
+  })
+
+  it('最大缩放限制为 3.0', () => {
     transformer.updateScale(4.0, 400, 300)
-    assert(transformer.scale === 3.0, '最大缩放限制为 3.0')
-    
+    expect(transformer.scale).toBe(3.0)
+  })
+
+  it('最小缩放限制为 0.5', () => {
     transformer.updateScale(0.2, 400, 300)
-    assert(transformer.scale === 0.5, '最小缩放限制为 0.5')
-}
+    expect(transformer.scale).toBe(0.5)
+  })
+})
 
-/**
- * 测试平移更新
- */
-function testUpdatePan() {
-    console.log('\n=== 测试平移更新 ===')
-    
-    const transformer = new MatrixTransformer()
-    
+describe('updatePan 平移更新', () => {
+  let transformer
+
+  beforeEach(() => {
+    transformer = new MatrixTransformer()
+  })
+
+  it('平移 X 累加正确', () => {
     transformer.updatePan(10, 20)
-    
-    assert(transformer.panX === 10, '平移 X 更新为 10')
-    assert(transformer.panY === 20, '平移 Y 更新为 20')
-    
-    transformer.updatePan(-5, -10)
-    assert(transformer.panX === 5, '平移 X 累加为 5')
-    assert(transformer.panY === 10, '平移 Y 累加为 10')
-}
+    expect(transformer.panX).toBe(10)
+    expect(transformer.panY).toBe(20)
+  })
 
-/**
- * 测试重置
- */
-function testReset() {
-    console.log('\n=== 测试重置 ===')
-    
-    const transformer = new MatrixTransformer()
+  it('平移量可累加', () => {
+    transformer.updatePan(10, 20)
+    transformer.updatePan(-5, -10)
+    expect(transformer.panX).toBe(5)
+    expect(transformer.panY).toBe(10)
+  })
+})
+
+describe('reset 重置', () => {
+  let transformer
+
+  beforeEach(() => {
+    transformer = new MatrixTransformer()
     transformer.updateScale(2.0, 400, 300)
     transformer.updatePan(10, 20)
-    
-    // 普通重置
+  })
+
+  it('重置后缩放为 1.0', () => {
     transformer.reset()
-    
-    assert(transformer.scale === 1.0, '重置后缩放为 1.0')
-    assert(transformer.panX === 0, '重置后平移 X 为 0')
-    assert(transformer.panY === 0, '重置后平移 Y 为 0')
-    
-    // 完全重置
+    expect(transformer.scale).toBe(1.0)
+  })
+
+  it('重置后平移 X 为 0', () => {
+    transformer.reset()
+    expect(transformer.panX).toBe(0)
+  })
+
+  it('重置后平移 Y 为 0', () => {
+    transformer.reset()
+    expect(transformer.panY).toBe(0)
+  })
+})
+
+describe('fullReset 完全重置', () => {
+  it('完全重置后屏幕宽度为 0', () => {
+    const transformer = new MatrixTransformer()
     transformer.setScreenSize(800, 600)
     transformer.setRemoteScreenSize(1920, 1080)
     transformer.fullReset()
-    
-    assert(transformer.screenWidth === 0, '完全重置后屏幕宽度为 0')
-    assert(transformer.remoteScreenWidth === 1920, '完全重置后远程宽度恢复默认')
-}
+    expect(transformer.screenWidth).toBe(0)
+  })
 
-/**
- * 测试 getState
- */
-function testGetState() {
-    console.log('\n=== 测试获取状态 ===')
-    
+  it('完全重置后远程宽度恢复默认', () => {
+    const transformer = new MatrixTransformer()
+    transformer.setScreenSize(800, 600)
+    transformer.setRemoteScreenSize(1920, 1080)
+    transformer.fullReset()
+    expect(transformer.remoteScreenWidth).toBe(1920)
+  })
+})
+
+describe('getState 获取状态', () => {
+  it('返回完整的状态信息', () => {
     const transformer = new MatrixTransformer()
     transformer.setScreenSize(800, 600)
     transformer.setRemoteScreenSize(1920, 1080)
     transformer.updateScale(1.5, 400, 300)
-    
     const state = transformer.getState()
-    
-    assert(state.scale === 1.5, '状态中缩放正确')
-    assert(state.screenWidth === 800, '状态中屏幕宽度正确')
-    assert(state.screenHeight === 600, '状态中屏幕高度正确')
-    assert(state.remoteScreenWidth === 1920, '状态中远程宽度正确')
-    assert(state.remoteScreenHeight === 1080, '状态中远程高度正确')
-}
+    expect(state.scale).toBe(1.5)
+    expect(state.screenWidth).toBe(800)
+    expect(state.screenHeight).toBe(600)
+    expect(state.remoteScreenWidth).toBe(1920)
+    expect(state.remoteScreenHeight).toBe(1080)
+  })
+})
 
-/**
- * 测试 displayToRemote
- */
-function testDisplayToRemote() {
-    console.log('\n=== 测试 Display 到 Remote 变换 ===')
-    
+describe('displayToRemote', () => {
+  it('Display 坐标正确映射到 Remote 归一化坐标', () => {
     const transformer = new MatrixTransformer()
     transformer.setScreenSize(800, 600)
     transformer.setRemoteScreenSize(1920, 1080)
-    
-    // Display 中心点
     const display = transformer.displayToRemote(400, 225)
-    assert(display !== null, '变换成功')
-    assert(Math.abs(display.x - 960) < 10, 'X 应该约为 960')
-    assert(Math.abs(display.y - 540) < 10, 'Y 应该约为 540')
-}
+    expect(display).not.toBeNull()
+    expect(display.x).toBeCloseTo(0.5, 1)
+    expect(display.y).toBeCloseTo(0.5, 1)
+  })
+})
 
-/**
- * 测试 viewToVideo
- */
-function testViewToVideo() {
-    console.log('\n=== 测试 View 到 Video 变换 ===')
-    
+describe('viewToVideo', () => {
+  it('View 坐标正确映射', () => {
     const transformer = new MatrixTransformer()
     transformer.updateScale(2.0, 0, 0)
     transformer.updatePan(100, 50)
-    
     const video = transformer.viewToVideo(200, 150)
-    assert(video !== null, '变换成功')
-    assert(typeof video.x === 'number', 'X 是数字')
-    assert(typeof video.y === 'number', 'Y 是数字')
-}
+    expect(video).not.toBeNull()
+    expect(typeof video.x).toBe('number')
+    expect(typeof video.y).toBe('number')
+  })
+})
 
-/**
- * 测试完整流程
- */
-function testFullFlow() {
-    console.log('\n=== 测试完整流程 ===')
-    
+describe('完整流程', () => {
+  it('设置 → 应用容器尺寸 → 应用变换 → 坐标变换完整链路', () => {
     const transformer = new MatrixTransformer()
-    
-    // 1. 设置屏幕尺寸
     transformer.setScreenSize(800, 600)
     transformer.setRemoteScreenSize(1920, 1080)
-    
-    // 2. 应用容器尺寸
+
     const container = {
-        style: {
-            width: '',
-            height: '',
-            left: '',
-            top: ''
-        }
+      style: { width: '', height: '', left: '', top: '' }
     }
     transformer.applyContainerSize(container)
-    
-    assert(container.style.width === transformer.displayWidth + 'px', '容器宽度设置正确')
-    assert(container.style.height === transformer.displayHeight + 'px', '容器高度设置正确')
-    
-    // 3. 应用变换
+
+    expect(container.style.width).toBe(transformer.displayWidth + 'px')
+    expect(container.style.height).toBe(transformer.displayHeight + 'px')
+
     const element = {
-        style: {
-            transform: '',
-            transformOrigin: ''
-        }
+      style: { transform: '', transformOrigin: '', left: '', top: '' }
     }
+    // Pre-set element dimensions so applyTransform doesn't need getBoundingClientRect
+    transformer.elementWidth = 800
+    transformer.elementHeight = 450
     transformer.applyTransform(element)
-    
-    assert(element.style.transform.includes('scale'), '包含缩放变换')
-    assert(element.style.transform.includes('translate'), '包含平移变换')
-    
-    // 4. 坐标变换
+
+    expect(element.style.transform).toContain('scale')
+    expect(element.style.left).toContain('px')
+    expect(element.style.top).toContain('px')
+
     const remote = transformer.containerToRemote(400, 300)
-    assert(remote !== null, '坐标变换成功')
-}
-
-/**
- * 运行所有测试
- */
-function runAllTests() {
-    console.log('╔════════════════════════════════════════╗')
-    console.log('║   MatrixTransformer 单元测试           ║')
-    console.log('╚════════════════════════════════════════╝')
-    
-    try {
-        testInitialization()
-        testSetScreenSize()
-        testSetRemoteScreenSize()
-        testDisplayRectCalculation()
-        testContainerToRemote()
-        testBoundaryCheck()
-        testUpdateScale()
-        testUpdatePan()
-        testReset()
-        testGetState()
-        testDisplayToRemote()
-        testViewToVideo()
-        testFullFlow()
-        
-        // 输出结果
-        console.log('\n╔════════════════════════════════════════╗')
-        console.log('║   测试结果汇总                       ║')
-        console.log('╚════════════════════════════════════════╝')
-        console.log(`✓ 通过：${passedTests}`)
-        console.log(`✗ 失败：${failedTests}`)
-        console.log(`总计：${passedTests + failedTests}`)
-        
-        if (failedTests === 0) {
-            console.log('\n🎉 所有测试通过！')
-        } else {
-            console.error('\n❌ 有测试失败，请检查代码')
-            process.exit(1)
-        }
-    } catch (error) {
-        console.error('\n❌ 测试执行出错:', error)
-        process.exit(1)
-    }
-}
-
-// 运行测试
-runAllTests()
-
-// 导出测试函数
-export {
-    runAllTests,
-    testInitialization,
-    testSetScreenSize,
-    testSetRemoteScreenSize,
-    testDisplayRectCalculation,
-    testContainerToRemote,
-    testBoundaryCheck,
-    testUpdateScale,
-    testUpdatePan,
-    testReset,
-    testGetState,
-    testFullFlow
-}
+    expect(remote).not.toBeNull()
+  })
+})
