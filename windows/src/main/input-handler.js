@@ -2,19 +2,85 @@ const { screen } = require('electron')
 const { exec, execFile } = require('child_process')
 const path = require('path')
 const fs = require('fs')
-const { validateInputCommand, parseInputCommand, INPUT_TYPES, isDeltaInputType, isBatchInputType, KEY_CODE_MAP: SHARED_KEY_CODE_MAP } = require('../../shared/input-protocol')
+const { parseInputCommand, INPUT_TYPES, KEY_CODE_MAP } = require('../../shared/input-protocol')
 const credentialsManager = require('./credentials-manager')
 const sharedMemoryManager = require('./shared-memory-manager')
 
-let robot = null
+const keycodes = require('./keycodes')
+const mouse = require('./mouse-normalizer')
+const { getVkCode } = require('./key-to-vk')
+
+// SendInput 后端（通过 input-sendinput.createClient 共享惰性初始化）
+let _firstInputLogged = false
+let _siUnavailableLogged = false
+
+function _execKeyToggle(keyName, direction) {
+  const si = require("./input-sendinput").createClient(logger)
+  if (si) {
+    const vk = getVkCode(keyName)
+    if (vk) {
+      if (direction === 'down') si.keyDown(vk)
+      else si.keyUp(vk)
+    }
+  } else if (!_siUnavailableLogged) {
+    _siUnavailableLogged = true
+    log('error', '[输入] SendInput 不可用，按键输入被丢弃')
+  }
+}
+
+function _execTypeString(text) {
+  const si = require("./input-sendinput").createClient(logger)
+  if (si) si.typeString(text)
+  else if (!_siUnavailableLogged) {
+    _siUnavailableLogged = true
+    log('error', '[输入] SendInput 不可用，文本输入被丢弃: ' + text.substring(0, 20))
+  }
+}
+
+function _execMouseToggle(direction, btnName) {
+  const si = require("./input-sendinput").createClient(logger)
+  if (si) {
+    const btnNum = btnName === 'right' ? 2 : (btnName === 'middle' ? 1 : 0)
+    if (direction === 'down') si.mouseDown(btnNum)
+    else si.mouseUp(btnNum)
+  } else if (!_siUnavailableLogged) {
+    _siUnavailableLogged = true
+    log('error', '[输入] SendInput 不可用，鼠标输入被丢弃')
+  }
+}
+
+// 向 keycodes 注册 shared 按键映射表
+keycodes.setSharedKeyCodeMap(KEY_CODE_MAP)
+
+const {
+  pressedModifiers,
+  pressedKeys,
+  resetPressedState
+} = keycodes
+
+const { setMouseLogger } = mouse
+
 let logger = null
 let initialized = false
 let unlockInProgress = false
+let _screenWidth = 0
+let _screenHeight = 0
+
+function _updateScreenCache() {
+  try {
+    const primaryDisplay = screen.getPrimaryDisplay()
+    _screenWidth = primaryDisplay.size.width
+    _screenHeight = primaryDisplay.size.height
+  } catch (e) { /* 初始化时可能尚无显示信息 */ }
+}
 
 function initLogger(logInstance) {
   logger = logInstance
+  setMouseLogger(logInstance)
   if (!initialized) {
     initialized = true
+    _updateScreenCache()
+    screen.on('display-metrics-changed', _updateScreenCache)
     initRobot()
   }
 }
@@ -28,114 +94,42 @@ function log(level, message, data) {
 }
 
 function initRobot() {
-  log('info', '正在初始化输入控制...')
-  
-  try {
-    robot = require('robotjs')
-    log('info', 'robotjs 加载成功!')
-    const pos = robot.getMousePos()
-    currentMouseX = pos.x
-    currentMouseY = pos.y
-  } catch (e) {
-    log('error', '无法加载 robotjs:', e.message)
-    robot = null
-  }
-}
-
-let currentMouseX = 0
-let currentMouseY = 0
-let lastMousedownTime = 0
-let lastMouseupTime = 0
-const MIN_CLICK_INTERVAL_MS = 60
-const DEDUP_MOUSEUP_WINDOW_MS = 100
-let pressedModifiers = {
-  Control: false,
-  Shift: false,
-  Alt: false,
-  Meta: false
-}
-let pressedButtons = {
-  left: false,
-  right: false,
-  middle: false
-}
-let pressedKeys = new Set()
-let wheelAccumulatorY = 0
-let wheelAccumulatorX = 0
-
-const BUTTON_MAP = {
-  0: 'left',
-  1: 'middle', 
-  2: 'right'
-}
-
-const ROBOTJS_KEY_MAP = {
-  'Space': 'space',
-  'Enter': 'enter',
-  'Backspace': 'backspace',
-  'Tab': 'tab',
-  'Escape': 'escape',
-  'Delete': 'delete',
-  'Insert': 'insert',
-  'ArrowUp': 'up',
-  'ArrowDown': 'down',
-  'ArrowLeft': 'left',
-  'ArrowRight': 'right',
-  'Home': 'home',
-  'End': 'end',
-  'PageUp': 'pageup',
-  'PageDown': 'pagedown',
-  'F1': 'f1', 'F2': 'f2', 'F3': 'f3', 'F4': 'f4', 'F5': 'f5', 'F6': 'f6',
-  'F7': 'f7', 'F8': 'f8', 'F9': 'f9', 'F10': 'f10', 'F11': 'f11', 'F12': 'f12',
-  'Numpad0': 'numpad_0', 'Numpad1': 'numpad_1', 'Numpad2': 'numpad_2',
-  'Numpad3': 'numpad_3', 'Numpad4': 'numpad_4', 'Numpad5': 'numpad_5',
-  'Numpad6': 'numpad_6', 'Numpad7': 'numpad_7', 'Numpad8': 'numpad_8',
-  'Numpad9': 'numpad_9',
-  'NumpadMultiply': 'numpad_multiply', 'NumpadAdd': 'numpad_add',
-  'NumpadSubtract': 'numpad_subtract', 'NumpadDecimal': 'numpad_decimal',
-  'NumpadDivide': 'numpad_divide', 'NumpadEnter': 'enter',
-  'ControlLeft': 'control', 'ControlRight': 'control',
-  'ShiftLeft': 'shift', 'ShiftRight': 'shift',
-  'AltLeft': 'alt', 'AltRight': 'alt',
-  'MetaLeft': 'command', 'MetaRight': 'command',
-  'CapsLock': 'caps_lock', 'NumLock': 'num_lock', 'ScrollLock': 'scroll_lock'
-}
-
-function getRobotjsKey(code) {
-  if (ROBOTJS_KEY_MAP[code]) return ROBOTJS_KEY_MAP[code]
-  if (SHARED_KEY_CODE_MAP[code]) {
-    const mapped = SHARED_KEY_CODE_MAP[code]
-    if (mapped.length === 1) return mapped.toLowerCase()
-    return mapped.toLowerCase()
-  }
-  return code.toLowerCase()
+  log('info', '初始化输入控制: 使用 SendInput (PowerShell C#)')
+  log('info', 'SendInput 将在首次使用时延迟初始化')
 }
 
 const DIAG_LOG_FILE = 'C:\\ProgramData\\YCDesk\\input_handler.log'
+let _diagEnabled = false
+
+function setDiagEnabled(enabled) {
+  _diagEnabled = !!enabled
+}
 
 function diagLog(message) {
+  if (!_diagEnabled) return
   try {
     const flagDir = 'C:\\ProgramData\\YCDesk'
     if (!fs.existsSync(flagDir)) fs.mkdirSync(flagDir, { recursive: true })
     const ts = new Date().toISOString()
     fs.appendFileSync(DIAG_LOG_FILE, `[${ts}] ${message}\n`, 'utf8')
-  } catch (e) {}
+  } catch (e) { /* 诊断日志写入失败不影响主功能 */ }
 }
 
 async function handleRemoteInput(event, inputData) {
-  diagLog(`handleRemoteInput called: type=${inputData?.type} inputType=${inputData?.inputType} hasPassword=${!!inputData?.password}`)
-  log('info', '=== handleRemoteInput 被调用 ===')
-  log('info', '收到的 inputData:', { 
-    type: inputData?.type, 
-    inputType: inputData?.inputType,
-    password: inputData?.password ? `length ${inputData.password.length}` : null
-  })
-  log('info', '完整 inputData:', inputData)
+  // 核诊断：直接写文件确认 handleRemoteInput 被调用
+  try {
+    const flagDir = 'C:\\ProgramData\\YCDesk'
+    if (!fs.existsSync(flagDir)) fs.mkdirSync(flagDir, { recursive: true })
+    fs.appendFileSync('C:\\ProgramData\\YCDesk\\diag_handler.log', '[' + new Date().toISOString() + '] handleRemoteInput: ' + (inputData?.inputType || '?') + ' siAvailable=' + require("./input-sendinput").isAvailable + '\n', 'utf8')
+  } catch (e) {}
 
-  const isUnlockCommand = 
-    (inputData?.type === 'input' && (inputData?.inputType === 'unlock_screen' || inputData?.inputType === INPUT_TYPES.UNLOCK_SCREEN)) ||
-    (inputData?.inputType === 'unlock_screen' || inputData?.inputType === INPUT_TYPES.UNLOCK_SCREEN) ||
-    (inputData?.type === 'unlock_screen')
+  if (!_firstInputLogged) {
+    _firstInputLogged = true
+    log('info', '[输入] handleRemoteInput 首次被调用，inputType=' + (inputData?.inputType || '?') + ', siAvailable=' + require("./input-sendinput").isAvailable)
+  }
+
+  const isUnlockCommand =
+    inputData?.inputType === 'unlock_screen' || inputData?.inputType === INPUT_TYPES.UNLOCK_SCREEN
 
   if (isUnlockCommand) {
     diagLog('unlock command detected, calling handleUnlockScreen')
@@ -145,15 +139,9 @@ async function handleRemoteInput(event, inputData) {
     await handleUnlockScreen(remotePassword || '')
     return
   }
-  
-  const isLockCommand = 
-    (inputData?.type === 'input' && (inputData?.inputType === 'lock_screen' || inputData?.inputType === INPUT_TYPES.LOCK_SCREEN)) ||
-    (inputData?.inputType === 'lock_screen' || inputData?.inputType === INPUT_TYPES.LOCK_SCREEN) ||
-    (inputData?.type === 'lock_screen')
 
-  log('info', '[锁屏检测] isLockCommand=' + isLockCommand + ', inputData.type=' + inputData?.type + ', inputData.inputType=' + inputData?.inputType)
-  log('info', '[锁屏检测] INPUT_TYPES.LOCK_SCREEN=' + INPUT_TYPES.LOCK_SCREEN)
-  diagLog('isLockCommand=' + isLockCommand)
+  const isLockCommand =
+    inputData?.inputType === 'lock_screen' || inputData?.inputType === INPUT_TYPES.LOCK_SCREEN
 
   if (isLockCommand) {
     diagLog('lock command detected, calling handleLockScreen')
@@ -161,76 +149,50 @@ async function handleRemoteInput(event, inputData) {
     handleLockScreen()
     return
   }
-  
-  if (!robot) {
-    diagLog('robot not initialized, cannot process non-unlock/non-lock input')
-    log('warn', 'robot未初始化，无法处理输入')
-    log('warn', 'DIAG: robot 变量为 null/undefined, 请检查 robotjs 模块是否正确加载')
-    return
-  }
-  
+
   try {
-    // 验证其他输入命令
-    const validation = validateInputCommand(inputData)
-    if (!validation.valid) {
-      log('warn', '输入验证失败:', validation.errors)
-      return
-    }
-    
     const input = parseInputCommand(inputData)
     if (!input) {
       log('warn', '输入解析失败')
       return
     }
-    
-    const { 
-      inputType, 
-      x, 
-      y, 
-      dx,
-      dy,
-      button, 
-      deltaY, 
-      deltaX,
-      accumulatedDeltaY,
-      accumulatedDeltaX,
-      key, 
-      code, 
-      keyCode,
-      ctrlKey,
-      shiftKey,
-      altKey,
-      metaKey,
+
+    const {
+      inputType,
+      x, y, dx, dy,
+      button, deltaY, deltaX,
+      accumulatedDeltaY, accumulatedDeltaX,
+      key, code, keyCode,
+      ctrlKey, shiftKey, altKey, metaKey,
       text
     } = input
-    
-    const primaryDisplay = screen.getPrimaryDisplay()
-    const screenWidth = primaryDisplay.size.width
-    const screenHeight = primaryDisplay.size.height
+
+    const screenWidth = _screenWidth || screen.getPrimaryDisplay().size.width
+	    const screenHeight = _screenHeight || screen.getPrimaryDisplay().size.height
 
     switch (inputType) {
       case INPUT_TYPES.MOUSE_MOVE:
-        handleMouseMove(x, y, screenWidth, screenHeight)
+        mouse.handleMouseMove(x, y, screenWidth, screenHeight)
         break
 
       case INPUT_TYPES.MOUSE_MOVE_DELTA:
-        handleMouseMoveDelta(dx, dy, screenWidth, screenHeight)
+        mouse.handleMouseMoveDelta(dx, dy, screenWidth, screenHeight)
         break
 
       case INPUT_TYPES.MOUSE_DOWN:
-        handleMouseDown(x, y, button, screenWidth, screenHeight)
+        mouse.handleMouseDown(x, y, button, screenWidth, screenHeight)
         break
 
       case INPUT_TYPES.MOUSE_UP:
-        await handleMouseUp(x, y, button, screenWidth, screenHeight)
+        await mouse.handleMouseUp(x, y, button, screenWidth, screenHeight)
         break
 
       case INPUT_TYPES.MOUSE_WHEEL:
-        handleMouseWheel(deltaY, deltaX, x, y, screenWidth, screenHeight)
+        mouse.handleMouseWheel(deltaY, deltaX, x, y, screenWidth, screenHeight)
         break
 
       case INPUT_TYPES.MOUSE_WHEEL_BATCH:
-        handleMouseWheelBatch(accumulatedDeltaY, accumulatedDeltaX, screenWidth, screenHeight)
+        mouse.handleMouseWheelBatch(accumulatedDeltaY, accumulatedDeltaX)
         break
 
       case INPUT_TYPES.KEY_DOWN:
@@ -242,11 +204,11 @@ async function handleRemoteInput(event, inputData) {
         break
 
       case INPUT_TYPES.MOUSE_CLICK:
-        handleClick(x, y, button, screenWidth, screenHeight)
+        mouse.handleClick(x, y, button, screenWidth, screenHeight)
         break
 
       case INPUT_TYPES.MOUSE_DBLCLICK:
-        handleDoubleClick(x, y, button, screenWidth, screenHeight)
+        mouse.handleDoubleClick(x, y, button, screenWidth, screenHeight)
         break
 
       case INPUT_TYPES.LOCK_SCREEN:
@@ -268,43 +230,43 @@ async function handleRemoteInput(event, inputData) {
 function handleLockScreen() {
   log('info', '[锁屏] ========== handleLockScreen 开始执行 ==========')
   diagLog('handleLockScreen START')
-  
+
   const systemRoot = process.env.SystemRoot || 'C:\\Windows'
   const rundll32Path = path.join(systemRoot, 'System32', 'rundll32.exe')
-  
+
   log('info', '[锁屏] 系统目录: ' + systemRoot)
   log('info', '[锁屏] rundll32路径: ' + rundll32Path)
   diagLog('rundll32路径: ' + rundll32Path)
-  
+
   try {
     log('info', '[锁屏] 方法1: 使用完整路径执行 rundll32.exe')
     diagLog('尝试方法1: 完整路径')
-    
-    execFile(rundll32Path, ['user32.dll,LockWorkStation'], (err, stdout, stderr) => {
+
+    execFile(rundll32Path, ['user32.dll,LockWorkStation'], (err) => {
       if (err) {
         log('error', '[锁屏] 方法1失败:', err.message)
         diagLog('方法1失败: ' + err.message)
-        
+
         log('info', '[锁屏] 方法2: 尝试 PowerShell')
         diagLog('尝试方法2: PowerShell')
-        
+
         const psPath = path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
-        
+
         execFile(psPath, [
           '-ExecutionPolicy', 'Bypass',
           '-NoProfile',
           '-WindowStyle', 'Hidden',
           '-Command',
           '(New-Object -ComObject Shell.Application).Windows() | ForEach-Object { $_.Quit() }; rundll32.exe user32.dll,LockWorkStation'
-        ], { timeout: 10000 }, (psErr, psStdout, psStderr) => {
+        ], { timeout: 10000 }, (psErr) => {
           if (psErr) {
             log('error', '[锁屏] 方法2失败:', psErr.message)
             diagLog('方法2失败: ' + psErr.message)
-            
+
             log('info', '[锁屏] 方法3: 尝试直接调用 user32.dll')
             diagLog('尝试方法3: user32.dll')
-            
-            exec('cmd /c "rundll32.exe user32.dll,LockWorkStation"', (cmdErr, cmdStdout, cmdStderr) => {
+
+            exec('cmd /c "rundll32.exe user32.dll,LockWorkStation"', (cmdErr) => {
               if (cmdErr) {
                 log('error', '[锁屏] 方法3失败:', cmdErr.message)
                 diagLog('方法3失败: ' + cmdErr.message)
@@ -321,219 +283,59 @@ function handleLockScreen() {
       } else {
         log('info', '[锁屏] 方法1成功')
         diagLog('方法1成功')
-        if (stdout) log('info', '[锁屏] stdout:', stdout)
-        if (stderr) log('info', '[锁屏] stderr:', stderr)
       }
     })
   } catch (e) {
     log('error', '[锁屏] 异常:', e.message)
     diagLog('异常: ' + e.message)
   }
-  
+
   log('info', '[锁屏] ========== handleLockScreen 完成 ==========')
   diagLog('handleLockScreen END')
 }
 
 function handleTextInput(text) {
-  if (!text || !robot) return
+  if (!text) return
   try {
-    robot.typeString(text)
+    _execTypeString(text)
     log('info', '[文本输入] 已输入: ' + text)
   } catch (e) {
     log('error', '[文本输入] 失败: ' + e.message)
   }
 }
 
-function normalizeAndClamp(x, y, screenWidth, screenHeight) {
-  const normalizedX = Math.max(0, Math.min(1, x || 0))
-  const normalizedY = Math.max(0, Math.min(1, y || 0))
-  
-  const pixelX = Math.round(normalizedX * screenWidth)
-  const pixelY = Math.round(normalizedY * screenHeight)
-  
-  return {
-    x: Math.max(0, Math.min(screenWidth, pixelX)),
-    y: Math.max(0, Math.min(screenHeight, pixelY))
-  }
-}
-
-function handleMouseMove(x, y, screenWidth, screenHeight) {
-  if (x !== undefined && y !== undefined) {
-    const pos = normalizeAndClamp(x, y, screenWidth, screenHeight)
-    currentMouseX = pos.x
-    currentMouseY = pos.y
-    robot.moveMouse(pos.x, pos.y)
-  }
-}
-
-function handleMouseMoveDelta(dx, dy, screenWidth, screenHeight) {
-  if (dx === undefined || dy === undefined) return
-  
-  const targetX = currentMouseX + Math.round(dx)
-  const targetY = currentMouseY + Math.round(dy)
-  
-  currentMouseX = Math.max(0, Math.min(screenWidth, targetX))
-  currentMouseY = Math.max(0, Math.min(screenHeight, targetY))
-  
-  robot.moveMouse(currentMouseX, currentMouseY)
-}
-
-function handleMouseDown(x, y, button, screenWidth, screenHeight) {
-  if (x !== undefined && y !== undefined) {
-    const pos = normalizeAndClamp(x, y, screenWidth, screenHeight)
-    currentMouseX = pos.x
-    currentMouseY = pos.y
-    robot.moveMouse(pos.x, pos.y)
-  }
-  
-  const mouseButton = getButtonName(button)
-  
-  if (!pressedButtons[mouseButton]) {
-    pressedButtons[mouseButton] = true
-    robot.mouseToggle('down', mouseButton)
-  }
-  lastMousedownTime = Date.now()
-}
-
-function sleepSyncMs(ms) {
-  const end = Date.now() + ms
-  while (Date.now() < end) {}
-}
-
-function sleepAsyncMs(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}
-
-async function handleMouseUp(x, y, button, screenWidth, screenHeight) {
-  const now = Date.now()
-  const mouseButton = getButtonName(button)
-
-  if (!pressedButtons[mouseButton]) {
-    if (now - lastMouseupTime < DEDUP_MOUSEUP_WINDOW_MS) {
-      return
-    }
-
-    if (now - lastMousedownTime < DEDUP_MOUSEUP_WINDOW_MS) {
-      pressedButtons[mouseButton] = true
-    } else {
-      if (x !== undefined && y !== undefined) {
-        const pos = normalizeAndClamp(x, y, screenWidth, screenHeight)
-        currentMouseX = pos.x
-        currentMouseY = pos.y
-        robot.moveMouse(pos.x, pos.y)
-      }
-      pressedButtons[mouseButton] = true
-      robot.mouseToggle('down', mouseButton)
-      lastMousedownTime = Date.now()
-    }
-  }
-
-  if (x !== undefined && y !== undefined && pressedButtons[mouseButton]) {
-    const pos = normalizeAndClamp(x, y, screenWidth, screenHeight)
-    currentMouseX = pos.x
-    currentMouseY = pos.y
-    robot.moveMouse(pos.x, pos.y)
-  }
-
-  const elapsed = Date.now() - lastMousedownTime
-  if (elapsed < MIN_CLICK_INTERVAL_MS) {
-    await sleepAsyncMs(MIN_CLICK_INTERVAL_MS - elapsed)
-  }
-
-  pressedButtons[mouseButton] = false
-  robot.mouseToggle('up', mouseButton)
-  lastMouseupTime = Date.now()
-}
-
-function handleClick(x, y, button, screenWidth, screenHeight) {
-  const pos = normalizeAndClamp(x, y, screenWidth, screenHeight)
-  currentMouseX = pos.x
-  currentMouseY = pos.y
-  
-  robot.moveMouse(pos.x, pos.y)
-  
-  const mouseButton = getButtonName(button)
-  robot.mouseClick(mouseButton)
-}
-
-function handleDoubleClick(x, y, button, screenWidth, screenHeight) {
-  const pos = normalizeAndClamp(x, y, screenWidth, screenHeight)
-  currentMouseX = pos.x
-  currentMouseY = pos.y
-  
-  robot.moveMouse(pos.x, pos.y)
-  
-  const mouseButton = getButtonName(button)
-  robot.mouseClick(mouseButton, true)
-}
-
-function handleMouseWheel(deltaY, deltaX, x, y, screenWidth, screenHeight) {
-  if (x !== undefined && y !== undefined) {
-    const pos = normalizeAndClamp(x, y, screenWidth, screenHeight)
-    robot.moveMouse(pos.x, pos.y)
-  }
-  
-  if (deltaY) {
-    wheelAccumulatorY += deltaY
-    const scrollAmount = Math.trunc(wheelAccumulatorY / 40)
-    if (scrollAmount !== 0) {
-      robot.scrollMouse(0, -scrollAmount)
-      wheelAccumulatorY -= scrollAmount * 40
-    }
-  }
-  
-  if (deltaX) {
-    wheelAccumulatorX += deltaX
-    const scrollAmountX = Math.trunc(wheelAccumulatorX / 40)
-    if (scrollAmountX !== 0) {
-      robot.scrollMouse(-scrollAmountX, 0)
-      wheelAccumulatorX -= scrollAmountX * 40
-    }
-  }
-}
-
-function handleMouseWheelBatch(accumulatedDeltaY, accumulatedDeltaX, screenWidth, screenHeight) {
-  if (accumulatedDeltaY) {
-    const scrollAmount = Math.round(accumulatedDeltaY / 120)
-    robot.scrollMouse(0, -scrollAmount)
-  }
-  
-  if (accumulatedDeltaX) {
-    const scrollAmountX = Math.round(accumulatedDeltaX / 120)
-    robot.scrollMouse(-scrollAmountX, 0)
-  }
-}
+// ---- 键盘事件处理 ----
 
 function handleKeyDown(code, key, ctrlKey, shiftKey, altKey, metaKey) {
   if (!code) return
-  
+
   try {
     if (ctrlKey !== undefined && ctrlKey !== pressedModifiers.Control) {
       pressedModifiers.Control = ctrlKey
-      robot.keyToggle('control', ctrlKey ? 'down' : 'up')
+      _execKeyToggle('control', ctrlKey ? 'down' : 'up')
     }
-    
+
     if (shiftKey !== undefined && shiftKey !== pressedModifiers.Shift) {
       pressedModifiers.Shift = shiftKey
-      robot.keyToggle('shift', shiftKey ? 'down' : 'up')
+      _execKeyToggle('shift', shiftKey ? 'down' : 'up')
     }
-    
+
     if (altKey !== undefined && altKey !== pressedModifiers.Alt) {
       pressedModifiers.Alt = altKey
-      robot.keyToggle('alt', altKey ? 'down' : 'up')
+      _execKeyToggle('alt', altKey ? 'down' : 'up')
     }
-    
+
     if (metaKey !== undefined && metaKey !== pressedModifiers.Meta) {
       pressedModifiers.Meta = metaKey
-      robot.keyToggle('command', metaKey ? 'down' : 'up')
+      _execKeyToggle('command', metaKey ? 'down' : 'up')
     }
-    
-    if (!isModifierKeyCode(code)) {
-      const robotKey = getRobotjsKey(code) || key || code.toLowerCase()
-      
+
+    if (!keycodes.isModifierKeyCode(code)) {
+      const robotKey = keycodes.getRobotjsKey(code) || key || code.toLowerCase()
+
       if (!pressedKeys.has(code)) {
         pressedKeys.add(code)
-        robot.keyToggle(robotKey, 'down')
+        _execKeyToggle(robotKey, 'down')
       }
     }
   } catch (e) {
@@ -543,112 +345,88 @@ function handleKeyDown(code, key, ctrlKey, shiftKey, altKey, metaKey) {
 
 function handleKeyUp(code, key, ctrlKey, shiftKey, altKey, metaKey) {
   if (!code) return
-  
+
   try {
-    if (!isModifierKeyCode(code)) {
-      const robotKey = getRobotjsKey(code) || key || code.toLowerCase()
+    if (!keycodes.isModifierKeyCode(code)) {
+      const robotKey = keycodes.getRobotjsKey(code) || key || code.toLowerCase()
 
       if (pressedKeys.has(code)) {
         pressedKeys.delete(code)
-        robot.keyToggle(robotKey, 'up')
+        _execKeyToggle(robotKey, 'up')
       }
     }
-    
+
     if (ctrlKey === false && pressedModifiers.Control) {
       pressedModifiers.Control = false
-      robot.keyToggle('control', 'up')
+      _execKeyToggle('control', 'up')
     }
-    
+
     if (shiftKey === false && pressedModifiers.Shift) {
       pressedModifiers.Shift = false
-      robot.keyToggle('shift', 'up')
+      _execKeyToggle('shift', 'up')
     }
-    
+
     if (altKey === false && pressedModifiers.Alt) {
       pressedModifiers.Alt = false
-      robot.keyToggle('alt', 'up')
+      _execKeyToggle('alt', 'up')
     }
-    
+
     if (metaKey === false && pressedModifiers.Meta) {
       pressedModifiers.Meta = false
-      robot.keyToggle('command', 'up')
+      _execKeyToggle('command', 'up')
     }
   } catch (e) {
     log('error', 'keyup 错误:', e.message)
   }
 }
 
-function getButtonName(button) {
-  if (typeof button === 'string') {
-    const lowerButton = button.toLowerCase()
-    if (lowerButton === 'right') return 'right'
-    if (lowerButton === 'middle') return 'middle'
-    return 'left'
-  }
-  if (typeof button === 'number') {
-    return BUTTON_MAP[button] || 'left'
-  }
-  return 'left'
-}
-
-function isModifierKeyCode(code) {
-  return ['ControlLeft', 'ControlRight', 'ShiftLeft', 'ShiftRight',
-          'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight',
-          'CapsLock', 'NumLock', 'ScrollLock'].includes(code)
-}
+// ---- 状态重置 ----
 
 function resetModifiers() {
   log('info', '重置输入修饰键状态')
   try {
-    if (robot) {
-      if (pressedModifiers.Control) {
-        robot.keyToggle('control', 'up')
+    if (pressedModifiers.Control) {
+      _execKeyToggle('control', 'up')
+    }
+    if (pressedModifiers.Shift) {
+      _execKeyToggle('shift', 'up')
+    }
+    if (pressedModifiers.Alt) {
+      _execKeyToggle('alt', 'up')
+    }
+    if (pressedModifiers.Meta) {
+      _execKeyToggle('command', 'up')
+    }
+
+    for (const btn of ['left', 'right', 'middle']) {
+      if (keycodes.pressedButtons[btn]) {
+        _execMouseToggle('up', btn)
       }
-      if (pressedModifiers.Shift) {
-        robot.keyToggle('shift', 'up')
-      }
-      if (pressedModifiers.Alt) {
-        robot.keyToggle('alt', 'up')
-      }
-      if (pressedModifiers.Meta) {
-        robot.keyToggle('command', 'up')
-      }
-      
-      if (pressedButtons.left) {
-        robot.mouseToggle('up', 'left')
-        pressedButtons.left = false
-      }
-      if (pressedButtons.right) {
-        robot.mouseToggle('up', 'right')
-        pressedButtons.right = false
-      }
-      if (pressedButtons.middle) {
-        robot.mouseToggle('up', 'middle')
-        pressedButtons.middle = false
-      }
-      
-      for (const code of pressedKeys) {
-        const robotKey = getRobotjsKey(code) || code.toLowerCase()
-        robot.keyToggle(robotKey, 'up')
-      }
+    }
+
+    for (const code of pressedKeys) {
+      const robotKey = keycodes.getRobotjsKey(code) || code.toLowerCase()
+      _execKeyToggle(robotKey, 'up')
     }
     pressedKeys.clear()
   } catch (e) {
     log('error', '重置错误:', e.message)
   }
-  
-  pressedModifiers = {
-    Control: false,
-    Shift: false,
-    Alt: false,
-    Meta: false
-  }
+
+  pressedModifiers.Control = false
+  pressedModifiers.Shift = false
+  pressedModifiers.Alt = false
+  pressedModifiers.Meta = false
 }
 
 function resetAllInputState() {
   log('info', '重置所有输入状态')
   resetModifiers()
+  mouse.resetMouseState()
+  keycodes.resetPressedState()
 }
+
+// ---- 解锁屏幕 ----
 
 async function handleUnlockScreen(remotePassword) {
   diagLog(`handleUnlockScreen START, remotePassword length=${remotePassword ? remotePassword.length : 0}`)
@@ -698,7 +476,7 @@ async function handleUnlockScreen(remotePassword) {
       log('info', `[解锁] 使用远程传入的密码，长度: ${passwordToUse.length}`)
     }
 
-    // 方案 0: 临时文件 + 解锁辅助脚本（最简单最可靠）
+    // 方案 0: 临时文件 + 解锁辅助脚本
     if (passwordToUse) {
       log('info', '[解锁] 方案 0: 写入临时密码文件...')
       try {
@@ -707,7 +485,6 @@ async function handleUnlockScreen(remotePassword) {
         if (shmResult.success) {
           log('info', '[解锁] ✅ 密码已写入临时文件')
 
-          // 调用解锁辅助脚本
           const helperPath = path.join(__dirname, '../resources/unlock-helper.ps1')
           log('info', `[解锁] 调用解锁辅助脚本: ${helperPath}`)
 
@@ -715,7 +492,7 @@ async function handleUnlockScreen(remotePassword) {
             'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
 
           if (fs.existsSync(helperPath)) {
-            const psChild = execFile(psPath, [
+            execFile(psPath, [
               '-ExecutionPolicy', 'Bypass',
               '-NoProfile',
               '-WindowStyle', 'Normal',
@@ -742,14 +519,13 @@ async function handleUnlockScreen(remotePassword) {
     usernameToUse = process.env.USERNAME || process.env.USER || 'Administrator'
     log('info', `[解锁] 当前用户名: ${usernameToUse}`)
 
-    // 始终尝试 Credential Provider 解锁（不依赖注册表检查）
-    // CP 通过标志文件工作，即使注册表检查失败也应尝试
+    // 始终尝试 Credential Provider 解锁
     diagLog(`handleUnlockScreen: trying CP with user=${usernameToUse}, hasPwd=${!!passwordToUse}`)
     log('info', '[解锁] 尝试 Credential Provider 解锁...')
     try {
       let cpUsername = usernameToUse || process.env.USERNAME || 'Administrator'
       let cpPassword = passwordToUse || ''
-      
+
       const cpResult = await credentialsManager.unlockWithCredentialProvider(cpUsername, cpPassword)
       diagLog(`handleUnlockScreen: CP result: ${JSON.stringify(cpResult)}`)
       log('info', `[解锁] Credential Provider 结果: ${JSON.stringify(cpResult)}`)
@@ -777,9 +553,6 @@ async function handleUnlockScreen(remotePassword) {
         log('info', `[解锁] 调用 serviceIntegration.unlockScreen(密码长度=${passwordToUse.length})`)
         const result = await serviceIntegration.unlockScreen(passwordToUse)
         log('info', `[解锁] 服务模式完整返回: ${JSON.stringify(result)}`)
-        log('info', `[解锁] result.success=${result?.success}`)
-        log('info', `[解锁] result.data=${JSON.stringify(result?.data || {})}`)
-        log('info', `[解锁] result.data.success=${result?.data?.success}`)
         if (result && result.data && result.data.success) {
           log('info', '[解锁] ✅ 服务模式解锁成功，结束流程')
           log('info', '═══════════════════════════════════════════')
@@ -788,7 +561,6 @@ async function handleUnlockScreen(remotePassword) {
         log('warn', '[解锁] 服务模式返回未成功，尝试其他方式')
       } catch (e) {
         log('warn', `[解锁] 服务模式解锁出错: ${e.message}`)
-        log('warn', `[解锁] 错误堆栈: ${e.stack || '无'}`)
       }
     } else if (serviceModeEnabled && !passwordToUse) {
       log('warn', '[解锁] 服务模式已启用但无可用密码，跳过服务模式')
@@ -803,30 +575,12 @@ async function handleUnlockScreen(remotePassword) {
         return
       } catch (e) {
         log('warn', `[解锁] SendInput 解锁失败: ${e.message}`)
-        log('warn', `[解锁] 错误堆栈: ${e.stack || '无'}`)
       }
     } else {
       log('warn', '[解锁] 没有可用密码，跳过 SendInput 方式')
     }
 
-    if (passwordToUse && robot) {
-      log('info', `[解锁] 尝试 robotjs 模拟键盘解锁（长度: ${passwordToUse.length}）...`)
-      try {
-        await unlockViaRobotjs(passwordToUse)
-        log('info', '[解锁] ✅ robotjs 解锁已执行，结束流程')
-        log('info', '═══════════════════════════════════════════')
-        return
-      } catch (e) {
-        log('warn', `[解锁] robotjs 解锁失败: ${e.message}`)
-        log('warn', `[解锁] 错误堆栈: ${e.stack || '无'}`)
-      }
-    } else if (!robot) {
-      log('warn', '[解锁] robot 模块未加载，跳过 robotjs 方式')
-    } else {
-      log('warn', '[解锁] 没有可用密码，跳过 robotjs 方式')
-    }
-
-    log('info', '[解锁] 尝试 tscon.exe 解锁（无需密码）...')
+log('info', '[解锁] 尝试 tscon.exe 解锁（无需密码）...')
     try {
       const tsconResult = await unlockViaTscon()
       if (tsconResult) {
@@ -836,7 +590,6 @@ async function handleUnlockScreen(remotePassword) {
       }
     } catch (e) {
       log('warn', `[解锁] tscon.exe 解锁失败: ${e.message}`)
-      log('warn', `[解锁] 错误堆栈: ${e.stack || '无'}`)
     }
 
     log('warn', '[解锁] ❌ 所有解锁方式均失败')
@@ -868,11 +621,8 @@ async function unlockViaTscon() {
 
       if (!sessionId || !/^\d+$/.test(sessionId)) {
         log('warn', `[tscon] 会话ID无效: "${sessionId}"，尝试使用默认会话ID 1`)
-        const defaultSessionId = '1'
-        log('info', `[tscon] 使用默认会话ID: ${defaultSessionId}`)
-        executeTscon(defaultSessionId, resolve, reject)
+        executeTscon('1', resolve, reject)
       } else {
-        log('info', `[tscon] 使用获取到的会话ID: ${sessionId}`)
         executeTscon(sessionId, resolve, reject)
       }
     })
@@ -993,14 +743,14 @@ public class InputHelper {
 }
 "@
 
-# Step 1: 唤醒锁屏界面（多次按空格确保激活）
+# Step 1: 唤醒锁屏界面
 for ($i = 0; $i -lt 5; $i++) {
     [InputHelper]::TapKey(0x20)
     Start-Sleep -Milliseconds 200
 }
 Start-Sleep -Milliseconds 1000
 
-# Step 2: 清除可能存在的旧输入（多次Backspace）
+# Step 2: 清除可能存在的旧输入
 for ($i = 0; $i -lt 50; $i++) {
     [InputHelper]::TapKey(0x08)
     Start-Sleep -Milliseconds 50
@@ -1011,13 +761,12 @@ Start-Sleep -Milliseconds 500
 $pwdBytes = [System.Convert]::FromBase64String("${escapedPassword}")
 $pwdText = [System.Text.Encoding]::Unicode.GetString($pwdBytes)
 
-# 逐字符输入，确保每个字符都有足够延迟
 foreach ($c in $pwdText.ToCharArray()) {
     [InputHelper]::TypeString($c.ToString())
     Start-Sleep -Milliseconds 100
 }
 
-# Step 4: 等待一会儿再按回车
+# Step 4: 等待后按回车
 Start-Sleep -Milliseconds 1000
 [InputHelper]::TapKey(0x0D)
 `
@@ -1054,55 +803,10 @@ Start-Sleep -Milliseconds 1000
   })
 }
 
-async function unlockViaRobotjs(password) {
-  log('info', `[robotjs] ========== unlockViaRobotjs 开始，密码长度: ${password.length} ==========`)
-  const primaryDisplay = screen.getPrimaryDisplay()
-  const centerX = Math.floor(primaryDisplay.size.width / 2)
-  const centerY = Math.floor(primaryDisplay.size.height / 2)
-  log('info', `[robotjs] 屏幕尺寸: ${primaryDisplay.size.width}x${primaryDisplay.size.height}, 中心: (${centerX}, ${centerY})`)
-
-  log('info', '[robotjs] 按任意键唤醒屏幕...')
-  robot.keyTap('shift')
-  await sleep(1000)
-
-  log('info', '[robotjs] 点击屏幕中央聚焦...')
-  robot.moveMouse(centerX, centerY)
-  await sleep(100)
-  robot.mouseClick()
-  await sleep(1500)
-
-  log('info', '[robotjs] 再次点击确保聚焦密码框...')
-  robot.mouseClick()
-  await sleep(1000)
-
-  log('info', `[robotjs] 输入密码: ${password.length} 个字符...`)
-  
-  for (let i = 0; i < password.length; i++) {
-    const char = password[i]
-    log('info', `[robotjs] 输入第 ${i + 1} 个字符: '${char}'`)
-    robot.typeString(char)
-    await sleep(100)
-  }
-
-  await sleep(500)
-  log('info', '[robotjs] 按回车确认...')
-  robot.keyTap('enter')
-  await sleep(500)
-  log('info', '[robotjs] ✅ unlockViaRobotjs 执行完成')
-  log('info', '[robotjs] ========== unlockViaRobotjs 结束 ==========')
-}
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}
-
 function cleanup() {
   resetAllInputState()
-  currentMouseX = 0
-  currentMouseY = 0
-  pressedKeys = new Set()
-  pressedButtons = { left: false, right: false, middle: false }
-  pressedModifiers = { Control: false, Shift: false, Alt: false, Meta: false }
+  mouse.resetMouseState()
+  keycodes.resetPressedState()
   log('info', '输入处理器已清理')
 }
 
@@ -1114,5 +818,5 @@ module.exports = {
   resetAllInputState,
   cleanup,
   initLogger,
-  flushInterpolationQueue: () => {}
+  setDiagEnabled
 }

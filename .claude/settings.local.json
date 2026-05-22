@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(HTTP_PROXY=\"\" HTTPS_PROXY=\"\" NO_PROXY=\"*\" npx vitest run)",
+      "Bash(node --check D:\\\\MyProg\\\\YCDesk\\\\.claude\\\\worktrees\\\\kind-haibt-168fc3\\\\shared\\\\auth-manager.test.js)",
+      "Bash(dir /b shared\\\\__test-utils__)",
+      "Bash(node --check windows\\\\vitest.integration.config.js)",
+      "Bash(unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy)",
+      "Bash(npx vitest *)",
+      "Bash(node -e \"console.log\\(require.resolve\\('../../src/main/auth-manager.js', {paths:['D:/MyProg/YCDesk/.claude/worktrees/kind-haibt-168fc3/windows/src/main/__tests__']}\\)\\)\")",
+      "Bash(dir \"D:\\\\MyProg\\\\YCDesk\\\\.claude\\\\worktrees\\\\kind-haibt-168fc3\\\\server\" /b)",
+      "Bash(node -e ' *)",
+      "Bash(npx eslint *)",
+      "Bash(Get-ChildItem -Path \"D:\\\\MyProg\\\\YCDesk\\\\.claude\\\\worktrees\\\\kind-haibt-168fc3\" -Depth 0 -Directory)",
+      "Bash(Select-Object Name)",
+      "Bash(npm --version)",
+      "Bash(npx --version)",
+      "Bash(npm ls *)",
+      "Bash(node sync-shared.js)",
+      "Bash(npm run *)"
+    ]
+  }
+}

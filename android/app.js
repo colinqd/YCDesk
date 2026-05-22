@@ -1078,15 +1078,14 @@ function sendPhysicalKeyEvent(eventType, e) {
   
   const inputCommand = convertToInputCommand(keyEvent)
   const message = JSON.stringify(inputCommand)
-  
-  if (s.inputChannel && s.inputChannelReady && s.inputChannel.readyState === 'open') {
+
+  // 优先使用 control 通道（可靠，已知可用）
+  if (s.dataChannel && s.dataChannel.readyState === 'open') {
+    s.dataChannel.send(message)
+  } else if (s.inputChannel && s.inputChannel.readyState === 'open') {
     if (s.inputChannel.bufferedAmount < 65536) {
       s.inputChannel.send(message)
-    } else if (s.dataChannel && s.dataChannel.readyState === 'open') {
-      s.dataChannel.send(message)
     }
-  } else if (s.dataChannel && s.dataChannel.readyState === 'open') {
-    s.dataChannel.send(message)
   }
 }
 

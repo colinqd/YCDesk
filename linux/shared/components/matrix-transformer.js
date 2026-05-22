@@ -662,8 +662,8 @@ if (typeof window !== 'undefined') {
     window.MatrixTransformer = MatrixTransformer
 }
 
-export { MatrixTransformer }
-export default MatrixTransformer
+// export { (removed for non-module script) MatrixTransformer }
+// export default MatrixTransformer (removed for non-module script)
 
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = MatrixTransformer

@@ -114,7 +114,7 @@ function notifyAllWindows(channel, data) {
   const windows = [getMainWindow(), getRemoteWindow()]
   for (const win of windows) {
     if (win && !win.isDestroyed()) {
-      try { win.webContents.send(channel, data) } catch (e) {}
+      try { win.webContents.send(channel, data) } catch (e) { log('warn', '发送 IPC 消息失败', { channel, error: e.message }) }
     }
   }
 }

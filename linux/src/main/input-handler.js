@@ -118,7 +118,7 @@ function resetAllInputState() {
       if (pressedModifiers.Shift) robot.keyToggle('shift', 'up')
       if (pressedModifiers.Alt) robot.keyToggle('alt', 'up')
       if (pressedModifiers.Meta) robot.keyToggle('command', 'up')
-    } catch (e) {}
+    } catch (e) { /* 按键复位失败，状态已重置 */ }
   }
 }
 

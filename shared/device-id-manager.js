@@ -13,8 +13,19 @@ class DeviceIdManager {
   generateRandomId() {
     const chars = this.deviceIdConfig.allowedChars
     let id = ''
+    const array = new Uint32Array(this.deviceIdConfig.defaultLength)
+    // 使用 Web Crypto API（仅在浏览器/Electron 渲染进程中可用）
+    if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+      crypto.getRandomValues(array)
+    } else {
+      // 回退：如果 crypto 不可用（测试环境），使用 Math.random()
+      // 注意：仅用于非安全场景
+      for (let i = 0; i < this.deviceIdConfig.defaultLength; i++) {
+        array[i] = Math.floor(Math.random() * 4294967296)
+      }
+    }
     for (let i = 0; i < this.deviceIdConfig.defaultLength; i++) {
-      id += chars.charAt(Math.floor(Math.random() * chars.length))
+      id += chars.charAt(array[i] % chars.length)
     }
     return id.toUpperCase()
   }

@@ -1,0 +1,24 @@
+{
+  "name": "ycdesk-monorepo",
+  "version": "3.3.0",
+  "private": true,
+  "description": "YCDesk 远程桌面控制 - 单仓库",
+  "workspaces": [
+    "windows",
+    "linux",
+    "android",
+    "server",
+    "server-gui"
+  ],
+  "scripts": {
+    "test": "npm run test --workspaces --if-present",
+    "lint": "eslint . --ext .js",
+    "version:sync": "node scripts/sync-version.js",
+    "build:all": "npm run build --workspaces --if-present"
+  },
+  "devDependencies": {
+    "electron": "^28.3.3",
+    "electron-builder": "^24.13.3",
+    "eslint": "^8.57.0"
+  }
+}

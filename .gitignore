@@ -58,6 +58,12 @@ android-server/.gradle/
 android-server/app/build/
 android-server/local.properties
 
+# User data (contains credentials, device IDs)
+windows/data/*.json
+!windows/data/*.example.json
+linux/data/*.json
+!linux/data/*.example.json
+
 # Linux
 linux/wget-log
 

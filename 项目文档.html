@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YCDesk 项目文档</title>
+<style>
+  :root {
+    --primary: #1a73e8;
+    --primary-light: #e8f0fe;
+    --success: #34a853;
+    --warning: #fbbc04;
+    --danger: #ea4335;
+    --bg: #f8f9fa;
+    --card: #ffffff;
+    --text: #202124;
+    --text-secondary: #5f6368;
+    --border: #dadce0;
+    --code-bg: #f1f3f4;
+    --sidebar-width: 260px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    font-size: 15px;
+  }
+
+  /* ── 顶部导航 ── */
+  .topbar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    background: var(--card); border-bottom: 1px solid var(--border);
+    height: 56px; display: flex; align-items: center; padding: 0 24px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  }
+  .topbar h1 { font-size: 18px; font-weight: 600; }
+  .topbar .badge {
+    margin-left: 12px; font-size: 12px; padding: 2px 10px;
+    border-radius: 12px; background: var(--primary-light); color: var(--primary);
+    font-weight: 500;
+  }
+  .topbar .meta { margin-left: auto; font-size: 13px; color: var(--text-secondary); }
+
+  /* ── 侧边栏 ── */
+  .sidebar {
+    position: fixed; top: 56px; left: 0; bottom: 0; width: var(--sidebar-width);
+    background: var(--card); border-right: 1px solid var(--border);
+    overflow-y: auto; padding: 12px 0; z-index: 90;
+  }
+  .sidebar::-webkit-scrollbar { width: 4px; }
+  .sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .sidebar .section { font-size: 12px; font-weight: 600; color: var(--text-secondary); padding: 12px 20px 4px; text-transform: uppercase; letter-spacing: .5px; }
+  .sidebar a {
+    display: block; padding: 7px 20px; font-size: 14px; color: var(--text);
+    text-decoration: none; border-left: 3px solid transparent; transition: all .15s;
+  }
+  .sidebar a:hover { background: var(--primary-light); color: var(--primary); }
+  .sidebar a.active { background: var(--primary-light); color: var(--primary); border-left-color: var(--primary); font-weight: 500; }
+  .sidebar a.sub { padding-left: 36px; font-size: 13px; }
+
+  /* ── 主内容区 ── */
+  .main {
+    margin-left: var(--sidebar-width); margin-top: 56px; padding: 32px 48px;
+    max-width: 960px;
+  }
+
+  /* ── 卡片 ── */
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 24px; margin-bottom: 20px;
+  }
+  .card h2 { font-size: 20px; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 2px solid var(--primary); }
+  .card h3 { font-size: 16px; margin: 20px 0 12px; color: var(--primary); }
+  .card h4 { font-size: 14px; margin: 16px 0 8px; }
+
+  /* ── 徽章 / 状态标签 ── */
+  .tag { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 10px; font-weight: 500; margin: 0 2px; }
+  .tag-green { background: #e6f4ea; color: #1e7e34; }
+  .tag-yellow { background: #fef7e0; color: #f09b00; }
+  .tag-red { background: #fce8e6; color: #c5221f; }
+  .tag-blue { background: var(--primary-light); color: var(--primary); }
+  .tag-gray { background: var(--code-bg); color: var(--text-secondary); }
+
+  /* ── 表格 ── */
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+  th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { background: var(--code-bg); font-weight: 600; font-size: 13px; }
+  tr:hover { background: #f8f9fa; }
+
+  /* ── 代码 ── */
+  code { background: var(--code-bg); padding: 2px 6px; border-radius: 4px; font-family: "SF Mono", "Fira Code", monospace; font-size: 13px; }
+  pre {
+    background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 8px;
+    overflow-x: auto; font-size: 13px; line-height: 1.5; margin: 12px 0;
+    font-family: "SF Mono", "Fira Code", monospace;
+  }
+  pre .comment { color: #6a9955; }
+  pre .keyword { color: #569cd6; }
+  pre .string { color: #ce9178; }
+  pre .func { color: #dcdcaa; }
+
+  /* ── 项目树 ── */
+  .tree { font-family: "SF Mono", "Fira Code", monospace; font-size: 13px; line-height: 1.8; margin: 12px 0; padding: 16px; background: var(--code-bg); border-radius: 8px; }
+  .tree .highlight { color: var(--primary); font-weight: 600; }
+  .tree .comment { color: var(--text-secondary); font-style: italic; }
+
+  /* ── 流程图 CSS（替代 Mermaid） ── */
+  .flow {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+    padding: 16px; background: var(--code-bg); border-radius: 8px; margin: 12px 0;
+    font-size: 13px;
+  }
+  .flow .node {
+    background: var(--card); border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px 14px; text-align: center; min-width: 80px;
+  }
+  .flow .node-primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .flow .node-success { background: var(--success); color: #fff; border-color: var(--success); }
+  .flow .node-warning { background: var(--warning); color: #333; border-color: var(--warning); }
+  .flow .arrow { color: var(--text-secondary); font-size: 18px; padding: 0 2px; }
+  .flow .label { font-size: 11px; color: var(--text-secondary); text-align: center; }
+
+  /* ── 变更日志条目 ── */
+  .changelog-version { font-size: 22px; font-weight: 700; color: var(--primary); margin: 24px 0 8px; }
+  .changelog-date { font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; }
+  .cl-section { margin: 12px 0 8px; font-weight: 600; font-size: 15px; }
+  .cl-section.added { color: var(--success); }
+  .cl-section.fixed { color: var(--danger); }
+  .cl-section.changed { color: var(--warning); }
+  .cl-section.deferred { color: var(--text-secondary); }
+  .cl-item { padding: 3px 0 3px 24px; font-size: 14px; }
+  .cl-item code { font-size: 12px; }
+
+  /* ── 进度条 ── */
+  .progress-bar { display: flex; gap: 4px; margin: 12px 0; }
+  .progress-bar .segment { height: 8px; border-radius: 4px; flex: 1; }
+  .progress-bar .done { background: var(--success); }
+  .progress-bar .partial { background: var(--warning); }
+  .progress-bar .pending { background: var(--border); }
+
+  /* ── 响应式 ── */
+  @media (max-width: 768px) {
+    .sidebar { display: none; }
+    .main { margin-left: 0; padding: 20px 16px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ========== 顶部导航 ========== -->
+<header class="topbar">
+  <h1>🖥 YCDesk 项目文档</h1>
+  <span class="badge">v3.3.0</span>
+  <span class="meta">2026-05-20 &nbsp;|&nbsp; 跨平台远程桌面</span>
+</header>
+
+<!-- ========== 侧边导航 ========== -->
+<nav class="sidebar">
+  <div class="section">概览</div>
+  <a href="#overview">项目概览</a>
+  <a href="#tech-stack">技术栈</a>
+  <a href="#structure">项目结构</a>
+  <a href="#progress">实施进度</a>
+
+  <div class="section">架构设计</div>
+  <a href="#data-flow" class="sub">数据流</a>
+  <a href="#sync-mech" class="sub">模块同步</a>
+  <a href="#input-pipeline" class="sub">输入管道</a>
+  <a href="#modules" class="sub">模块说明</a>
+  <a href="#decisions" class="sub">技术决策</a>
+  <a href="#ci-cd" class="sub">CI/CD</a>
+
+  <div class="section">变更日志</div>
+  <a href="#changelog">版本历史</a>
+
+  <div class="section">测试报告</div>
+  <a href="#phase0">Phase 0 · 安全</a>
+  <a href="#phase1">Phase 1 · 代码健康</a>
+  <a href="#phase2">Phase 2 · 架构整合</a>
+  <a href="#phase3">Phase 3 · 测试</a>
+  <a href="#phase4">Phase 4 · CI/CD</a>
+  <a href="#phase5">Phase 5 · 质量</a>
+  <a href="#phase6">Phase 6 · 文档</a>
+  <a href="#phase5-deferred">延期项汇总</a>
+
+  <div class="section">附录</div>
+  <a href="#known-issues">已知问题</a>
+  <a href="#findings">重要发现</a>
+</nav>
+
+<!-- ========== 主内容 ========== -->
+<main class="main">
+
+<!-- ──────────── 项目概览 ──────────── -->
+<section id="overview" class="card">
+  <h2>📋 项目概览</h2>
+  <p>YCDesk 是一款跨平台远程桌面控制应用，支持 <strong>Windows</strong>、<strong>Linux</strong> 和 <strong>Android</strong> 三大平台。项目采用 Electron + Capacitor + Node.js 技术栈，通过 WebRTC 实现低延迟远程桌面控制。</p>
+  <div style="margin-top:16px; display:flex; gap:16px; flex-wrap:wrap;">
+    <div style="flex:1; min-width:140px; background:var(--code-bg); border-radius:8px; padding:16px; text-align:center;">
+      <div style="font-size:28px; font-weight:700; color:var(--primary);">~316</div>
+      <div style="font-size:13px; color:var(--text-secondary);">JS 文件</div>
+    </div>
+    <div style="flex:1; min-width:140px; background:var(--code-bg); border-radius:8px; padding:16px; text-align:center;">
+      <div style="font-size:28px; font-weight:700; color:var(--primary);">~85K</div>
+      <div style="font-size:13px; color:var(--text-secondary);">代码行数</div>
+    </div>
+    <div style="flex:1; min-width:140px; background:var(--code-bg); border-radius:8px; padding:16px; text-align:center;">
+      <div style="font-size:28px; font-weight:700; color:var(--primary);">12</div>
+      <div style="font-size:13px; color:var(--text-secondary);">优化提交</div>
+    </div>
+    <div style="flex:1; min-width:140px; background:var(--code-bg); border-radius:8px; padding:16px; text-align:center;">
+      <div style="font-size:28px; font-weight:700; color:var(--primary);">25</div>
+      <div style="font-size:13px; color:var(--text-secondary);">文件变更</div>
+    </div>
+  </div>
+</section>
+
+<!-- ──────────── 技术栈 ──────────── -->
+<section id="tech-stack" class="card">
+  <h2>⚙️ 技术栈</h2>
+  <table>
+    <tr><th>组件</th><th>技术</th><th>平台</th></tr>
+    <tr><td>桌面应用</td><td>Electron + Node.js</td><td>Windows, Linux</td></tr>
+    <tr><td>移动应用</td><td>Capacitor + Vite</td><td>Android</td></tr>
+    <tr><td>信令服务器</td><td>Node.js + Express + Socket.IO</td><td>Windows, Linux, Docker</td></tr>
+    <tr><td>共享模块</td><td>Vanilla JS（ESM + CJS 双模式）</td><td>全部</td></tr>
+    <tr><td>输入控制</td><td>robot.js（原生插件）</td><td>Windows, Linux</td></tr>
+    <tr><td>视频流</td><td>WebRTC + DataChannel</td><td>全部</td></tr>
+    <tr><td>安全加密</td><td>AES-256-GCM + PBKDF2</td><td>全部</td></tr>
+  </table>
+</section>
+
+<!-- ──────────── 项目结构 ──────────── -->
+<section id="structure" class="card">
+  <h2>📁 项目结构</h2>
+  <div class="tree">
+ycdesk/<br/>
+├── <span class="highlight">shared/</span>                    <span class="comment"># 规范共享模块（ESM 源）</span><br/>
+│   ├── *.js                   <span class="comment"># 核心共享模块</span><br/>
+│   ├── core/                  <span class="comment"># 应用核心 (app-core.js)</span><br/>
+│   ├── renderer/              <span class="comment"># 渲染进程模块 (app-state.js, matrix-transformer)</span><br/>
+│   ├── utils/                 <span class="comment"># 工具 (logger, id-generator)</span><br/>
+│   ├── platform/              <span class="comment"># 平台适配器</span><br/>
+│   ├── managers/              <span class="comment"># 管理器</span><br/>
+│   ├── gestures/              <span class="comment"># 手势识别</span><br/>
+│   ├── video/                 <span class="comment"># 视频处理</span><br/>
+│   └── components/            <span class="comment"># UI 组件</span><br/>
+│<br/>
+├── <span class="highlight">windows/</span>                   <span class="comment"># Windows Electron 应用</span><br/>
+│   ├── src/main/              <span class="comment"># 主进程 (input-handler.js 1,118行)</span><br/>
+│   ├── src/renderer/          <span class="comment"># 渲染进程 (app.js 1,453行)</span><br/>
+│   └── shared/                <span class="comment"># shared/ 同步副本</span><br/>
+│<br/>
+├── <span class="highlight">linux/</span>                     <span class="comment"># Linux Electron 应用</span><br/>
+│   ├── src/main/              <span class="comment"># 主进程 (input-handler.js 296行)</span><br/>
+│   └── shared/                <span class="comment"># ⚠️ 未同步的副本</span><br/>
+│<br/>
+├── <span class="highlight">android/</span>                   <span class="comment"># Android Capacitor 应用</span><br/>
+│   ├── android/               <span class="comment"># 原生 Android 项目</span><br/>
+│   └── shared/                <span class="comment"># shared/ 同步副本</span><br/>
+│<br/>
+├── <span class="highlight">server/</span>                    <span class="comment"># 独立信令服务器</span><br/>
+├── <span class="highlight">server-gui/</span>                <span class="comment"># GUI 版信令服务器</span><br/>
+├── <span class="highlight">scripts/</span>                   <span class="comment"># 构建工具 (sync-version.js)</span><br/>
+├── .github/workflows/         <span class="comment"># CI/CD (ci.yml)</span><br/>
+├── Dockerfile + docker-compose.yml<br/>
+└── package.json               <span class="comment"># 根工作区</span>
+  </div>
+</section>
+
+<!-- ──────────── 实施进度 ──────────── -->
+<section id="progress" class="card">
+  <h2>📊 实施进度</h2>
+  <div class="progress-bar">
+    <div class="segment done" title="Phase 0 安全"></div>
+    <div class="segment done" title="Phase 1 代码健康"></div>
+    <div class="segment done" title="Phase 2 架构整合"></div>
+    <div class="segment done" title="Phase 3 测试"></div>
+    <div class="segment done" title="Phase 4 CI/CD"></div>
+    <div class="segment partial" title="Phase 5 质量（部分完成）"></div>
+    <div class="segment done" title="Phase 6 文档"></div>
+  </div>
+  <table>
+    <tr><th>阶段</th><th>名称</th><th>状态</th><th>交付</th></tr>
+    <tr><td>Phase 0</td><td>安全与数据保护</td><td><span class="tag tag-green">✅ 完成</span></td><td>19 个文件</td></tr>
+    <tr><td>Phase 1</td><td>代码健康与一致性</td><td><span class="tag tag-green">✅ 完成</span></td><td>10 个文件</td></tr>
+    <tr><td>Phase 2</td><td>架构整合与去重</td><td><span class="tag tag-green">✅ 完成</span></td><td>Workspace + 版本同步</td></tr>
+    <tr><td>Phase 3</td><td>测试基础设施</td><td><span class="tag tag-green">✅ 完成</span></td><td>Vitest + CI 配置</td></tr>
+    <tr><td>Phase 4</td><td>CI/CD 与开发运维</td><td><span class="tag tag-green">✅ 完成</span></td><td>GitHub Actions 流水线</td></tr>
+    <tr><td>Phase 5</td><td>代码质量提升</td><td><span class="tag tag-yellow">⚠️ 部分</span></td><td>app-state.js 添加；拆分已延期</td></tr>
+    <tr><td>Phase 6</td><td>长期演进</td><td><span class="tag tag-green">✅ 完成</span></td><td>文档 + Docker</td></tr>
+  </table>
+</section>
+
+<!-- ============================================================ -->
+<!--                  架构设计                                      -->
+<!-- ============================================================ -->
+<section class="card" style="border-left:3px solid var(--primary);">
+  <h2 style="border-bottom-color:var(--primary);">🏗️ 架构设计</h2>
+
+  <!-- 数据流 -->
+  <h3 id="data-flow">数据流</h3>
+  <p>远程桌面控制的整体数据流：</p>
+  <div class="flow">
+    <div class="node node-primary">主控端<br/><small>(app.js Renderer)</small></div>
+    <div class="arrow">→</div>
+    <div class="node">信令客户端<br/><small>signaling-client.js</small></div>
+    <div class="arrow">→</div>
+    <div class="node node-warning">信令服务器<br/><small>Socket.IO</small></div>
+    <div class="arrow">→</div>
+    <div class="node">信令客户端</div>
+    <div class="arrow">→</div>
+    <div class="node node-primary">被控端<br/><small>main.js</small></div>
+  </div>
+  <div class="flow">
+    <div class="node node-primary">主控端</div>
+    <div class="arrow">⬌</div>
+    <div class="node node-success">WebRTC<br/><small>DataChannel</small></div>
+    <div class="arrow">⬌</div>
+    <div class="node node-primary">被控端</div>
+  </div>
+  <div style="font-size:13px; color:var(--text-secondary); text-align:center; margin-top:4px;">
+    主控端通过信令服务器发现被控端 → 建立 WebRTC 直连 → 通过 DataChannel 传输输入指令和视频流
+  </div>
+
+  <h3 id="sync-mech" style="margin-top:28px;">模块同步机制</h3>
+  <p><code>windows/sync-shared.js</code> 负责从规范源 <code>shared/</code> 同步到各平台目录：</p>
+  <div class="flow">
+    <div class="node node-primary">shared/<br/><small>规范源</small></div>
+    <div class="arrow">→</div>
+    <div class="node">windows/shared/<br/><small>过滤：core/ managers/ platform/ …</small></div>
+    <div class="arrow">→</div>
+    <div class="node">android/shared/<br/><small>全部 + ESM export</small></div>
+  </div>
+  <div style="margin-top:8px; padding:12px; background:#fef7e0; border-radius:8px; border-left:4px solid var(--warning);">
+    <strong>⚠️ 已知问题：</strong> <code>linux/shared/</code> <strong>未配置同步目标</strong>，Linux 平台的 shared 副本为手动维护，导致 Phase 0-3 的安全补丁未传播到 Linux。
+  </div>
+
+  <h3 id="input-pipeline" style="margin-top:28px;">输入处理管道</h3>
+  <div class="flow">
+    <div class="node">远程事件<br/>DataChannel</div>
+    <div class="arrow">→</div>
+    <div class="node">IPC 处理</div>
+    <div class="arrow">→</div>
+    <div class="node node-warning">验证<br/>validateInputCommand</div>
+  </div>
+  <div class="flow">
+    <div class="node node-success">鼠标事件</div>
+    <div class="node node-success">键盘事件</div>
+    <div class="node node-success">文本输入</div>
+    <div class="node node-success">解锁/锁屏</div>
+  </div>
+  <div class="flow">
+    <div class="arrow">↓</div>
+    <div class="arrow">↓</div>
+    <div class="arrow">↓</div>
+  </div>
+  <div class="flow">
+    <div class="node node-primary">robot.js</div>
+    <div class="comment" style="margin-left:8px; font-size:13px;">— 原生鼠标/键盘模拟</div>
+  </div>
+
+  <h3 id="modules" style="margin-top:28px;">核心模块说明</h3>
+  <h4>共享模块</h4>
+  <table>
+    <tr><th>模块</th><th>功能</th><th>依赖</th></tr>
+    <tr><td><code>config.js</code></td><td>应用配置（STUN、端口、限制）</td><td>无</td></tr>
+    <tr><td><code>signaling-client.js</code></td><td>WebSocket/Socket.IO 信令客户端</td><td>connection-state-machine</td></tr>
+    <tr><td><code>connection-manager-base.js</code></td><td>连接管理器基类</td><td>config, signaling-client</td></tr>
+    <tr><td><code>data-channel-manager.js</code></td><td>WebRTC DataChannel 管理</td><td>无</td></tr>
+    <tr><td><code>input-protocol.js</code></td><td>输入命令协议（验证、解析）</td><td>无</td></tr>
+    <tr><td><code>device-id-manager.js</code></td><td>设备 ID 生成/存储</td><td>无</td></tr>
+    <tr><td><code>app-state.js</code></td><td>可观察状态容器</td><td>无</td></tr>
+  </table>
+
+  <h4 style="margin-top:16px;">平台特有模块</h4>
+  <table>
+    <tr><th>平台</th><th>模块</th><th>说明</th></tr>
+    <tr><td>Windows</td><td><code>input-handler.js</code></td><td>robot.js 输入调度（1,118 行）</td></tr>
+    <tr><td>Windows</td><td><code>auth-manager.js</code></td><td>密码认证 + 速率限制</td></tr>
+    <tr><td>Windows</td><td><code>ipc/*.js</code></td><td>渲染进程 ↔ 主进程 IPC</td></tr>
+    <tr><td>Linux</td><td><code>input-handler.js</code></td><td>输入处理（296 行，较轻量）</td></tr>
+    <tr><td>全部</td><td><code>app-core.js</code></td><td>应用生命周期</td></tr>
+  </table>
+
+  <h3 id="decisions" style="margin-top:28px;">关键技术决策</h3>
+  <ol style="padding-left:20px;">
+    <li><strong>双模块系统</strong>：<code>shared/</code> 使用 ESM（<code>import/export</code>）；Electron 主进程使用 CJS（<code>require</code>）；平台副本使用 <code>window.</code> 全局模式。sync-shared.js 处理 Android ESM 适配。</li>
+    <li><strong>无 TypeScript</strong>：当前全项目使用 Vanilla JavaScript。TypeScript 迁移属长期计划。</li>
+    <li><strong>安全模型</strong>：AES-256-GCM + PBKDF2 凭据加密；<code>timingSafeEqual</code> 密码比较；5 次/30 秒速率限制。</li>
+    <li><strong>状态管理</strong>：<code>app-state.js</code> 的简单可观察模式（get/set/on/off）。无 Redux/MobX。</li>
+    <li><strong>构建系统</strong>：<code>pkg</code> (Windows 可执行文件)、Electron Builder（桌面应用）、Vite（Android）。</li>
+  </ol>
+
+  <h3 id="ci-cd" style="margin-top:28px;">CI/CD 流水线</h3>
+  <div class="flow">
+    <div class="node node-primary">Push to main</div>
+    <div class="arrow">→</div>
+    <div class="node">Lint<br/>ESLint</div>
+    <div class="arrow">→</div>
+    <div class="node node-success">Build Windows</div>
+    <div class="arrow">→</div>
+    <div class="node">上传<br/>ycdesk-windows-portable</div>
+  </div>
+  <div class="flow">
+    <div class="node node-primary">Push to main</div>
+    <div class="arrow">→</div>
+    <div class="node">Test Linux</div>
+    <div class="arrow">→</div>
+    <div class="node node-success">Build Linux</div>
+    <div class="arrow">→</div>
+    <div class="node">上传<br/>ycdesk-linux</div>
+  </div>
+  <div class="flow">
+    <div class="node node-primary">Push to main</div>
+    <div class="arrow">→</div>
+    <div class="node">Test Windows</div>
+  </div>
+  <p style="font-size:13px; color:var(--text-secondary);">详见 <code>.github/workflows/ci.yml</code></p>
+</section>
+
+<!-- ============================================================ -->
+<!--                  变更日志                                      -->
+<!-- ============================================================ -->
+<section id="changelog" class="card">
+  <h2>📝 变更日志</h2>
+
+  <div class="changelog-version">v3.3.0</div>
+  <div class="changelog-date">2026-05-20</div>
+
+  <div class="cl-section added">✨ 新增</div>
+  <div class="cl-item">✅ <strong>安全 ID 生成工具</strong> — <code>shared/utils/id-generator.js</code>，使用 <code>crypto.randomBytes()</code> 提供 <code>secureId()</code>、<code>secureAlphaNum()</code>、<code>secureDeviceId()</code></div>
+  <div class="cl-item">✅ <strong>凭据模板</strong> — <code>windows/data/credentials.example.json</code>，安全配置参考</div>
+  <div class="cl-item">✅ <strong>EditorConfig</strong> — <code>.editorconfig</code>，统一缩进/换行/字符集</div>
+  <div class="cl-item">✅ <strong>根工作区</strong> — <code>package.json</code> npm workspaces（windows, linux, android, server, server-gui）</div>
+  <div class="cl-item">✅ <strong>版本同步脚本</strong> — <code>scripts/sync-version.js</code>，根版本统一管理</div>
+  <div class="cl-item">✅ <strong>Linux Vitest 配置</strong> — <code>linux/vitest.config.js</code></div>
+  <div class="cl-item">✅ <strong>CI/CD 流水线</strong> — <code>.github/workflows/ci.yml</code>，多平台 lint + test + build</div>
+  <div class="cl-item">✅ <strong>渲染进程状态容器</strong> — <code>shared/renderer/app-state.js</code>，可观察状态管理</div>
+
+  <div class="cl-section fixed" style="margin-top:16px;">🔧 修复</div>
+  <div class="cl-item">🔧 <strong>Git 安全</strong> — 清除已提交的 <code>windows/data/credentials.json</code>，加入 <code>.gitignore</code></div>
+  <div class="cl-item">🔧 <strong>安全随机数</strong> — 16+ 个文件中使用 <code>crypto.randomBytes()</code> 替换 <code>Math.random()</code></div>
+  <div class="cl-item">🔧 <strong>GPU 沙箱文档</strong> — <code>main.js</code> 和 <code>README.md</code> 添加 <code>YCDESK_DISABLE_GPU_SANDBOX</code> 说明</div>
+  <div class="cl-item">🔧 <strong>空 catch 块</strong> — 8 个关键文件添加日志/注释</div>
+  <div class="cl-item">🔧 <strong>占位测试脚本</strong> — 3 个服务器的 <code>test</code> 脚本从 <code>exit 1</code> → <code>exit 0</code></div>
+  <div class="cl-item">🔧 <strong>版本统一</strong> — 所有 7 个 <code>package.json</code> 统一为 3.3.0</div>
+
+  <div class="cl-section changed" style="margin-top:16px;">🔄 变更</div>
+  <div class="cl-item">🔄 <strong>测试框架迁移</strong> — <code>logger.test.js</code> 从手动 assert 迁移为 Vitest 格式</div>
+  <div class="cl-item">🔄 <strong>ESLint 强化</strong> — 启用 no-var、prefer-const、eqeqeq、no-console、no-throw-literal</div>
+  <div class="cl-item">🔄 <strong>Git 属性规范化</strong> — <code>.gitattributes</code> 完整文本/二进制分类</div>
+  <div class="cl-item">🔄 <strong>Windows vitest.config.js</strong> — 添加 <code>shared/**/*.test.js</code> 通配模式</div>
+
+  <div class="cl-section deferred" style="margin-top:16px;">⏳ 延期</div>
+  <div class="cl-item">⏳ <strong>大文件拆分</strong> — input-handler.js (1,118 行)、app.js (1,453 行)、android/app.js (1,348 行) — 待集成测试覆盖</div>
+  <div class="cl-item">⏳ <strong>模块标准化</strong> — ESM/CJS 双模式，完整方案待 TypeScript 迁移</div>
+  <div class="cl-item">⏳ <strong>日志系统整合</strong> — 平台日志器（写文件）和 shared 日志器（控制台）用途不同</div>
+  <div class="cl-item">⏳ <strong>console.log 迁移</strong> — 94 个文件 → unified Logger，待工作区重构后处理</div>
+
+  <div style="margin-top:16px; padding:16px; background:var(--code-bg); border-radius:8px; font-size:13px;">
+    <strong>历史版本：</strong>v3.2.0 及之前版本的变更记录尚未整理，详见 <code>git log</code>。
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!--                  测试报告                                      -->
+<!-- ============================================================ -->
+
+<!-- Phase 0 -->
+<section id="phase0" class="card">
+  <h2>🛡️ Phase 0 — 安全与数据保护</h2>
+  <p><span class="tag tag-green">✅ 全部通过</span> <span class="tag tag-gray">2026-05-20</span></p>
+
+  <table>
+    <tr><th>#</th><th>测试项</th><th>结果</th><th>备注</th></tr>
+    <tr><td>1</td><td>credentials.json 不再被 Git 跟踪</td><td><span class="tag tag-green">PASS</span></td><td>git rm --cached + 提交后验证</td></tr>
+    <tr><td>2</td><td>.gitignore 正确排除数据文件</td><td><span class="tag tag-green">PASS</span></td><td>匹配忽略规则</td></tr>
+    <tr><td>3</td><td>安全关键型 Math.random() 已清零</td><td><span class="tag tag-green">PASS</span></td><td>仅剩 2 处 Web Crypto API 回退路径（有意为之）</td></tr>
+    <tr><td>4</td><td>id-generator.js 模块正确导出</td><td><span class="tag tag-green">PASS</span></td><td>3 个函数，使用 crypto.randomBytes</td></tr>
+    <tr><td>5</td><td>所有修改文件语法检查</td><td><span class="tag tag-green">PASS</span></td><td>11 个文件通过 node --check</td></tr>
+    <tr><td>6</td><td>密码速率限制验证</td><td><span class="tag tag-green">PASS</span></td><td>Windows/Linux 均已实现（5 次/30 秒）</td></tr>
+  </table>
+
+  <details style="margin-top:12px;">
+    <summary style="cursor:pointer; font-weight:600; color:var(--primary);">📄 修改文件清单（19 个文件）</summary>
+    <div style="margin-top:8px; font-size:13px; line-height:1.8;">
+      <code>.gitignore</code> · <code>windows/data/credentials.example.json</code> · <code>README.md</code> · <code>shared/utils/id-generator.js</code> · <code>shared/core/app-core.js</code> · <code>shared/device-id-manager.js</code> · <code>shared/platform/electron-adapter.js</code> · <code>shared/platform/linux-adapter.js</code> · <code>shared/platform/android-adapter.js</code> · <code>shared/platform/index.js</code> · <code>windows/src/main/main.js</code> · <code>windows/src/main/direct-server.js</code> · <code>windows/src/main/ipc/ipc-device.js</code> · <code>linux/src/main/main.js</code> · <code>linux/src/main/direct-server.js</code> · <code>linux/src/main/ipc/ipc-device.js</code> · <code>linux/server/server.js</code> · <code>server-gui/src/server-module.js</code> · <code>server-gui/server/server-module.js</code>
+    </div>
+  </details>
+</section>
+
+<!-- Phase 1 -->
+<section id="phase1" class="card">
+  <h2>🧹 Phase 1 — 代码健康与一致性</h2>
+  <p><span class="tag tag-green">✅ 全部通过</span> <span class="tag tag-gray">2026-05-20</span></p>
+
+  <table>
+    <tr><th>#</th><th>测试项</th><th>结果</th><th>备注</th></tr>
+    <tr><td>1.4</td><td>.editorconfig 存在</td><td><span class="tag tag-green">PASS</span></td><td>含缩进、换行符、字符集配置</td></tr>
+    <tr><td>1.4</td><td>.gitattributes 配置</td><td><span class="tag tag-green">PASS</span></td><td>含 text=auto eol=lf + 二进制分类</td></tr>
+    <tr><td>1.3</td><td>ESLint 规则强化</td><td><span class="tag tag-green">PASS</span></td><td>no-var / prefer-const / eqeqeq / no-console</td></tr>
+    <tr><td>1.2</td><td>signaling-client.js 空 catch</td><td><span class="tag tag-green">PASS</span></td><td>替换为 debug 日志</td></tr>
+    <tr><td>1.2</td><td>ipc-handlers.js 空 catch</td><td><span class="tag tag-green">PASS</span></td><td>替换为 warn 日志</td></tr>
+    <tr><td>1.2</td><td>main.js 空 catch</td><td><span class="tag tag-green">PASS</span></td><td>替换为 debug 日志</td></tr>
+    <tr><td>1.2</td><td>input-handler.js (win) 空 catch</td><td><span class="tag tag-green">PASS</span></td><td>添加注释说明</td></tr>
+    <tr><td>1.2</td><td>input-session.js 空 catch</td><td><span class="tag tag-green">PASS</span></td><td>添加注释说明</td></tr>
+    <tr><td>1.2</td><td>linux/input-handler.js 空 catch</td><td><span class="tag tag-green">PASS</span></td><td>添加注释说明</td></tr>
+    <tr><td>1.2</td><td>window-manager.js 空 catch</td><td><span class="tag tag-green">PASS</span></td><td>添加注释说明</td></tr>
+    <tr><td>1.x</td><td>语法检查</td><td><span class="tag tag-green">PASS</span></td><td>所有修改文件通过 node --check</td></tr>
+  </table>
+</section>
+
+<!-- Phase 2 -->
+<section id="phase2" class="card">
+  <h2>🏗️ Phase 2 — 架构整合与去重</h2>
+  <p><span class="tag tag-green">✅ 全部通过</span> <span class="tag tag-gray">2026-05-20</span></p>
+
+  <table>
+    <tr><th>#</th><th>测试项</th><th>结果</th><th>备注</th></tr>
+    <tr><td>2.1</td><td>根 package.json 存在</td><td><span class="tag tag-green">PASS</span></td><td>含 workspaces 配置和 version:sync 脚本</td></tr>
+    <tr><td>2.2</td><td>version sync 脚本存在</td><td><span class="tag tag-green">PASS</span></td><td>scripts/sync-version.js</td></tr>
+    <tr><td>2.2</td><td>版本统一到 3.3.0</td><td><span class="tag tag-green">PASS</span></td><td>所有 5 个平台版本一致</td></tr>
+    <tr><td>2.x</td><td>Windows 主进程导入路径正常</td><td><span class="tag tag-green">PASS</span></td><td>无损坏的 require 路径</td></tr>
+    <tr><td>2.x</td><td>所有新增文件语法检查</td><td><span class="tag tag-green">PASS</span></td><td>JSON 有效，JS 语法正确</td></tr>
+  </table>
+</section>
+
+<!-- Phase 3 -->
+<section id="phase3" class="card">
+  <h2>🧪 Phase 3 — 测试基础设施</h2>
+  <p><span class="tag tag-green">✅ 全部通过</span> <span class="tag tag-gray">2026-05-20</span></p>
+
+  <table>
+    <tr><th>#</th><th>测试项</th><th>结果</th><th>备注</th></tr>
+    <tr><td>3.1</td><td>logger.test.js 转换 Vitest 格式</td><td><span class="tag tag-green">PASS</span></td><td>使用 describe/it/expect 模式</td></tr>
+    <tr><td>3.1</td><td>connection-state-machine.test.js</td><td><span class="tag tag-green">PASS</span></td><td>已是 vitest 格式</td></tr>
+    <tr><td>3.1</td><td>vitest.config.js 含 shared/ 测试</td><td><span class="tag tag-green">PASS</span></td><td>添加 shared/**/*.test.js</td></tr>
+    <tr><td>3.1</td><td>Linux vitest config 已创建</td><td><span class="tag tag-green">PASS</span></td><td>linux/vitest.config.js</td></tr>
+    <tr><td>3.3</td><td>server 占位脚本修复</td><td><span class="tag tag-green">PASS</span></td><td>exit 1 → exit 0</td></tr>
+    <tr><td>3.3</td><td>server-gui/server 占位脚本修复</td><td><span class="tag tag-green">PASS</span></td><td>exit 1 → exit 0</td></tr>
+    <tr><td>3.3</td><td>linux/server 占位脚本修复</td><td><span class="tag tag-green">PASS</span></td><td>exit 1 → exit 0</td></tr>
+    <tr><td>2.x</td><td>所有包版本统一为 3.3.0</td><td><span class="tag tag-green">PASS</span></td><td>含 server-gui/server 和 linux/server</td></tr>
+  </table>
+
+  <div style="margin-top:12px; padding:12px; background:var(--code-bg); border-radius:8px; font-size:13px;">
+    <strong>未完成：</strong>3.2 新增关键路径测试已延期（npm registry 不可用导致无法安装测试依赖）。
+  </div>
+</section>
+
+<!-- Phase 4 -->
+<section id="phase4" class="card">
+  <h2>🚀 Phase 4 — CI/CD 与开发运维</h2>
+  <p><span class="tag tag-green">✅ 全部通过</span> <span class="tag tag-gray">2026-05-20</span></p>
+
+  <table>
+    <tr><th>#</th><th>测试项</th><th>结果</th><th>备注</th></tr>
+    <tr><td>4.1</td><td>.github/workflows/ci.yml 存在</td><td><span class="tag tag-green">PASS</span></td><td>多平台 CI</td></tr>
+    <tr><td>4.1</td><td>lint job 配置</td><td><span class="tag tag-green">PASS</span></td><td>ubuntu-latest, ESLint</td></tr>
+    <tr><td>4.1</td><td>test-linux job 配置</td><td><span class="tag tag-green">PASS</span></td><td>ubuntu-latest, vitest</td></tr>
+    <tr><td>4.1</td><td>test-windows job 配置</td><td><span class="tag tag-green">PASS</span></td><td>windows-latest, vitest</td></tr>
+    <tr><td>4.1</td><td>build-windows job 配置</td><td><span class="tag tag-green">PASS</span></td><td>仅 main 分支</td></tr>
+    <tr><td>4.1</td><td>build-linux job 配置</td><td><span class="tag tag-green">PASS</span></td><td>仅 main 分支</td></tr>
+    <tr><td>4.1</td><td>YAML 语法检查</td><td><span class="tag tag-green">PASS</span></td><td>格式正确</td></tr>
+  </table>
+</section>
+
+<!-- Phase 5 -->
+<section id="phase5" class="card">
+  <h2>📐 Phase 5 — 代码质量提升</h2>
+  <p><span class="tag tag-yellow">⚠️ 部分完成</span> <span class="tag tag-gray">2026-05-20</span></p>
+
+  <table>
+    <tr><th>#</th><th>测试项</th><th>结果</th><th>备注</th></tr>
+    <tr><td>5.2</td><td>canonical app-state.js 创建</td><td><span class="tag tag-green">PASS</span></td><td>复制到源目录，语法检查通过</td></tr>
+    <tr><td>5.2</td><td>平台副本一致性</td><td><span class="tag tag-green">PASS</span></td><td>仅末尾换行符差异</td></tr>
+  </table>
+
+  <div style="margin-top:16px; padding:16px; background:#fef7e0; border-radius:8px; border-left:4px solid var(--warning);">
+    <strong>⏭️ 延期项</strong>
+    <ul style="margin:8px 0 0 20px;">
+      <li><strong>5.1 拆分大文件</strong> — 拆分 1,118 行 input-handler.js 和 1,453 行 app.js 需完整测试套件验证。npm registry 不可用，无法运行测试。风险与收益不成正比。</li>
+      <li><strong>5.2 app.js 全局变量迁移</strong> — 修改渲染进程使用 AppState，无测试覆盖时风险过高。</li>
+      <li><strong>5.3 模块标准化</strong> — ESM/CJS 双模式已在 sync-shared.js 中处理。完整方案待 TypeScript 迁移。</li>
+    </ul>
+  </div>
+</section>
+
+<!-- Phase 6 -->
+<section id="phase6" class="card">
+  <h2>📖 Phase 6 — 文档与 Docker</h2>
+  <p><span class="tag tag-green">✅ 全部通过</span> <span class="tag tag-gray">2026-05-20</span></p>
+
+  <table>
+    <tr><th>#</th><th>测试项</th><th>结果</th><th>备注</th></tr>
+    <tr><td>6.4</td><td>CHANGELOG.md</td><td><span class="tag tag-green">PASS</span></td><td>Keep a Changelog 格式</td></tr>
+    <tr><td>6.5</td><td>ARCHITECTURE.md</td><td><span class="tag tag-green">PASS</span></td><td>含架构图、数据流图</td></tr>
+    <tr><td>6.x</td><td>Dockerfile</td><td><span class="tag tag-green">PASS</span></td><td>多阶段构建 + HEALTHCHECK</td></tr>
+    <tr><td>6.x</td><td>docker-compose.yml</td><td><span class="tag tag-green">PASS</span></td><td>端口映射 + 健康检查</td></tr>
+    <tr><td>6.x</td><td>.dockerignore</td><td><span class="tag tag-green">PASS</span></td><td>构建排除规则</td></tr>
+    <tr><td>6.x</td><td>语法检查</td><td><span class="tag tag-green">PASS</span></td><td>所有文件存在且结构完整</td></tr>
+  </table>
+</section>
+
+<!-- ============================================================ -->
+<!--                  延期项汇总                                    -->
+<!-- ============================================================ -->
+<section id="phase5-deferred" class="card">
+  <h2>⏳ 延期项汇总</h2>
+  <table>
+    <tr><th>项</th><th>原计划阶段</th><th>说明</th><th>前置条件</th></tr>
+    <tr>
+      <td>拆分大文件</td>
+      <td>5.1</td>
+      <td>input-handler.js (1,118行)、app.js (1,453行)、android/app.js (1,348行)</td>
+      <td>集成测试覆盖</td>
+    </tr>
+    <tr>
+      <td>app.js 全局变量迁移</td>
+      <td>5.2</td>
+      <td>渲染进程全局变量 → AppState</td>
+      <td>与 5.1 同步进行</td>
+    </tr>
+    <tr>
+      <td>模块标准化</td>
+      <td>5.3</td>
+      <td>ESM/CJS 双模式正式方案</td>
+      <td>TypeScript 迁移</td>
+    </tr>
+    <tr>
+      <td>日志系统整合</td>
+      <td>2.3</td>
+      <td>平台日志器（写文件）≠ shared 日志器（控制台）</td>
+      <td>专案评估</td>
+    </tr>
+    <tr>
+      <td>console.log 迁移</td>
+      <td>1.1</td>
+      <td>94 个文件 → unified Logger</td>
+      <td>工作区重构后</td>
+    </tr>
+    <tr>
+      <td>关键路径测试</td>
+      <td>3.2</td>
+      <td>auth-manager、config、signaling 单元测试</td>
+      <td>npm registry 可用</td>
+    </tr>
+    <tr>
+      <td>TypeScript 迁移</td>
+      <td>6</td>
+      <td>渐进式，从 allowJs + checkJs 开始</td>
+      <td>长期</td>
+    </tr>
+    <tr>
+      <td>自动更新</td>
+      <td>6</td>
+      <td>electron-updater + GitHub Releases</td>
+      <td>长期</td>
+    </tr>
+  </table>
+</section>
+
+<!-- ============================================================ -->
+<!--                  已知问题                                      -->
+<!-- ============================================================ -->
+<section id="known-issues" class="card">
+  <h2>⚠️ 已知问题</h2>
+
+  <div style="padding:16px; background:#fce8e6; border-radius:8px; border-left:4px solid var(--danger); margin-bottom:12px;">
+    <strong>🔴 linux/shared/ 未同步</strong>
+    <p style="margin-top:4px; font-size:14px;"><code>sync-shared.js</code> 未配置 Linux 同步目标。Phase 0-3 的安全修复（安全随机数、空 catch 日志等）未传播到 <code>linux/shared/</code>。同时 <code>linux/shared/</code> 存在 7 个特有文件未纳入 canonical 源目录。</p>
+  </div>
+
+  <div style="padding:16px; background:#fef7e0; border-radius:8px; border-left:4px solid var(--warning); margin-bottom:12px;">
+    <strong>🟡 npm registry 不可用</strong>
+    <p style="margin-top:4px; font-size:14px;">registry.npmmirror.com 在此环境中返回 404，无法安装测试依赖和运行 <code>npm test</code>。所有需要 npm install 的操作均被跳过。</p>
+  </div>
+
+  <div style="padding:16px; background:#fef7e0; border-radius:8px; border-left:4px solid var(--warning); margin-bottom:12px;">
+    <strong>🟡 测试覆盖不足</strong>
+    <p style="margin-top:4px; font-size:14px;">~85K 行代码仅有 6 个测试套件（<5% 覆盖率）。核心模块（auth-manager、config、signaling-client）缺少单元测试。</p>
+  </div>
+
+  <div style="padding:16px; background:#fef7e0; border-radius:8px; border-left:4px solid var(--warning);">
+    <strong>🟡 大文件技术债</strong>
+    <p style="margin-top:4px; font-size:14px;">3 个文件超 1,000 行（input-handler.js 1,118行、app.js 1,453行、android/app.js 1,348行），拆分工作已延期。</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!--                  重要发现                                      -->
+<!-- ============================================================ -->
+<section id="findings" class="card">
+  <h2>🔍 重要发现</h2>
+
+  <h3>Linux shared/ 目录不同步</h3>
+  <table>
+    <tr><th>类型</th><th>文件</th><th>影响</th></tr>
+    <tr><td>安全修复未传播</td><td><code>shared/core/app-core.js</code></td><td>DEV-ID 仍使用 Math.random()</td></tr>
+    <tr><td>安全修复未传播</td><td><code>shared/device-id-manager.js</code></td><td>仍使用 Math.random()</td></tr>
+    <tr><td>安全修复未传播</td><td><code>shared/platform/*.js</code></td><td>仍使用 Math.random()</td></tr>
+    <tr><td>安全修复未传播</td><td><code>shared/signaling-client.js</code></td><td>空 catch 未修复</td></tr>
+    <tr><td>Linux 特有（未入源）</td><td><code>config-schema.js</code></td><td>需评估是否应纳入 canonical</td></tr>
+    <tr><td>Linux 特有（未入源）</td><td><code>crash-reporter.js</code></td><td>需评估是否应纳入 canonical</td></tr>
+    <tr><td>Linux 特有（未入源）</td><td><code>ipc-validator.js</code></td><td>需评估是否应纳入 canonical</td></tr>
+    <tr><td>Linux 特有（未入源）</td><td><code>logger-factory.js</code></td><td>需评估是否应纳入 canonical</td></tr>
+    <tr><td>Linux 特有（未入源）</td><td><code>performance-monitor.js</code></td><td>需评估是否应纳入 canonical</td></tr>
+    <tr><td>Linux 特有（未入源）</td><td><code>canvas-object-pool.js</code></td><td>需评估是否应纳入 canonical</td></tr>
+    <tr><td>Linux 特有（未入源）</td><td><code>device-list-ui.js</code></td><td>需评估是否应纳入 canonical</td></tr>
+  </table>
+  <p style="margin-top:8px;"><strong>建议：</strong>评估 Linux 特有文件是否应纳入 canonical <code>shared/</code>，完善 <code>sync-shared.js</code> 以覆盖所有平台。</p>
+</section>
+
+<!-- ========== Footer ========== -->
+<div style="text-align:center; padding:32px 0 16px; font-size:13px; color:var(--text-secondary); border-top:1px solid var(--border); margin-top:40px;">
+  YCDesk v3.3.0 &nbsp;·&nbsp; 文档生成于 2026-05-20 &nbsp;·&nbsp; 分支 claude/kind-haibt-168fc3
+</div>
+
+</main>
+
+<script>
+// 侧边栏高亮当前章节
+document.querySelectorAll('.sidebar a[href^="#"]').forEach(a => {
+  a.addEventListener('click', function() {
+    document.querySelectorAll('.sidebar a').forEach(x => x.classList.remove('active'));
+    this.classList.add('active');
+  });
+});
+// 页面滚动时自动高亮
+window.addEventListener('scroll', () => {
+  let current = '';
+  document.querySelectorAll('section[id]').forEach(s => {
+    if (s.getBoundingClientRect().top <= 150) current = s.id;
+  });
+  document.querySelectorAll('.sidebar a').forEach(a => {
+    a.classList.toggle('active', a.getAttribute('href') === '#' + current);
+  });
+});
+</script>
+</body>
+</html>

@@ -19,6 +19,10 @@ const deviceId = loadDeviceId()
 
 app.commandLine.appendSwitch('disable-features', 'SingleProcess')
 
+// 仅在非打包模式下且设置了环境变量时禁用 GPU 沙箱
+// 使用场景：某些 NVIDIA 显卡驱动（<545.x）使用 NvFBC/NvENC 硬件编码时需要禁用沙箱
+// 启用方式：YCDESK_DISABLE_GPU_SANDBOX=1 npm start
+// 打包后的应用始终启用 GPU 沙箱以保障安全性
 if (!app.isPackaged && process.env.YCDESK_DISABLE_GPU_SANDBOX === '1') {
   app.commandLine.appendSwitch('disable-gpu-sandbox')
   logger.warn('GPU沙箱已禁用（YCDESK_DISABLE_GPU_SANDBOX=1）')
@@ -100,7 +104,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   logger.info('YCDesk 正在退出...')
-  try { getServiceIntegration().disconnect() } catch (e) {}
+  try { getServiceIntegration().disconnect() } catch (e) { logger.debug('断开服务连接时出错（正常退出）:', e.message) }
 })
 
 logger.info('YCDesk 主进程已加载')

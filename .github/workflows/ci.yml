@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  # === Lint ===
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: npx eslint . --ext .js --max-warnings 50
+        continue-on-error: true
+
+  # === Test (Ubuntu) ===
+  test-linux:
+    name: Test (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Linux dependencies
+        run: |
+          cd linux && npm ci
+      - name: Run tests
+        run: |
+          cd linux && npx vitest run --reporter verbose
+
+  # === Test (Windows) ===
+  test-windows:
+    name: Test (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Windows dependencies
+        run: |
+          cd windows && npm ci
+      - name: Run tests
+        run: |
+          cd windows && npx vitest run --reporter verbose
+
+  # === Build Windows (main only) ===
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    if: github.ref == 'refs/heads/main'
+    needs: [lint, test-windows]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Build
+        run: |
+          cd windows && npm ci && npm run build:portable
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ycdesk-windows-portable
+          path: windows/dist-v2/YCDesk-Portable-*.exe
+
+  # === Build Linux (main only) ===
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    needs: [lint, test-linux]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Build
+        run: |
+          cd linux && npm ci && npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ycdesk-linux
+          path: linux/dist-v2/

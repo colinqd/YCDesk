@@ -1,0 +1,72 @@
+{
+  "name": "ycdesk-shared",
+  "version": "3.3.0",
+  "description": "YCDesk - 跨平台共享模块",
+  "private": true,
+  "type": "commonjs",
+  "main": "index.js",
+  "exports": {
+    ".": {
+      "require": "./index.js",
+      "import": "./index.js"
+    },
+    "./config": {
+      "require": "./config.js",
+      "import": "./config.js"
+    },
+    "./input-protocol": {
+      "require": "./input-protocol.js",
+      "import": "./input-protocol.js"
+    },
+    "./signaling-client": {
+      "require": "./signaling-client.js",
+      "import": "./signaling-client.js"
+    },
+    "./data-channel-manager": {
+      "require": "./data-channel-manager.js",
+      "import": "./data-channel-manager.js"
+    },
+    "./connection-state-machine": {
+      "require": "./connection-state-machine.js",
+      "import": "./connection-state-machine.js"
+    },
+    "./connection-manager-base": {
+      "require": "./connection-manager-base.js",
+      "import": "./connection-manager-base.js"
+    },
+    "./auth-manager": {
+      "require": "./auth-manager.js",
+      "import": "./auth-manager.js"
+    },
+    "./device-id-manager": {
+      "require": "./device-id-manager.js",
+      "import": "./device-id-manager.js"
+    },
+    "./components/*": {
+      "require": "./components/*.js",
+      "import": "./components/*.js"
+    },
+    "./utils/*": {
+      "require": "./utils/*.js",
+      "import": "./utils/*.js"
+    },
+    "./gestures/*": {
+      "require": "./gestures/*.js",
+      "import": "./gestures/*.js"
+    },
+    "./renderer/*": {
+      "require": "./renderer/*.js",
+      "import": "./renderer/*.js"
+    },
+    "./video/*": {
+      "require": "./video/*.js",
+      "import": "./video/*.js"
+    }
+  },
+  "keywords": [
+    "ycdesk",
+    "remote-desktop",
+    "shared"
+  ],
+  "license": "MIT"
+}

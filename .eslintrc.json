@@ -1,4 +1,5 @@
 {
+  "root": true,
   "env": {
     "browser": true,
     "node": true,
@@ -6,7 +7,7 @@
   },
   "extends": "eslint:recommended",
   "parserOptions": {
-    "ecmaVersion": 2021,
+    "ecmaVersion": 2022,
     "sourceType": "module",
     "allowReserved": false
   },
@@ -37,11 +38,13 @@
   },
   "rules": {
     "no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
-    "no-console": "off",
-    "no-var": "off",
-    "prefer-const": "off",
+    "no-console": ["warn", { "allow": ["warn", "error"] }],
+    "no-var": "warn",
+    "prefer-const": "warn",
     "semi": ["warn", "never"],
     "quotes": ["warn", "single", { "avoidEscape": true, "allowTemplateLiterals": true }],
+    "eqeqeq": ["warn", "always"],
+    "no-throw-literal": "error",
     "no-undef": "warn",
     "no-redeclare": "warn",
     "no-empty": "warn",
@@ -62,6 +65,9 @@
     "build/",
     "out/",
     ".git/",
-    "*.min.js"
+    "*.min.js",
+    "android/android/app/src/main/assets/public/assets/",
+    "_fix_*.js",
+    "fix_*_temp.js"
   ]
 }

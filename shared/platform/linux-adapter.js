@@ -8,6 +8,7 @@
  */
 
 import { createLogger, LogLevel } from '../utils/logger.js'
+import { secureDeviceId } from '../utils/id-generator.js'
 
 const log = createLogger({
     prefix: 'LinuxAdapter',
@@ -67,7 +68,7 @@ export const platformAdapter = {
                 return storedId
             }
             
-            const deviceId = 'LNX-' + Math.random().toString(36).substr(2, 9).toUpperCase()
+            const deviceId = secureDeviceId('LNX')
             localStorage.setItem('ycdesk_device_id', deviceId)
             
             log.info('生成设备 ID:', deviceId)

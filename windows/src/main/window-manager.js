@@ -1,6 +1,9 @@
 const { BrowserWindow, Tray, Menu, nativeImage, app, dialog } = require('electron')
 const path = require('path')
 const autoUnlockService = require('./auto-unlock-service')
+const { createLogger } = require('./logger')
+
+const logger = createLogger()
 
 let mainWindow = null
 let remoteWindow = null
@@ -19,7 +22,7 @@ function resolveIconPath() {
   for (const p of candidates) {
     try {
       if (require('fs').existsSync(p)) return p
-    } catch (e) {}
+    } catch (e) { /* 检查路径时出错，跳过 */ }
   }
   return null
 }
@@ -124,7 +127,7 @@ function createMainWindow() {
   })
 
   mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
-    console.log(`[Renderer] ${message}`)
+    logger.info(`[Renderer] ${message}`)
   })
 }
 

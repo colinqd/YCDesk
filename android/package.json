@@ -1,12 +1,13 @@
 {
   "name": "ycdesk-android",
-  "version": "3.1.4",
+  "version": "3.3.0",
   "description": "YCDesk - Android版本（包含信令服务器）",
   "main": "index.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test": "echo \"No tests configured for android. Run 'npm test' from windows/ to run shared tests.\" && exit 0",
     "cap:init": "cap init",
     "cap:add": "cap add android",
     "cap:sync": "cap sync",

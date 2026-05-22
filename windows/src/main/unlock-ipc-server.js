@@ -2,6 +2,9 @@ const net = require('net')
 const os = require('os')
 const path = require('path')
 const fs = require('fs')
+const { createLogger } = require('./logger')
+
+const logger = createLogger()
 
 const DIAG_LOG = 'C:\\ProgramData\\YCDesk\\input_handler.log'
 function diagLog(msg) {
@@ -26,7 +29,7 @@ class UnlockIpcServer {
 
   start() {
     if (this.isRunning) {
-      console.log('[UnlockIpcServer] 已在运行')
+      logger.info('[UnlockIpcServer] 已在运行')
       return true
     }
 
@@ -35,32 +38,32 @@ class UnlockIpcServer {
 
       // 创建 YCDesk 管道服务器
       this.serverYCDesk = net.createServer((socket) => {
-        console.log('[UnlockIpcServer] YCDesk 客户端已连接')
+        logger.info('[UnlockIpcServer] YCDesk 客户端已连接')
         this.handleClient(socket)
       })
       this.serverYCDesk.on('error', (err) => {
-        console.error('[UnlockIpcServer] YCDesk 服务器错误:', err)
+        logger.error('[UnlockIpcServer] YCDesk 服务器错误:', err)
       })
       this.serverYCDesk.listen(this.pipeNameYCDesk, () => {
-        console.log('[UnlockIpcServer] YCDesk 服务器已启动，管道:', this.pipeNameYCDesk)
+        logger.info('[UnlockIpcServer] YCDesk 服务器已启动，管道:', this.pipeNameYCDesk)
       })
 
       // 创建 RemoteDesk 管道服务器（兼容现有 DLL）
       this.serverRemoteDesk = net.createServer((socket) => {
-        console.log('[UnlockIpcServer] RemoteDesk 客户端已连接')
+        logger.info('[UnlockIpcServer] RemoteDesk 客户端已连接')
         this.handleClient(socket)
       })
       this.serverRemoteDesk.on('error', (err) => {
-        console.error('[UnlockIpcServer] RemoteDesk 服务器错误:', err)
+        logger.error('[UnlockIpcServer] RemoteDesk 服务器错误:', err)
       })
       this.serverRemoteDesk.listen(this.pipeNameRemoteDesk, () => {
-        console.log('[UnlockIpcServer] RemoteDesk 服务器已启动，管道:', this.pipeNameRemoteDesk)
+        logger.info('[UnlockIpcServer] RemoteDesk 服务器已启动，管道:', this.pipeNameRemoteDesk)
       })
 
       this.isRunning = true
       return true
     } catch (error) {
-      console.error('[UnlockIpcServer] 启动失败:', error)
+      logger.error('[UnlockIpcServer] 启动失败:', error)
       return false
     }
   }
@@ -77,7 +80,7 @@ class UnlockIpcServer {
       this.serverRemoteDesk.close()
     }
     this.isRunning = false
-    console.log('[UnlockIpcServer] 服务器已停止')
+    logger.info('[UnlockIpcServer] 服务器已停止')
   }
 
   handleClient(socket) {
@@ -90,7 +93,7 @@ class UnlockIpcServer {
       const request = buffer.toString('utf16le')
       
       if (request.startsWith('REQUEST_UNLOCK')) {
-        console.log('[UnlockIpcServer] 收到 REQUEST_UNLOCK 请求')
+        logger.info('[UnlockIpcServer] 收到 REQUEST_UNLOCK 请求')
         
         // Parse: REQUEST_UNLOCK\0username\0password
         // Or just: REQUEST_UNLOCK (empty password means use stored credentials)
@@ -106,10 +109,10 @@ class UnlockIpcServer {
           // Controller sent: username\0password
           username = content.substring(0, nullIndex)
           password = content.substring(nullIndex + 1)
-          console.log('[UnlockIpcServer] 主控端发送了凭据，用户:', username)
+          logger.info('[UnlockIpcServer] 主控端发送了凭据，用户:', username)
         } else {
           // Empty password - use stored credentials
-          console.log('[UnlockIpcServer] 主控端发送空密码，尝试使用已存储凭据')
+          logger.info('[UnlockIpcServer] 主控端发送空密码，尝试使用已存储凭据')
           username = this.storedUsername
           password = this.storedPassword
         }
@@ -121,15 +124,15 @@ class UnlockIpcServer {
           const response = Buffer.concat([usernameBuffer, passwordBuffer])
           
           socket.write(response)
-          console.log('[UnlockIpcServer] 已发送凭据，用户:', username)
+          logger.info('[UnlockIpcServer] 已发送凭据，用户:', username)
         } else {
-          console.log('[UnlockIpcServer] 没有可用的凭据')
+          logger.info('[UnlockIpcServer] 没有可用的凭据')
           // Send empty response
           socket.write(Buffer.from('\0', 'utf16le'))
         }
         
       } else if (request.startsWith('SET_CREDENTIALS')) {
-        console.log('[UnlockIpcServer] 收到 SET_CREDENTIALS 请求')
+        logger.info('[UnlockIpcServer] 收到 SET_CREDENTIALS 请求')
         // Parse username\0password
         const prefixLen = 'SET_CREDENTIALS\0'.length
         const content = request.substring(prefixLen)
@@ -139,7 +142,7 @@ class UnlockIpcServer {
           this.storedUsername = content.substring(0, nullIndex)
           this.storedPassword = content.substring(nullIndex + 1)
           this.hasStoredCredentials = true
-          console.log('[UnlockIpcServer] 凭据已存储，用户:', this.storedUsername)
+          logger.info('[UnlockIpcServer] 凭据已存储，用户:', this.storedUsername)
           socket.write(Buffer.from('OK\0', 'utf16le'))
         } else {
           socket.write(Buffer.from('ERROR\0', 'utf16le'))
@@ -148,11 +151,11 @@ class UnlockIpcServer {
     })
 
     socket.on('end', () => {
-      console.log('[UnlockIpcServer] 客户端已断开')
+      logger.info('[UnlockIpcServer] 客户端已断开')
     })
 
     socket.on('error', (err) => {
-      console.error('[UnlockIpcServer] Socket 错误:', err)
+      logger.error('[UnlockIpcServer] Socket 错误:', err)
     })
   }
 
@@ -161,7 +164,7 @@ class UnlockIpcServer {
     this.storedPassword = password
     this.hasStoredCredentials = true
     diagLog(`setCredentials called: user=${username}, pwdLen=${password ? password.length : 0}`)
-    console.log('[UnlockIpcServer] setCredentials 被调用，用户:', username)
+    logger.info('[UnlockIpcServer] setCredentials 被调用，用户:', username)
     
     // Write credentials to a file so the CP DLL can read them directly
     // This bypasses the need for the IPC pipe to be available
@@ -175,7 +178,7 @@ class UnlockIpcServer {
       const flagFile = path.join(flagDir, 'unlock_ready.flag')
       fs.writeFileSync(flagFile, Date.now().toString())
       diagLog(`Flag file written: ${flagFile}`)
-      console.log('[UnlockIpcServer] Flag file written:', flagFile)
+      logger.info('[UnlockIpcServer] Flag file written:', flagFile)
       
       // Write actual credentials in a separate file (UTF-16LE with null separators)
       const credFile = path.join(flagDir, 'unlock_creds.dat')
@@ -186,18 +189,18 @@ class UnlockIpcServer {
       const credBuffer = Buffer.concat([usernameBuffer, nullChar, passwordBuffer])
       fs.writeFileSync(credFile, credBuffer)
       diagLog(`Creds file written: ${credFile}, size=${credBuffer.length}`)
-      console.log('[UnlockIpcServer] Credentials file written:', credFile)
+      logger.info('[UnlockIpcServer] Credentials file written:', credFile)
       
       // Set strict ACL: only SYSTEM and Administrators can read
       try {
         const { execSync } = require('child_process')
         execSync(`icacls "${credFile}" /inheritance:r /grant:r "SYSTEM:(R)" /grant:r "BUILTIN\\Administrators:(R)"`, { stdio: 'ignore' })
       } catch (aclErr) {
-        console.log('[UnlockIpcServer] ACL设置失败（可忽略）:', aclErr.message)
+        logger.info('[UnlockIpcServer] ACL设置失败（可忽略）:', aclErr.message)
       }
     } catch (e) {
       diagLog(`Failed to write credential files: ${e.message}`)
-      console.error('[UnlockIpcServer] Failed to write credential files:', e.message)
+      logger.error('[UnlockIpcServer] Failed to write credential files:', e.message)
     }
     
     return true
@@ -207,7 +210,7 @@ class UnlockIpcServer {
     this.storedUsername = ''
     this.storedPassword = ''
     this.hasStoredCredentials = false
-    console.log('[UnlockIpcServer] 凭据已清除')
+    logger.info('[UnlockIpcServer] 凭据已清除')
     
     // Clear the flag and credential files
     try {
