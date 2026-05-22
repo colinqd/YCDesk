@@ -38,6 +38,8 @@ const THROTTLE_CONFIG = {
   IDLE_TIMEOUT_MS: 100
 }
 
+const VALID_INPUT_TYPES = Object.values(INPUT_TYPES)
+
 function createInputCommand(inputType, data = {}) {
   const command = {
     type: 'input',
@@ -228,7 +230,7 @@ function validateInputCommand(command) {
   if (!command.inputType || typeof command.inputType !== 'string') {
     errors.push('缺少有效的 inputType')
   } else {
-    const validTypes = Object.values(INPUT_TYPES)
+    const validTypes = VALID_INPUT_TYPES
     if (!validTypes.includes(command.inputType)) {
       errors.push(`无效的 inputType: ${command.inputType}`)
     }

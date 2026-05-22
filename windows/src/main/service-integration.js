@@ -182,6 +182,7 @@ class ServiceIntegration extends EventEmitter {
     this._dataBuffer = Buffer.alloc(0)
 
     for (const [seq, pending] of this._pendingRequests) {
+      if (pending.timer) clearTimeout(pending.timer)
       pending.reject(new Error('Connection lost'))
     }
     this._pendingRequests.clear()
@@ -277,6 +278,7 @@ class ServiceIntegration extends EventEmitter {
       const pending = this._pendingRequests.get(header.reqSeq)
       if (pending) {
         this._pendingRequests.delete(header.reqSeq)
+        if (pending.timer) clearTimeout(pending.timer)
 
         let bodyStr = ''
         try { bodyStr = body.toString('utf8') } catch (e) {}
@@ -303,21 +305,22 @@ class ServiceIntegration extends EventEmitter {
       const seq = this._nextSeq()
       const request = encodeRequest(cmdId, seq, body)
 
-      this._pendingRequests.set(seq, { resolve, reject, ts: Date.now() })
-
-      try {
-        this._socket.write(request)
-      } catch (e) {
-        this._pendingRequests.delete(seq)
-        reject(e)
-      }
-
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         if (this._pendingRequests.has(seq)) {
           this._pendingRequests.delete(seq)
           reject(new Error(`Command 0x${cmdId.toString(16)} timed out`))
         }
       }, COMMAND_TIMEOUT)
+
+      this._pendingRequests.set(seq, { resolve, reject, timer, ts: Date.now() })
+
+      try {
+        this._socket.write(request)
+      } catch (e) {
+        clearTimeout(timer)
+        this._pendingRequests.delete(seq)
+        reject(e)
+      }
     })
   }
 

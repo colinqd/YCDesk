@@ -40,7 +40,6 @@
     "vitest": "^1.6.1"
   },
   "dependencies": {
-    "robotjs": "0.6.0",
     "socket.io-client": "^4.6.0"
   },
   "build": {
@@ -48,7 +47,6 @@
     "productName": "YCDesk",
     "asar": false,
     "compression": "maximum",
-    "npmRebuild": false,
     "directories": {
       "output": "dist-v2"
     },

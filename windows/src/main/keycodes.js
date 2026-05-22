@@ -100,10 +100,14 @@ function getButtonName(button) {
 
 // ---- 修饰键判断 ----
 
+const MODIFIER_KEY_CODES = new Set([
+  'ControlLeft', 'ControlRight', 'ShiftLeft', 'ShiftRight',
+  'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight',
+  'CapsLock', 'NumLock', 'ScrollLock'
+])
+
 function isModifierKeyCode(code) {
-  return ['ControlLeft', 'ControlRight', 'ShiftLeft', 'ShiftRight',
-    'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight',
-    'CapsLock', 'NumLock', 'ScrollLock'].includes(code)
+  return MODIFIER_KEY_CODES.has(code)
 }
 
 // ---- 状态查询 & 重置 ----

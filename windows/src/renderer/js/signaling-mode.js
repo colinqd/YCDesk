@@ -804,7 +804,11 @@ class SignalingModeManager {
     }
 
     this._controlledIpcListenersSetup = false
-    
+
+    if (window.electronAPI && window.electronAPI.removeAllListeners) {
+      window.electronAPI.removeAllListeners('remote-input')
+    }
+
     this.logFn('信令模式管理器已重置')
   }
 }

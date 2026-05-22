@@ -65,6 +65,9 @@
     "build/",
     "out/",
     ".git/",
-    "*.min.js"
+    "*.min.js",
+    "android/android/app/src/main/assets/public/assets/",
+    "_fix_*.js",
+    "fix_*_temp.js"
   ]
 }

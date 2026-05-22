@@ -816,6 +816,10 @@ class DirectModeManager {
 
     this._controlledIpcListenersSetup = false
 
+    if (window.electronAPI && window.electronAPI.removeAllListeners) {
+      window.electronAPI.removeAllListeners('remote-input')
+    }
+
     this.logFn('直连模式管理器已重置')
   }
 }

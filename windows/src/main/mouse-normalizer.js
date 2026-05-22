@@ -1,20 +1,15 @@
 /**
  * 鼠标坐标归一化与事件处理
  *
- * 依赖 robotjs 原生模块执行鼠标操作。
- * 通过 setMouseRobot() 注入 robot 引用，setMouseLogger() 注入日志实例。
+ * 使用 SendInput (PowerShell C#) 执行鼠标操作，
+ * 不需要 robotjs 原生模块。
  */
 
 const { pressedButtons, getButtonName } = require('./keycodes')
 
 // ---- 注入的依赖 ----
 
-let robot = null
 let logger = null
-
-function setMouseRobot(robotRef) {
-  robot = robotRef
-}
 
 function setMouseLogger(loggerRef) {
   logger = loggerRef
@@ -25,6 +20,60 @@ function log(level, message, data) {
     logger[level](message, data)
   } else if (level === 'error') {
     console.error('[鼠标]', message, data || '')
+  }
+}
+
+// ---- SendInput 后端（通过 input-sendinput.createClient 共享惰性初始化）
+let _siUnavailableLogged = false
+
+function _logSiUnavailable(label) {
+  if (_siUnavailableLogged) return
+  _siUnavailableLogged = true
+  log('error', '[鼠标] SendInput 不可用，' + label + '被丢弃')
+  try {
+    if (!fs.existsSync('C:\\ProgramData\\YCDesk')) fs.mkdirSync('C:\\ProgramData\\YCDesk', { recursive: true })
+    fs.appendFileSync('C:\\ProgramData\\YCDesk\\diag_handler.log', '[' + new Date().toISOString() + '] mouse-normalizer: SendInput不可用 - ' + label + '\n', 'utf8')
+  } catch (e) {}
+}
+
+function _execMoveMouse(x, y, sw, sh) {
+  const si = require("./input-sendinput").createClient(logger)
+  if (si) {
+    const nx = Math.round((x / sw) * 65535)
+    const ny = Math.round((y / sh) * 65535)
+    si.moveMouse(Math.max(0, Math.min(65535, nx)), Math.max(0, Math.min(65535, ny)))
+  } else {
+    _logSiUnavailable('鼠标移动')
+  }
+}
+
+function _execMouseToggle(direction, btnName) {
+  const si = require("./input-sendinput").createClient(logger)
+  if (si) {
+    const btnNum = btnName === 'right' ? 2 : (btnName === 'middle' ? 1 : 0)
+    if (direction === 'down') si.mouseDown(btnNum)
+    else si.mouseUp(btnNum)
+  } else {
+    _logSiUnavailable('鼠标按键')
+  }
+}
+
+function _execMouseClick(btnName) {
+  const si = require("./input-sendinput").createClient(logger)
+  if (si) {
+    const btnNum = btnName === 'right' ? 2 : (btnName === 'middle' ? 1 : 0)
+    si.mouseClick(btnNum)
+  } else {
+    _logSiUnavailable('鼠标点击')
+  }
+}
+
+function _execScrollMouse(x, y) {
+  const si = require("./input-sendinput").createClient(logger)
+  if (si && y !== 0) {
+    si.mouseWheel(-y * 120)
+  } else if (!si) {
+    _logSiUnavailable('滚轮')
   }
 }
 
@@ -62,7 +111,7 @@ function handleMouseMove(x, y, screenWidth, screenHeight) {
     const pos = normalizeAndClamp(x, y, screenWidth, screenHeight)
     currentMouseX = pos.x
     currentMouseY = pos.y
-    robot.moveMouse(pos.x, pos.y)
+    _execMoveMouse(pos.x, pos.y, screenWidth, screenHeight)
   }
 }
 
@@ -75,7 +124,7 @@ function handleMouseMoveDelta(dx, dy, screenWidth, screenHeight) {
   currentMouseX = Math.max(0, Math.min(screenWidth, targetX))
   currentMouseY = Math.max(0, Math.min(screenHeight, targetY))
 
-  robot.moveMouse(currentMouseX, currentMouseY)
+  _execMoveMouse(currentMouseX, currentMouseY, screenWidth, screenHeight)
 }
 
 function handleMouseDown(x, y, button, screenWidth, screenHeight) {
@@ -83,21 +132,16 @@ function handleMouseDown(x, y, button, screenWidth, screenHeight) {
     const pos = normalizeAndClamp(x, y, screenWidth, screenHeight)
     currentMouseX = pos.x
     currentMouseY = pos.y
-    robot.moveMouse(pos.x, pos.y)
+    _execMoveMouse(pos.x, pos.y, screenWidth, screenHeight)
   }
 
   const mouseButton = getButtonName(button)
 
   if (!pressedButtons[mouseButton]) {
     pressedButtons[mouseButton] = true
-    robot.mouseToggle('down', mouseButton)
+    _execMouseToggle('down', mouseButton)
   }
   lastMousedownTime = Date.now()
-}
-
-function sleepSyncMs(ms) {
-  const end = Date.now() + ms
-  while (Date.now() < end) { /* busy-wait */ }
 }
 
 function sleepAsyncMs(ms) {
@@ -120,10 +164,10 @@ async function handleMouseUp(x, y, button, screenWidth, screenHeight) {
         const pos = normalizeAndClamp(x, y, screenWidth, screenHeight)
         currentMouseX = pos.x
         currentMouseY = pos.y
-        robot.moveMouse(pos.x, pos.y)
+        _execMoveMouse(pos.x, pos.y, screenWidth, screenHeight)
       }
       pressedButtons[mouseButton] = true
-      robot.mouseToggle('down', mouseButton)
+      _execMouseToggle('down', mouseButton)
       lastMousedownTime = Date.now()
     }
   }
@@ -132,7 +176,7 @@ async function handleMouseUp(x, y, button, screenWidth, screenHeight) {
     const pos = normalizeAndClamp(x, y, screenWidth, screenHeight)
     currentMouseX = pos.x
     currentMouseY = pos.y
-    robot.moveMouse(pos.x, pos.y)
+    _execMoveMouse(pos.x, pos.y, screenWidth, screenHeight)
   }
 
   const elapsed = Date.now() - lastMousedownTime
@@ -141,7 +185,7 @@ async function handleMouseUp(x, y, button, screenWidth, screenHeight) {
   }
 
   pressedButtons[mouseButton] = false
-  robot.mouseToggle('up', mouseButton)
+  _execMouseToggle('up', mouseButton)
   lastMouseupTime = Date.now()
 }
 
@@ -150,10 +194,10 @@ function handleClick(x, y, button, screenWidth, screenHeight) {
   currentMouseX = pos.x
   currentMouseY = pos.y
 
-  robot.moveMouse(pos.x, pos.y)
+  _execMoveMouse(pos.x, pos.y, screenWidth, screenHeight)
 
   const mouseButton = getButtonName(button)
-  robot.mouseClick(mouseButton)
+  _execMouseClick(mouseButton)
 }
 
 function handleDoubleClick(x, y, button, screenWidth, screenHeight) {
@@ -161,23 +205,24 @@ function handleDoubleClick(x, y, button, screenWidth, screenHeight) {
   currentMouseX = pos.x
   currentMouseY = pos.y
 
-  robot.moveMouse(pos.x, pos.y)
+  _execMoveMouse(pos.x, pos.y, screenWidth, screenHeight)
 
   const mouseButton = getButtonName(button)
-  robot.mouseClick(mouseButton, true)
+  _execMouseClick(mouseButton)
+  _execMouseClick(mouseButton) // double = two clicks
 }
 
 function handleMouseWheel(deltaY, deltaX, x, y, screenWidth, screenHeight) {
   if (x !== undefined && y !== undefined) {
     const pos = normalizeAndClamp(x, y, screenWidth, screenHeight)
-    robot.moveMouse(pos.x, pos.y)
+    _execMoveMouse(pos.x, pos.y, screenWidth, screenHeight)
   }
 
   if (deltaY) {
     wheelAccumulatorY += deltaY
     const scrollAmount = Math.trunc(wheelAccumulatorY / 40)
     if (scrollAmount !== 0) {
-      robot.scrollMouse(0, -scrollAmount)
+      _execScrollMouse(0, -scrollAmount)
       wheelAccumulatorY -= scrollAmount * 40
     }
   }
@@ -186,7 +231,7 @@ function handleMouseWheel(deltaY, deltaX, x, y, screenWidth, screenHeight) {
     wheelAccumulatorX += deltaX
     const scrollAmountX = Math.trunc(wheelAccumulatorX / 40)
     if (scrollAmountX !== 0) {
-      robot.scrollMouse(-scrollAmountX, 0)
+      _execScrollMouse(-scrollAmountX, 0)
       wheelAccumulatorX -= scrollAmountX * 40
     }
   }
@@ -195,12 +240,12 @@ function handleMouseWheel(deltaY, deltaX, x, y, screenWidth, screenHeight) {
 function handleMouseWheelBatch(accumulatedDeltaY, accumulatedDeltaX) {
   if (accumulatedDeltaY) {
     const scrollAmount = Math.round(accumulatedDeltaY / 120)
-    robot.scrollMouse(0, -scrollAmount)
+    _execScrollMouse(0, -scrollAmount)
   }
 
   if (accumulatedDeltaX) {
     const scrollAmountX = Math.round(accumulatedDeltaX / 120)
-    robot.scrollMouse(-scrollAmountX, 0)
+    _execScrollMouse(-scrollAmountX, 0)
   }
 }
 
@@ -220,7 +265,6 @@ function resetMouseState() {
 }
 
 module.exports = {
-  setMouseRobot,
   setMouseLogger,
   normalizeAndClamp,
   handleMouseMove,
