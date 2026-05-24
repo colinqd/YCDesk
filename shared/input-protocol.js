@@ -238,7 +238,7 @@ function validateInputCommand(command) {
   
   // 解锁命令特殊验证
   if (command.inputType === INPUT_TYPES.UNLOCK_SCREEN) {
-    if (command.password === undefined || command.password === '') {
+    if (command.password === undefined) {
       errors.push('解锁命令必须包含 password')
     }
     return { valid: errors.length === 0, errors }

@@ -283,13 +283,13 @@ function Invoke-InputCommand {
             [InputHelper]::MouseWheel([int]$Arg1)
         }
         "keydown" {
-            [InputHelper]::KeyDown([ushort][int]$Arg1)
+            [InputHelper]::KeyDown([uint16][int]$Arg1)
         }
         "keyup" {
-            [InputHelper]::KeyUp([ushort][int]$Arg1)
+            [InputHelper]::KeyUp([uint16][int]$Arg1)
         }
         "keytap" {
-            [InputHelper]::KeyTap([ushort][int]$Arg1)
+            [InputHelper]::KeyTap([uint16][int]$Arg1)
         }
         "text" {
             [InputHelper]::TypeString($Arg1)
@@ -390,6 +390,7 @@ function ensureProcess() {
         isInitialized = false
         psProcess = null
         initPromise = null
+        _pendingBuffer = ''
         // 重置客户端工厂状态，允许重新初始化
         _clientRef = null
         _clientInitStarted = false
@@ -398,6 +399,19 @@ function ensureProcess() {
           _clientRetryTimer = null
         }
         _rejectAll('Process exited')
+
+        // 进程退出后3秒自动重启，避免依赖下一次输入事件触发
+        _autoRestartTimer = setTimeout(() => {
+          _autoRestartTimer = null
+          if (!psProcess) {
+            diagLog('[SendInput] 自动重启: 进程已退出，重新初始化')
+            _clientRef = null
+            _clientInitStarted = false
+            _lastDiagState = ''
+            // 通知调用方重置不可用标志
+            _notifyClientReset()
+          }
+        }, 3000)
       })
 
       // Load and execute the C# script
@@ -497,6 +511,10 @@ function init() {
 
 function close() {
   _rejectAll('Closing')
+  if (_autoRestartTimer) {
+    clearTimeout(_autoRestartTimer)
+    _autoRestartTimer = null
+  }
   if (psProcess && !psProcess.killed) {
     try {
       psProcess.stdin.write('EXIT\r\n')
@@ -510,6 +528,7 @@ function close() {
   initPromise = null
   _clientRef = null
   _clientInitStarted = false
+  _pendingBuffer = ''
   if (_clientRetryTimer) {
     clearTimeout(_clientRetryTimer)
     _clientRetryTimer = null
@@ -558,6 +577,7 @@ module.exports = {
   init,
   close,
   setLogger,
+  onClientAvailable,
   moveMouse,
   mouseDown,
   mouseUp,
@@ -567,7 +587,7 @@ module.exports = {
   keyUp,
   keyTap,
   typeString,
-  get isAvailable() { return isInitialized },
+  get isAvailable() { return isInitialized && !!psProcess && !psProcess.killed },
   createClient
 }
 
@@ -577,6 +597,21 @@ let _clientRef = null
 let _clientInitStarted = false
 let _clientRetryTimer = null
 let _lastDiagState = '' // 避免重复日志
+let _autoRestartTimer = null
+let _onClientAvailable = null // 当客户端变为可用时的回调
+
+/**
+ * 注册客户端变为可用时的回调，用于通知调用方重置不可用标志。
+ */
+function onClientAvailable(callback) {
+  _onClientAvailable = callback
+}
+
+function _notifyClientReset() {
+  if (typeof _onClientAvailable === 'function') {
+    try { _onClientAvailable() } catch (e) {}
+  }
+}
 
 /**
  * 创建/获取 SendInput 客户端单例。
@@ -613,7 +648,11 @@ function createClient(logInstance) {
     }
   }
 
-  if (_clientRef && _clientRef.isAvailable) return _clientRef
+  if (_clientRef && _clientRef.isAvailable) {
+    // 客户端可用，通知调用方重置不可用标志
+    _notifyClientReset()
+    return _clientRef
+  }
 
   // 每个状态只记录一次诊断日志，避免高频输入时刷盘
   const stateKey = _clientRef === false ? 'false' : (!_clientRef ? 'null' : 'pending')

@@ -881,6 +881,7 @@ async function connectDirect() {
   }
   s.isDirectControllerMode = false
   s.isWaitingRenegotiation = false
+  s.pendingDirectIceCandidates = []
   
   let resolvedHost = remoteIp
   if (!isIpAddress(remoteIp)) {

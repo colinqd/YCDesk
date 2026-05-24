@@ -16,6 +16,7 @@
       var moveSendTimer = null, idleTimer = null
       var sequenceId = 0
       var accumulatedWheelDeltaY = 0, accumulatedWheelDeltaX = 0
+      var lastWheelRatioX = 0.5, lastWheelRatioY = 0.5
       var wheelSendTimer = null
       var isMouseDownOnVideo = false
 
@@ -44,7 +45,7 @@
         var inputCommand = window.createInputCommand(window.INPUT_TYPES.MOUSE_WHEEL_BATCH, {
           accumulatedDeltaY: accumulatedWheelDeltaY,
           accumulatedDeltaX: accumulatedWheelDeltaX,
-          x: 0.5, y: 0.5
+          x: lastWheelRatioX, y: lastWheelRatioY
         })
         cm.sendInput(inputCommand)
         accumulatedWheelDeltaY = 0
@@ -99,12 +100,13 @@
 
         accumulatedDeltaX += remoteDeltaX
         accumulatedDeltaY += remoteDeltaY
-        lastMoveX = ratioX
-        lastMoveY = ratioY
 
         var now = Date.now()
         var timeSinceLastMove = now - lastMoveTime
-        var distance = Math.sqrt(Math.pow(ratioX - lastMoveX, 2) + Math.pow(ratioY - lastMoveY, 2))
+        var distance = Math.sqrt(remoteDeltaX * remoteDeltaX + remoteDeltaY * remoteDeltaY)
+
+        lastMoveX = ratioX
+        lastMoveY = ratioY
 
         if (timeSinceLastMove >= MOUSE_MOVE_CONFIG.MIN_INTERVAL_MS &&
             distance >= MOUSE_MOVE_CONFIG.MIN_DISTANCE_PX) {
@@ -119,6 +121,7 @@
 
         idleTimer = setTimeout(function () {
           if (accumulatedDeltaX !== 0 || accumulatedDeltaY !== 0) flushMouseDelta()
+          if (moveSendTimer) { clearInterval(moveSendTimer); moveSendTimer = null }
           idleTimer = null
         }, MOUSE_MOVE_CONFIG.IDLE_TIMEOUT_MS)
       })
@@ -156,6 +159,8 @@
 
         accumulatedWheelDeltaY += e.deltaY
         accumulatedWheelDeltaX += e.deltaX || 0
+        lastWheelRatioX = ratioX
+        lastWheelRatioY = ratioY
 
         if (wheelSendTimer) clearTimeout(wheelSendTimer)
         wheelSendTimer = setTimeout(function () {
@@ -175,7 +180,11 @@
         }, WHEEL_BATCH_INTERVAL_MS)
       }, { passive: false })
 
-      videoWrapper.addEventListener('mouseleave', function () { isMouseDownOnVideo = false })
+      videoWrapper.addEventListener('mouseleave', function () {
+        isMouseDownOnVideo = false
+        if (moveSendTimer) { clearInterval(moveSendTimer); moveSendTimer = null }
+        flushMouseDelta()
+      })
       videoWrapper.addEventListener('contextmenu', function (e) { e.preventDefault() })
     }
   }

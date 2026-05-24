@@ -22,6 +22,7 @@ const s = {
   currentRole: null,
   isConnected: false,
   pendingIceCandidates: [],
+  pendingDirectIceCandidates: [],
   isWaitingRenegotiation: false,
   isDirectControllerMode: false,
   isAndroidControlled: false,

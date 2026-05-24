@@ -76,6 +76,14 @@ class SignalingServerService : Service() {
         } catch (e: Exception) {
             sendLog("WakeLock 初始化失败: ${e.message}")
         }
+
+        try {
+            val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            wifiLock = wifiManager.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "YCDesk:SignalingServerWifiLock")
+            wifiLock?.setReferenceCounted(false)
+        } catch (e: Exception) {
+            sendLog("WifiLock 初始化失败: ${e.message}")
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -222,7 +230,10 @@ class SignalingServerService : Service() {
     private fun acquireWakeLock() {
         try {
             if (wakeLock != null && wakeLock?.isHeld == false) {
-                wakeLock?.acquire(10 * 60 * 1000L)
+                wakeLock?.acquire()
+            }
+            if (wifiLock != null && wifiLock?.isHeld == false) {
+                wifiLock?.acquire()
             }
         } catch (e: Exception) {
             sendLog("WakeLock 获取失败: ${e.message}")
@@ -233,6 +244,9 @@ class SignalingServerService : Service() {
         try {
             if (wakeLock != null && wakeLock?.isHeld == true) {
                 wakeLock?.release()
+            }
+            if (wifiLock != null && wifiLock?.isHeld == true) {
+                wifiLock?.release()
             }
         } catch (e: Exception) {
             sendLog("WakeLock 释放失败: ${e.message}")

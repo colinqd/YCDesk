@@ -133,8 +133,8 @@ function createMainWindow() {
 
 function createRemoteWindow() {
   if (remoteWindow) {
-    remoteWindow.focus()
-    return remoteWindow
+    remoteWindow.close()
+    remoteWindow = null
   }
 
   remoteWindow = new BrowserWindow({

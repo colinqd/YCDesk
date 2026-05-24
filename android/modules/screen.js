@@ -53,9 +53,9 @@ function updateScreenSize(width, height, scaleFactor, workArea) {
 
 function showRemoteScreen() {
   if (s.matrixTransformer) {
-      s.matrixTransformer.fullReset();
+      s.matrixTransformer.reset();
   }
-  
+
   document.getElementById('mainContainer').style.display = 'none'
   document.getElementById('remoteScreen').classList.add('active')
   startStatsMonitoring()
@@ -63,13 +63,21 @@ function showRemoteScreen() {
   if (typeof window.updateExitBtnDisplay === 'function') {
     setTimeout(function() { window.updateExitBtnDisplay() }, 50)
   }
-  
-  setTimeout(() => {
-      if (typeof window.setupRemoteScreenInteraction === 'function') window.setupRemoteScreenInteraction();
-      setTimeout(() => {
-          updateContainerSizeAfterVideoLoad();
-      }, 500);
-  }, 100);
+
+  // 仅在未初始化交互时设置，避免重复绑定事件监听器
+  if (!s.inputDispatcher) {
+    setTimeout(() => {
+        if (typeof window.setupRemoteScreenInteraction === 'function') window.setupRemoteScreenInteraction();
+        setTimeout(() => {
+            updateContainerSizeAfterVideoLoad();
+        }, 500);
+    }, 100);
+  } else {
+    // 已初始化，仅更新尺寸
+    setTimeout(() => {
+        updateContainerSizeAfterVideoLoad();
+    }, 200);
+  }
 }
 
 function updateContainerSizeAfterVideoLoad() {
@@ -105,6 +113,8 @@ function hideRemoteScreen() {
   remoteVideo.srcObject = null
   s.isDirectControllerMode = false
   s.isWaitingRenegotiation = false
+  s.inputDispatcher = null
+  s.gestureHandler = null
   stopStatsMonitoring()
 }
 

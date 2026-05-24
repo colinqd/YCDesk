@@ -1,7 +1,9 @@
 package com.ycdesk.mobile;
 
+import android.accessibilityservice.AccessibilityService;
 import android.app.Instrumentation;
 import android.content.Context;
+import android.os.Build;
 import android.os.PowerManager;
 import android.os.SystemClock;
 import android.util.Log;
@@ -26,7 +28,14 @@ public class InputExecutorPlugin extends Plugin {
     public void load() {
         super.load();
         instrumentation = new Instrumentation();
-        Log.d(TAG, "InputExecutorPlugin loaded");
+        Log.d(TAG, "InputExecutorPlugin loaded, accessibility service available: " + InputAccessibilityService.isAvailable());
+    }
+
+    /**
+     * Check if AccessibilityService is available for input injection.
+     */
+    private boolean useAccessibilityService() {
+        return InputAccessibilityService.isAvailable();
     }
 
     @PluginMethod
@@ -37,10 +46,20 @@ public class InputExecutorPlugin extends Plugin {
             int screenWidth = call.getInt("screenWidth", 1920);
             int screenHeight = call.getInt("screenHeight", 1080);
 
-            // Convert normalized coordinates to screen coordinates
             int absoluteX = (int) (x * screenWidth);
             int absoluteY = (int) (y * screenHeight);
 
+            if (useAccessibilityService()) {
+                // AccessibilityService dispatchGesture only supports touch, not hover.
+                // Mouse move is handled by the floating cursor overlay, so we skip here.
+                JSObject result = new JSObject();
+                result.put("success", true);
+                call.resolve(result);
+                Log.d(TAG, "Mouse move via accessibility (handled by overlay): x=" + absoluteX + ", y=" + absoluteY);
+                return;
+            }
+
+            // Fallback: Instrumentation
             long downTime = SystemClock.uptimeMillis();
             long eventTime = SystemClock.uptimeMillis();
 
@@ -81,15 +100,35 @@ public class InputExecutorPlugin extends Plugin {
             int absoluteX = (int) (x * screenWidth);
             int absoluteY = (int) (y * screenHeight);
 
+            if (useAccessibilityService()) {
+                InputAccessibilityService service = InputAccessibilityService.getInstance();
+                boolean success;
+                if (button == 2) {
+                    // Right button -> long click
+                    success = service.dispatchLongClick(absoluteX, absoluteY);
+                } else {
+                    // Left or middle button -> click
+                    success = service.dispatchClick(absoluteX, absoluteY);
+                }
+
+                JSObject result = new JSObject();
+                result.put("success", success);
+                if (!success) {
+                    result.put("error", "dispatchGesture failed");
+                }
+                call.resolve(result);
+                Log.d(TAG, "Mouse down via accessibility: button=" + button + ", x=" + absoluteX + ", y=" + absoluteY);
+                return;
+            }
+
+            // Fallback: Instrumentation
             long downTime = SystemClock.uptimeMillis();
             long eventTime = SystemClock.uptimeMillis();
 
             int action = MotionEvent.ACTION_DOWN;
             if (button == 1) {
-                // Middle button
                 action = MotionEvent.ACTION_DOWN;
             } else if (button == 2) {
-                // Right button
                 action = MotionEvent.ACTION_DOWN;
             }
 
@@ -130,6 +169,17 @@ public class InputExecutorPlugin extends Plugin {
             int absoluteX = (int) (x * screenWidth);
             int absoluteY = (int) (y * screenHeight);
 
+            if (useAccessibilityService()) {
+                // With AccessibilityService, click is dispatched as a single atomic gesture
+                // in executeMouseDown, so mouseUp is a no-op here.
+                JSObject result = new JSObject();
+                result.put("success", true);
+                call.resolve(result);
+                Log.d(TAG, "Mouse up via accessibility (no-op, click is atomic): x=" + absoluteX + ", y=" + absoluteY);
+                return;
+            }
+
+            // Fallback: Instrumentation
             long downTime = SystemClock.uptimeMillis();
             long eventTime = SystemClock.uptimeMillis();
 
@@ -164,8 +214,28 @@ public class InputExecutorPlugin extends Plugin {
     public void executeMouseWheel(PluginCall call) {
         try {
             float deltaY = (float) (double) call.getDouble("deltaY", 0.0);
+            float x = (float) (double) call.getDouble("x", 0.5);
+            float y = (float) (double) call.getDouble("y", 0.5);
+            int screenWidth = call.getInt("screenWidth", 1920);
+            int screenHeight = call.getInt("screenHeight", 1080);
 
-            // Use key events to simulate mouse wheel
+            if (useAccessibilityService()) {
+                InputAccessibilityService service = InputAccessibilityService.getInstance();
+                int absoluteX = (int) (x * screenWidth);
+                int absoluteY = (int) (y * screenHeight);
+                boolean success = service.dispatchScroll(absoluteX, absoluteY, deltaY);
+
+                JSObject result = new JSObject();
+                result.put("success", success);
+                if (!success) {
+                    result.put("error", "dispatchGesture scroll failed");
+                }
+                call.resolve(result);
+                Log.d(TAG, "Mouse wheel via accessibility: deltaY=" + deltaY);
+                return;
+            }
+
+            // Fallback: Instrumentation - use key events to simulate mouse wheel
             int keyCode = deltaY > 0 ? KeyEvent.KEYCODE_PAGE_DOWN : KeyEvent.KEYCODE_PAGE_UP;
 
             long downTime = SystemClock.uptimeMillis();
@@ -194,19 +264,60 @@ public class InputExecutorPlugin extends Plugin {
     public void executeKeyDown(PluginCall call) {
         try {
             String key = call.getString("key", "");
+            boolean ctrlKey = call.getBoolean("ctrlKey", false);
+            boolean shiftKey = call.getBoolean("shiftKey", false);
+            boolean altKey = call.getBoolean("altKey", false);
+            boolean metaKey = call.getBoolean("metaKey", false);
             int keyCode = getKeyCode(key);
 
             if (keyCode != -1) {
                 long downTime = SystemClock.uptimeMillis();
                 long eventTime = SystemClock.uptimeMillis();
 
-                KeyEvent downEvent = new KeyEvent(downTime, eventTime, KeyEvent.ACTION_DOWN, keyCode, 0);
+                int metaState = 0;
+                if (ctrlKey) metaState |= KeyEvent.META_CTRL_ON;
+                if (shiftKey) metaState |= KeyEvent.META_SHIFT_ON;
+                if (altKey) metaState |= KeyEvent.META_ALT_ON;
+                if (metaKey) metaState |= KeyEvent.META_META_ON;
+
+                // Handle special keys via AccessibilityService global actions
+                if (useAccessibilityService()) {
+                    InputAccessibilityService service = InputAccessibilityService.getInstance();
+                    if (handleGlobalKey(service, keyCode)) {
+                        JSObject result = new JSObject();
+                        result.put("success", true);
+                        call.resolve(result);
+                        Log.d(TAG, "Key down via accessibility global action: key=" + key);
+                        return;
+                    }
+                    // For other keys, fall through to Instrumentation
+                }
+
+                // Instrumentation fallback for key events
+                if (ctrlKey) {
+                    KeyEvent ctrlDown = new KeyEvent(downTime, eventTime, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_CTRL_LEFT, 0, KeyEvent.META_CTRL_ON);
+                    instrumentation.sendKeySync(ctrlDown);
+                }
+                if (shiftKey) {
+                    KeyEvent shiftDown = new KeyEvent(downTime, eventTime, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_SHIFT_LEFT, 0, KeyEvent.META_SHIFT_ON);
+                    instrumentation.sendKeySync(shiftDown);
+                }
+                if (altKey) {
+                    KeyEvent altDown = new KeyEvent(downTime, eventTime, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ALT_LEFT, 0, KeyEvent.META_ALT_ON);
+                    instrumentation.sendKeySync(altDown);
+                }
+                if (metaKey) {
+                    KeyEvent metaDown = new KeyEvent(downTime, eventTime, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_META_LEFT, 0, KeyEvent.META_META_ON);
+                    instrumentation.sendKeySync(metaDown);
+                }
+
+                KeyEvent downEvent = new KeyEvent(downTime, eventTime, KeyEvent.ACTION_DOWN, keyCode, 0, metaState);
                 instrumentation.sendKeySync(downEvent);
 
                 JSObject result = new JSObject();
                 result.put("success", true);
                 call.resolve(result);
-                Log.d(TAG, "Key down executed: key=" + key + ", keyCode=" + keyCode);
+                Log.d(TAG, "Key down executed: key=" + key + ", keyCode=" + keyCode + ", meta=" + metaState);
             } else {
                 JSObject result = new JSObject();
                 result.put("success", false);
@@ -226,14 +337,50 @@ public class InputExecutorPlugin extends Plugin {
     public void executeKeyUp(PluginCall call) {
         try {
             String key = call.getString("key", "");
+            boolean ctrlKey = call.getBoolean("ctrlKey", false);
+            boolean shiftKey = call.getBoolean("shiftKey", false);
+            boolean altKey = call.getBoolean("altKey", false);
+            boolean metaKey = call.getBoolean("metaKey", false);
             int keyCode = getKeyCode(key);
 
             if (keyCode != -1) {
                 long downTime = SystemClock.uptimeMillis();
                 long eventTime = SystemClock.uptimeMillis();
 
-                KeyEvent upEvent = new KeyEvent(downTime, eventTime, KeyEvent.ACTION_UP, keyCode, 0);
+                int metaState = 0;
+                if (ctrlKey) metaState |= KeyEvent.META_CTRL_ON;
+                if (shiftKey) metaState |= KeyEvent.META_SHIFT_ON;
+                if (altKey) metaState |= KeyEvent.META_ALT_ON;
+                if (metaKey) metaState |= KeyEvent.META_META_ON;
+
+                // Global action keys don't need key up
+                if (useAccessibilityService() && isGlobalKey(keyCode)) {
+                    JSObject result = new JSObject();
+                    result.put("success", true);
+                    call.resolve(result);
+                    return;
+                }
+
+                // Instrumentation fallback for key events
+                KeyEvent upEvent = new KeyEvent(downTime, eventTime, KeyEvent.ACTION_UP, keyCode, 0, metaState);
                 instrumentation.sendKeySync(upEvent);
+
+                if (metaKey) {
+                    KeyEvent metaUp = new KeyEvent(downTime, eventTime, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_META_LEFT, 0);
+                    instrumentation.sendKeySync(metaUp);
+                }
+                if (altKey) {
+                    KeyEvent altUp = new KeyEvent(downTime, eventTime, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ALT_LEFT, 0);
+                    instrumentation.sendKeySync(altUp);
+                }
+                if (shiftKey) {
+                    KeyEvent shiftUp = new KeyEvent(downTime, eventTime, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_SHIFT_LEFT, 0);
+                    instrumentation.sendKeySync(shiftUp);
+                }
+                if (ctrlKey) {
+                    KeyEvent ctrlUp = new KeyEvent(downTime, eventTime, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_CTRL_LEFT, 0);
+                    instrumentation.sendKeySync(ctrlUp);
+                }
 
                 JSObject result = new JSObject();
                 result.put("success", true);
@@ -257,17 +404,30 @@ public class InputExecutorPlugin extends Plugin {
     @PluginMethod
     public void executeLockScreen(PluginCall call) {
         try {
+            if (useAccessibilityService() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                InputAccessibilityService service = InputAccessibilityService.getInstance();
+                boolean success = service.lockScreen();
+
+                JSObject result = new JSObject();
+                result.put("success", success);
+                result.put("message", "Screen lock requested via accessibility");
+                call.resolve(result);
+                Log.d(TAG, "Lock screen via accessibility");
+                return;
+            }
+
+            // Fallback: Instrumentation
             long downTime = SystemClock.uptimeMillis();
             long eventTime = SystemClock.uptimeMillis();
-            
-            KeyEvent downEvent = new KeyEvent(downTime, eventTime, 
+
+            KeyEvent downEvent = new KeyEvent(downTime, eventTime,
                 KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_POWER, 0);
-            KeyEvent upEvent = new KeyEvent(downTime, eventTime, 
+            KeyEvent upEvent = new KeyEvent(downTime, eventTime,
                 KeyEvent.ACTION_UP, KeyEvent.KEYCODE_POWER, 0);
-            
+
             instrumentation.sendKeySync(downEvent);
             instrumentation.sendKeySync(upEvent);
-            
+
             JSObject result = new JSObject();
             result.put("success", true);
             result.put("message", "Screen lock requested");
@@ -287,26 +447,29 @@ public class InputExecutorPlugin extends Plugin {
         try {
             String password = call.getString("password", "");
             Context context = getContext();
-            
+
             PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
             if (pm != null) {
+                @SuppressWarnings("deprecation")
                 PowerManager.WakeLock wl = pm.newWakeLock(
-                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK 
-                    | PowerManager.ACQUIRE_CAUSES_WAKEUP 
+                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK
+                    | PowerManager.ACQUIRE_CAUSES_WAKEUP
                     | PowerManager.ON_AFTER_RELEASE,
                     "YCDesk:UnlockScreen"
                 );
                 wl.acquire(3000);
                 wl.release();
             }
-            
+
             Window window = getActivity().getWindow();
             if (window != null) {
-                window.addFlags(WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD);
-                window.addFlags(WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
-                window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED);
+                @SuppressWarnings("deprecation")
+                int flags = WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
+                    | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                    | WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED;
+                window.addFlags(flags);
             }
-            
+
             JSObject result = new JSObject();
             result.put("success", true);
             result.put("message", "Screen unlock requested");
@@ -319,6 +482,46 @@ public class InputExecutorPlugin extends Plugin {
             result.put("error", e.getMessage());
             call.resolve(result);
         }
+    }
+
+    @PluginMethod
+    public void isAccessibilityEnabled(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("enabled", InputAccessibilityService.isAvailable());
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void setControlledMode(PluginCall call) {
+        boolean enabled = call.getBoolean("enabled", false);
+        Log.d(TAG, "Controlled mode " + (enabled ? "enabled" : "disabled"));
+        JSObject result = new JSObject();
+        result.put("success", true);
+        call.resolve(result);
+    }
+
+    /**
+     * Handle keys that map to AccessibilityService global actions.
+     * Returns true if the key was handled as a global action.
+     */
+    private boolean handleGlobalKey(InputAccessibilityService service, int keyCode) {
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            return service.goBack();
+        } else if (keyCode == KeyEvent.KEYCODE_HOME) {
+            return service.goHome();
+        } else if (keyCode == KeyEvent.KEYCODE_APP_SWITCH) {
+            return service.openRecents();
+        }
+        return false;
+    }
+
+    /**
+     * Check if a keyCode maps to a global action.
+     */
+    private boolean isGlobalKey(int keyCode) {
+        return keyCode == KeyEvent.KEYCODE_BACK
+            || keyCode == KeyEvent.KEYCODE_HOME
+            || keyCode == KeyEvent.KEYCODE_APP_SWITCH;
     }
 
     private int getKeyCode(String key) {
@@ -397,14 +600,5 @@ public class InputExecutorPlugin extends Plugin {
                 }
                 return -1;
         }
-    }
-
-    @PluginMethod
-    public void setControlledMode(PluginCall call) {
-        boolean enabled = call.getBoolean("enabled", false);
-        Log.d(TAG, "Controlled mode " + (enabled ? "enabled" : "disabled"));
-        JSObject result = new JSObject();
-        result.put("success", true);
-        call.resolve(result);
     }
 }

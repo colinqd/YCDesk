@@ -9,8 +9,7 @@
       })
 
       connectionManager.on('latency', function (latency) {
-        var el = document.getElementById('latency')
-        if (el) el.textContent = latency + ' ms'
+        window.ToolbarManager && window.ToolbarManager.updateLatency(latency)
       })
 
       connectionManager.on('video-metadata', function () {
@@ -25,6 +24,31 @@
       })
 
       connectionManager.on('video-ready', function () {})
+
+      // 视频轨道静音（发送端暂停/切换轨道时触发）
+      connectionManager.on('video-track-muted', function () {
+        window.UIState && window.UIState.log('视频轨道进入静音状态，等待恢复...')
+      })
+
+      // 视频轨道恢复（发送端新轨道生效后触发）—— 自动恢复播放
+      connectionManager.on('video-track-unmuted', function () {
+        window.UIState && window.UIState.log('视频轨道已恢复，重新播放视频')
+        if (videoElement && videoElement.paused) {
+          videoElement.play().catch(function (e) {
+            window.UIState && window.UIState.log('恢复播放失败: ' + e.message)
+          })
+        }
+        var vc = document.getElementById('videoContainer')
+        if (vc) vc.classList.remove('video-frozen')
+      })
+
+      // 视频轨道结束 —— 尝试请求刷新恢复
+      connectionManager.on('video-track-ended', function () {
+        window.UIState && window.UIState.log('视频轨道已结束，请求刷新恢复...')
+        setTimeout(function () {
+          ConnectionEvents.requestVideoRefresh()
+        }, 500)
+      })
 
       connectionManager.on('data-channel-open', function () {
         ConnectionEvents.initAuxiliaryChannels(connectionManager)
@@ -50,8 +74,7 @@
       })
 
       connectionManager.stateMachine.addListener(function (newState, oldState, data) {
-        var stateEl = document.getElementById('connectionState')
-        if (stateEl) stateEl.textContent = newState
+        window.ToolbarManager && window.ToolbarManager.updateConnectionState(newState)
         switch (newState) {
           case 'connecting':
             window.UIState && window.UIState.updateStatus('正在连接...', 'connecting')

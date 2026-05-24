@@ -14,8 +14,7 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.UnknownHostException;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -23,9 +22,9 @@ import java.util.concurrent.Executors;
 public class TCPSocketPlugin extends Plugin {
     private static final String TAG = "TCPSocketPlugin";
     private ServerSocket serverSocket;
-    private final Map<String, Socket> clientSockets = new HashMap<>();
-    private final Map<String, BufferedReader> readers = new HashMap<>();
-    private final Map<String, PrintWriter> writers = new HashMap<>();
+    private final ConcurrentHashMap<String, Socket> clientSockets = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, BufferedReader> readers = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, PrintWriter> writers = new ConcurrentHashMap<>();
     private final ExecutorService executor = Executors.newCachedThreadPool();
     private boolean isServerRunning = false;
 

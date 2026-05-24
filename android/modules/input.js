@@ -38,55 +38,57 @@ class InputDispatcher {
     }
     
     dispatchTouchInput(containerX, containerY, type, button = 0, delta = 0) {
-        const now = Date.now();
+        const now = Date.now()
         if (now - this.lastInputTime < this.inputThrottleMs && type === 'mousemove') {
-            return;
+            return
         }
-        this.lastInputTime = now;
-        
+        this.lastInputTime = now
+
         if (type === 'wheel') {
             this.sendInputCommand({
                 type: 'wheel',
                 deltaY: delta
-            });
-            return;
+            })
+            return
         }
-        
-        const videoContainer = document.getElementById('videoContainer');
-        if (!videoContainer) return;
-        
-        const rect = videoContainer.getBoundingClientRect();
-        if (rect.width === 0 || rect.height === 0) return;
-        
-        const localX = containerX - rect.left;
-        const localY = containerY - rect.top;
-        
-        const normalizedX = localX / rect.width;
-        const normalizedY = localY / rect.height;
-        
+
+        const videoContainer = document.getElementById('videoContainer')
+        if (!videoContainer) return
+
+        const rect = videoContainer.getBoundingClientRect()
+        if (rect.width === 0 || rect.height === 0) return
+
+        const localX = containerX - rect.left
+        const localY = containerY - rect.top
+
+        const normalizedX = localX / rect.width
+        const normalizedY = localY / rect.height
+
         if (normalizedX < 0 || normalizedX > 1 || normalizedY < 0 || normalizedY > 1) {
-            return;
+            return
         }
-        
+
         this.sendInputCommand({
             type: type,
             x: normalizedX,
             y: normalizedY,
             button: button
-        });
+        })
     }
     
     sendInputCommand(command) {
         const inputCommand = convertToInputCommand(command);
         const message = JSON.stringify(inputCommand);
 
-        // 优先使用 control 通道（可靠，已知可用）
-        // input 通道作为后备
+        const inputReady = s.inputChannel && s.inputChannelReady && s.inputChannel.readyState === 'open';
         const dataReady = s.dataChannel && s.dataChannel.readyState === 'open';
-        const inputReady = s.inputChannel && s.inputChannel.readyState === 'open';
 
-        if (dataReady) {
-            s.dataChannel.send(message);
+        if (!inputReady && !dataReady) {
+            if (!this._lastNoChannelWarn || Date.now() - this._lastNoChannelWarn > 1000) {
+                this._lastNoChannelWarn = Date.now();
+                const log = typeof window.log === 'function' ? window.log : console.log;
+                log('[INPUT] 输入通道均未就绪! inputReady=' + inputReady + ' dataReady=' + dataReady);
+            }
             return;
         }
 
@@ -94,19 +96,10 @@ class InputDispatcher {
             if (s.inputChannel.bufferedAmount < 65536) {
                 s.inputChannel.send(message);
             } else {
-                if (!this._lastNoChannelWarn || Date.now() - this._lastNoChannelWarn > 1000) {
-                    this._lastNoChannelWarn = Date.now();
-                    const log = typeof window.log === 'function' ? window.log : console.log;
-                    log('[SIGNALING] inputChannel缓冲已满且无可用control通道');
-                }
+                s.dataChannel.send(message);
             }
-            return;
-        }
-
-        if (!this._lastNoChannelWarn || Date.now() - this._lastNoChannelWarn > 1000) {
-            this._lastNoChannelWarn = Date.now();
-            const log = typeof window.log === 'function' ? window.log : console.log;
-            log('[SIGNALING] 输入通道均未就绪! dataReady=' + dataReady + ' inputReady=' + inputReady);
+        } else if (dataReady) {
+            s.dataChannel.send(message);
         }
     }
 }
@@ -473,6 +466,7 @@ function convertToInputCommand(command) {
       break
       
     case 'dblclick':
+    case 'doubleclick':
       inputCommand.inputType = 'dblclick'
       inputCommand.x = normalizeCoordinate(command.x)
       inputCommand.y = normalizeCoordinate(command.y)

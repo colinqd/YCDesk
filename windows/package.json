@@ -1,6 +1,6 @@
 {
   "name": "ycdesk",
-  "version": "3.3.0",
+  "version": "0.0.1",
   "description": "远程桌面控制软件 - Windows 版本",
   "main": "src/main/main.js",
   "author": "",
@@ -9,7 +9,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "cross-env NODE_ENV=development electron . --dev",
-    "dev:watch": "nodemon --exec 'npm run dev' --watch src --watch shared --ext js,html",
+    "dev:watch": "nodemon --exec \"npm run dev\" --watch src --watch shared --ext js,html",
     "sync": "node sync-shared.js",
     "prebuild": "node sync-shared.js",
     "build": "electron-builder --win",
@@ -32,8 +32,8 @@
     "@vitest/coverage-v8": "^1.6.1",
     "chokidar": "^3.6.0",
     "cross-env": "^7.0.3",
-    "electron": "^28.3.3",
-    "electron-builder": "^24.9.1",
+    "electron": "28.3.3",
+    "electron-builder": "^24.13.3",
     "jsdom": "^24.1.3",
     "nodemon": "^3.0.0",
     "rcedit": "^5.0.2",

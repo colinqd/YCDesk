@@ -369,6 +369,10 @@
       font-weight: 600;
     }
 
+    .toolbar-stats.hidden {
+      display: none;
+    }
+
     #debugLog {
       position: fixed;
       top: 60px;
@@ -438,7 +442,8 @@
       </select>
       <button class="toolbar-btn" onclick="window.ToolbarManager.unlockPanel()">🔓 解锁</button>
       <button class="toolbar-btn" onclick="window.ToolbarManager.lockRemoteScreen(window.connectionManager)">🔒 锁屏</button>
-      <span class="toolbar-stats">
+      <button class="toolbar-btn" onclick="window.ToolbarManager.toggleStatsBar()" id="statsBtn">📊 状态</button>
+      <span class="toolbar-stats" id="toolbarStats">
         <span class="stats-item">
           <span class="info-label">延迟:</span>
           <span class="info-value" id="latency">-- ms</span>
@@ -456,6 +461,7 @@
           <span class="info-value" id="connectionState">--</span>
         </span>
       </span>
+      <button class="toolbar-btn" onclick="window.ToolbarManager.toggleToolbar()" id="hideToolbarBtn">👁️ 隐藏栏</button>
       <button class="toolbar-btn" onclick="UIState.toggleDebugLog()">日志</button>
       <button class="toolbar-btn" onclick="UIState.toggleFullscreen()">全屏</button>
       <button class="toolbar-btn danger" id="exitLockBtn" onclick="window.ToolbarManager.handleExit(window.connectionManager)" oncontextmenu="window.ToolbarManager.toggleExitBehavior(); return false;" title="右键切换退出模式">🚪 退出并锁屏</button>
@@ -686,55 +692,6 @@
       connectionManager.dataChannelManager.send({ type: 'video-refresh-request', timestamp: Date.now() });
     }
 
-    // === 事件监听器 ===
-    function setupUnlockStateListener() {
-      window.electronAPI.on('unlock-state-changed', function(data) {
-        UIState.log('收到锁定状态变化: isLocked=' + data.isLocked);
-        var lockCanvas = document.getElementById('lockScreenCanvas');
-        var vc = document.getElementById('videoContainer');
-        if (data.isLocked === false) {
-          UIState.log('屏幕已解锁，隐藏解锁面板和锁屏画面...');
-          if (window.unlockUI) window.unlockUI.hideOverlay();
-          if (lockCanvas) lockCanvas.style.display = 'none';
-          UIState.updateStatus('已连接');
-          if (vc) vc.classList.remove('video-frozen');
-          
-          // 延迟发送视频刷新请求，给被控端足够时间恢复
-          setTimeout(function() { 
-            UIState.log('发送第一次视频刷新请求...');
-            requestVideoRefresh(); 
-          }, 1000);
-          
-          // 如果第一次失败，再尝试一次
-          setTimeout(function() { 
-            UIState.log('发送第二次视频刷新请求（备用）...');
-            requestVideoRefresh(); 
-          }, 3000);
-        } else if (data.isLocked === true) {
-          UIState.log('屏幕已锁定，显示锁屏画面和解锁面板...');
-          UIState.updateStatus('已锁定', 'error');
-          if (vc) vc.classList.add('video-frozen');
-          if (lockCanvas) lockCanvas.style.display = 'block';
-          if (window.unlockUI) window.unlockUI.showOverlay();
-        }
-      });
-    }
-
-    function setupLockScreenFrameListener() {
-      window.electronAPI.on('lock-screen-frame', function(data) {
-        var canvas = document.getElementById('lockScreenCanvas');
-        if (!canvas) return;
-        var img = new Image();
-        img.onload = function() {
-          canvas.width = img.width;
-          canvas.height = img.height;
-          var ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0);
-        };
-        img.src = 'data:image/jpeg;base64,' + data.jpeg;
-      });
-    }
-
     // === 输入事件 ===
     window.setupInputEvents = function() {
       UIState.log('[remote.html] setupInputEvents() called');
@@ -814,9 +771,16 @@
     // === 连接模式入口 ===
     function initSignalingMode(data) {
       if (connectionManager) {
-        UIState.log('连接管理器已存在，忽略重复的启动信号');
-        return;
+        UIState.log('清理旧连接管理器')
+        try { connectionManager.disconnect() } catch(e) {}
+        connectionManager = null
       }
+
+      // 移除旧的信令监听器，防止重连时重复注册
+      window.electronAPI.removeAllListeners('signaling-offer')
+      window.electronAPI.removeAllListeners('signaling-answer')
+      window.electronAPI.removeAllListeners('signaling-ice-candidate')
+
       connectionMode = 'signaling';
       
       connectionManager = new SignalingConnectionManager();
@@ -831,14 +795,18 @@
       window.electronAPI.on('signaling-offer', function(offerData) {
         if (connectionManager) connectionManager.handleSignalingOffer(offerData);
       });
-      
+
       window.electronAPI.on('signaling-answer', function(answerData) {
         if (connectionManager) connectionManager.handleAnswer(answerData.answer);
       });
-      
+
       window.electronAPI.on('signaling-ice-candidate', function(candidateData) {
         if (connectionManager) connectionManager.handleIceCandidate(candidateData.candidate);
       });
+
+      window._cleanupFunctions.push(function() { window.electronAPI.removeAllListeners('signaling-offer') })
+      window._cleanupFunctions.push(function() { window.electronAPI.removeAllListeners('signaling-answer') })
+      window._cleanupFunctions.push(function() { window.electronAPI.removeAllListeners('signaling-ice-candidate') })
       
       connectionManager.connect({
         credentials: { deviceId: data.deviceId, sessionId: data.sessionId }
@@ -854,7 +822,11 @@
     }
 
     function initDirectMode(data) {
-      if (connectionManager) return;
+      if (connectionManager) {
+        UIState.log('清理旧连接管理器')
+        try { connectionManager.disconnect() } catch(e) {}
+        connectionManager = null
+      }
       connectionMode = 'direct';
       
       connectionManager = new DirectConnectionManager();
@@ -936,18 +908,6 @@
       }
       window.electronAPI.on('lock-screen-frame', _lsHandler)
       window._cleanupFunctions.push(function() { window.electronAPI.removeAllListeners('lock-screen-frame') })
-
-      var _sigOffer = function(offerData) { if (connectionManager) connectionManager.handleSignalingOffer(offerData) }
-      window.electronAPI.on('signaling-offer', _sigOffer)
-      window._cleanupFunctions.push(function() { window.electronAPI.removeAllListeners('signaling-offer') })
-
-      var _sigAnswer = function(answerData) { if (connectionManager) connectionManager.handleAnswer(answerData.answer) }
-      window.electronAPI.on('signaling-answer', _sigAnswer)
-      window._cleanupFunctions.push(function() { window.electronAPI.removeAllListeners('signaling-answer') })
-
-      var _sigIce = function(candidateData) { if (connectionManager) connectionManager.handleIceCandidate(candidateData.candidate) }
-      window.electronAPI.on('signaling-ice-candidate', _sigIce)
-      window._cleanupFunctions.push(function() { window.electronAPI.removeAllListeners('signaling-ice-candidate') })
 
       var _sigStart = function(data) { initSignalingMode(data) }
       window.electronAPI.on('signaling-mode-start', _sigStart)

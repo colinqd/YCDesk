@@ -4,4 +4,5 @@
     <string name="title_activity_main">YCDesk</string>
     <string name="package_name">com.ycdesk.mobile</string>
     <string name="custom_url_scheme">com.ycdesk.mobile</string>
+    <string name="accessibility_service_description">允许 YCDesk 执行远程控制操作，如点击、滑动和按键输入。启用此服务后，其他设备可以远程控制本设备。</string>
 </resources>

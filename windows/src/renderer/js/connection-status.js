@@ -25,6 +25,7 @@ function onAddServerClick() {
 }
 
 function addSignalingServer() {
+  if (!historyManager) { console.error('historyManager 未初始化'); return }
   const nameInput = document.getElementById('newServerName')
   const urlInput = document.getElementById('newServerUrl')
   if (!nameInput || !urlInput) return
@@ -43,6 +44,7 @@ function addSignalingServer() {
 }
 
 function updateSignalingServer(index) {
+  if (!historyManager) { console.error('historyManager 未初始化'); return }
   const nameInput = document.getElementById('newServerName')
   const urlInput = document.getElementById('newServerUrl')
   if (!nameInput || !urlInput) return
@@ -66,6 +68,7 @@ function updateSignalingServer(index) {
 }
 
 function editSignalingServer(index) {
+  if (!historyManager) { console.error('historyManager 未初始化'); return }
   const servers = historyManager.getServers()
   if (index >= servers.length) return
 
@@ -97,12 +100,14 @@ function cancelEditServer() {
 }
 
 function deleteSignalingServer(index) {
+  if (!historyManager) { console.error('historyManager 未初始化'); return }
   historyManager.deleteServer(index)
   renderServerList()
   log('信令服务器已删除')
 }
 
 function selectServer(index) {
+  if (!historyManager) { console.error('historyManager 未初始化'); return }
   const servers = historyManager.getServers()
   if (index >= servers.length) return
 
@@ -115,6 +120,11 @@ function selectServer(index) {
 function renderServerList() {
   const listEl = document.getElementById('signalingServerList')
   if (!listEl) return
+
+  if (!historyManager) {
+    listEl.innerHTML = '<div class="history-empty">请等待加载完成...</div>'
+    return
+  }
 
   const servers = historyManager.getServers()
   if (servers.length === 0) {
@@ -157,6 +167,7 @@ function onAddServerClickControlled() {
 }
 
 function addSignalingServerControlled() {
+  if (!historyManager) { console.error('historyManager 未初始化'); return }
   const nameInput = document.getElementById('controlledNewServerName')
   const urlInput = document.getElementById('controlledNewServerUrl')
   if (!nameInput || !urlInput) return
@@ -175,6 +186,7 @@ function addSignalingServerControlled() {
 }
 
 function updateSignalingServerControlled(index) {
+  if (!historyManager) { console.error('historyManager 未初始化'); return }
   const nameInput = document.getElementById('controlledNewServerName')
   const urlInput = document.getElementById('controlledNewServerUrl')
   if (!nameInput || !urlInput) return
@@ -198,6 +210,7 @@ function updateSignalingServerControlled(index) {
 }
 
 function editSignalingServerControlled(index) {
+  if (!historyManager) { console.error('historyManager 未初始化'); return }
   const servers = historyManager.getServers()
   if (index >= servers.length) return
 
@@ -229,12 +242,14 @@ function cancelEditServerControlled() {
 }
 
 function deleteSignalingServerControlled(index) {
+  if (!historyManager) { console.error('historyManager 未初始化'); return }
   historyManager.deleteServer(index)
   renderServerListControlled()
   log('信令服务器已删除')
 }
 
 function selectServerControlled(index) {
+  if (!historyManager) { console.error('historyManager 未初始化'); return }
   const servers = historyManager.getServers()
   if (index >= servers.length) return
 
@@ -247,6 +262,11 @@ function selectServerControlled(index) {
 function renderServerListControlled() {
   const listEl = document.getElementById('controlledSignalingServerList')
   if (!listEl) return
+
+  if (!historyManager) {
+    listEl.innerHTML = '<div class="history-empty">请等待加载完成...</div>'
+    return
+  }
 
   const servers = historyManager.getServers()
   if (servers.length === 0) {
@@ -289,8 +309,6 @@ function switchControlledMode(mode) {
     if (signalingManager) {
       signalingManager.disconnect()
     }
-  } else {
-    loadDeviceListControlled()
   }
 
   log('被控端切换到 ' + (mode === 'direct' ? '直连模式' : '信令服务器模式'))
@@ -326,6 +344,9 @@ async function initControlled() {
   uiManager.setDeviceId(myDeviceId)
   signalingManager.setDeviceId(myDeviceId)
   directManager.setDeviceId(myDeviceId)
+
+  // 初始状态设置为"未连接"（红色指示灯）
+  uiManager.updateServerStatus('未连接', 'disconnected')
 
   log('YCDesk 被控端初始化完成，设备ID: ' + myDeviceId)
 
@@ -392,26 +413,38 @@ async function initController() {
 
   window.electronAPI.on('webrtc-offer', async (data) => {
     log('收到远程窗口的offer，转发给被控端')
-    directManager.sendMessage({
-      type: 'offer',
-      offer: data.offer
-    })
+    try {
+      await directManager.sendMessage({
+        type: 'offer',
+        offer: data.offer
+      })
+    } catch (error) {
+      log('转发offer失败: ' + error.message)
+    }
   })
 
   window.electronAPI.on('webrtc-answer', async (data) => {
     log('收到远程窗口的answer，转发给被控端')
-    directManager.sendMessage({
-      type: 'answer',
-      answer: data.answer
-    })
+    try {
+      await directManager.sendMessage({
+        type: 'answer',
+        answer: data.answer
+      })
+    } catch (error) {
+      log('转发answer失败: ' + error.message)
+    }
   })
 
   window.electronAPI.on('webrtc-ice-candidate', async (data) => {
     log('收到远程窗口的ICE候选，转发给被控端')
-    directManager.sendMessage({
-      type: 'ice-candidate',
-      candidate: data.candidate
-    })
+    try {
+      await directManager.sendMessage({
+        type: 'ice-candidate',
+        candidate: data.candidate
+      })
+    } catch (error) {
+      log('转发ICE候选失败: ' + error.message)
+    }
   })
 
   renderHistory('direct')

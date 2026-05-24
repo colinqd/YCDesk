@@ -26,6 +26,19 @@ class UIManager {
     if (pageId !== 'settingsPage') {
       this.currentPage = pageId
     }
+
+    // 更新侧边栏导航高亮
+    const navItems = document.querySelectorAll('.sidebar .nav-item')
+    navItems.forEach(item => {
+      const navPage = item.getAttribute('data-page')
+      if (navPage === pageId || (pageId === 'settingsPage' && navPage === 'settingsPage')) {
+        item.classList.add('active')
+      } else if (navPage === 'aboutSection' && pageId === 'settingsPage') {
+        item.classList.add('active')
+      } else {
+        item.classList.remove('active')
+      }
+    })
   }
 
   selectRole(role) {
@@ -77,25 +90,49 @@ class UIManager {
   }
 
   updateServerStatus(text, status) {
-    const statusText = document.getElementById('serverStatusText')
-    const statusBadge = document.getElementById('serverStatus')
-    const statusDot = document.querySelector('.status-dot')
-
-    if (!statusText || !statusBadge || !statusDot) return
-
-    statusText.textContent = text
-
     const statusStyles = {
-      'connected': { bg: '#e6f4ea', color: '#135429', dotColor: '#2ecc71' },
-      'connecting': { bg: '#fff3cd', color: '#856404', dotColor: '#ffc107' },
-      'disconnected': { bg: '#f8d7da', color: '#721c24', dotColor: '#e74c3c' },
-      'error': { bg: '#f8d7da', color: '#721c24', dotColor: '#e74c3c' }
+      'connected': { bg: '#e6f4ea', color: '#135429', dotColor: '#2ecc71', dotAnimation: '' },
+      'connecting': { bg: '#fff3cd', color: '#856404', dotColor: '#ffc107', dotAnimation: 'pulse-fast 1s infinite' },
+      'disconnected': { bg: '#f8d7da', color: '#721c24', dotColor: '#e74c3c', dotAnimation: '' },
+      'error': { bg: '#f8d7da', color: '#721c24', dotColor: '#e74c3c', dotAnimation: '' },
+      'reconnecting': { bg: '#fff3cd', color: '#856404', dotColor: '#ffc107', dotAnimation: 'pulse-fast 1s infinite' }
+    }
+    const style = statusStyles[status] || statusStyles['disconnected']
+
+    // 更新被控端状态指示灯
+    const controlledText = document.getElementById('serverStatusText')
+    const controlledBadge = document.getElementById('serverStatus')
+    const controlledDot = document.querySelector('#controlledPage .status-dot')
+    if (controlledText) controlledText.textContent = text
+    if (controlledBadge) {
+      controlledBadge.style.background = style.bg
+      controlledBadge.style.color = style.color
+    }
+    if (controlledDot) {
+      controlledDot.style.background = style.dotColor
+      controlledDot.style.animation = style.dotAnimation
     }
 
-    const style = statusStyles[status] || statusStyles['disconnected']
-    statusBadge.style.background = style.bg
-    statusBadge.style.color = style.color
-    statusDot.style.background = style.dotColor
+    // 更新主控端状态指示灯
+    const controllerText = document.getElementById('controllerStatusText')
+    const controllerBadge = document.getElementById('controllerServerStatus')
+    const controllerDot = document.getElementById('controllerStatusDot')
+    if (controllerText) controllerText.textContent = text
+    if (controllerBadge) {
+      controllerBadge.style.background = style.bg
+      controllerBadge.style.color = style.color
+    }
+    if (controllerDot) {
+      controllerDot.style.background = style.dotColor
+      controllerDot.style.animation = style.dotAnimation
+    }
+
+    // 更新底部状态栏
+    const statusbarText = document.getElementById('statusbarText')
+    if (statusbarText) {
+      const statusIcons = { connected: '\u{1F7E2}', connecting: '\u{1F7E1}', disconnected: '\u{1F534}', error: '\u{1F534}', reconnecting: '\u{1F7E1}' }
+      statusbarText.textContent = (statusIcons[status] || '\u{26AA}') + ' ' + text
+    }
   }
 
   setDeviceId(deviceId) {
@@ -205,5 +242,31 @@ class UIManager {
       this.connectionLogDiv.appendChild(div)
       this.connectionLogDiv.scrollTop = this.connectionLogDiv.scrollHeight
     }
+  }
+}
+
+// 全局侧边栏导航函数
+function navigateTo(pageId) {
+  if (!uiManager) {
+    console.warn('navigateTo: uiManager 未初始化')
+    return
+  }
+  if (pageId === 'controlledPage' || pageId === 'controllerPage') {
+    var role = pageId === 'controlledPage' ? 'controlled' : 'controller'
+    uiManager.selectRole(role)
+  } else {
+    uiManager.showPage(pageId)
+  }
+}
+
+// 全局状态栏日志切换
+function toggleStatusbarLog() {
+  const controlledLogBox = document.getElementById('controlledLogBox')
+  const controllerLogBox = document.getElementById('controllerLogBox')
+  const activeLog = [controlledLogBox, controllerLogBox].find(function(box) {
+    return box && box.offsetParent !== null
+  })
+  if (activeLog) {
+    activeLog.classList.toggle('collapsed')
   }
 }

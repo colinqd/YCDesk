@@ -48,11 +48,11 @@
 
   UnlockUI.prototype.handleManualUnlock = function () {
     var password = this.passwordInput.value
-    if (!password) { this.showMessage('请输入密码', 'error'); return }
+    // 允许空密码，被控端会自动使用本地保存的密码
     try {
       this.sendUnlockCommand(password)
       this.showMessage('正在发送解锁命令...', 'success')
-      if (this.rememberCheckbox.checked) this.savePassword(password)
+      if (password && this.rememberCheckbox.checked) this.savePassword(password)
       var self = this
       setTimeout(function () { self.hideOverlay() }, 1500)
     } catch (error) { this.showMessage('发送解锁命令失败: ' + error.message, 'error') }
@@ -69,17 +69,27 @@
   }
 
   UnlockUI.prototype.sendUnlockCommand = function (password) {
-    if (window.electronAPI && typeof window.electronAPI.invoke === 'function') {
-      window.electronAPI.invoke('service:unlockWithPassword', { password: password })
-    }
     if (!window.connectionManager) throw new Error('连接管理器未初始化')
     var unlockCommand
     if (window.createInputCommand && typeof window.createInputCommand === 'function') {
-      unlockCommand = window.createInputCommand('unlock_screen', { password: password })
+      unlockCommand = window.createInputCommand('unlock_screen', { password: password || '' })
     } else {
-      unlockCommand = { type: 'input', inputType: 'unlock_screen', password: password, timestamp: Date.now() }
+      unlockCommand = { type: 'input', inputType: 'unlock_screen', password: password || '', timestamp: Date.now() }
     }
     window.connectionManager.sendInput(unlockCommand)
+
+    // 解锁后发送 Enter 键以关闭锁屏壁纸（与 Android 端行为一致）
+    var self = this
+    setTimeout(function () {
+      if (!window.connectionManager) return
+      var enterCommand
+      if (window.createInputCommand && typeof window.createInputCommand === 'function') {
+        enterCommand = window.createInputCommand('keydown', { code: 'Enter', key: 'Enter' })
+      } else {
+        enterCommand = { type: 'input', inputType: 'keydown', code: 'Enter', key: 'Enter', timestamp: Date.now() }
+      }
+      window.connectionManager.sendInput(enterCommand)
+    }, 500)
   }
 
   UnlockUI.prototype.savePassword = function (password) {

@@ -8,8 +8,11 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import android.text.TextUtils
 import android.text.method.ScrollingMovementMethod
 import android.view.Gravity
@@ -91,6 +94,7 @@ class MainActivity : AppCompatActivity() {
 
         initViews()
         requestPermissions()
+        requestIgnoreBatteryOptimizations()
         registerLogReceiver()
 
         appendLog("YCDesk 信令服务器已启动")
@@ -475,6 +479,20 @@ class MainActivity : AppCompatActivity() {
 
         if (!hasAllPermissions) {
             ActivityCompat.requestPermissions(this, permissions.toTypedArray(), PERMISSION_REQUEST_CODE)
+        }
+    }
+
+    private fun requestIgnoreBatteryOptimizations() {
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
+            try {
+                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+                startActivity(intent)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 

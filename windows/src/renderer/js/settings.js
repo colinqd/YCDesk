@@ -94,20 +94,35 @@ function toggleAdvancedSettings(sectionId) {
 }
 
 function updateServerStatusDisplay(text, type) {
+  // 更新被控端状态
   const badge = document.getElementById('serverStatus')
-  if (!badge) return
-  const dot = badge.querySelector('.status-dot')
-  const textEl = document.getElementById('serverStatusText')
-  if (textEl) textEl.textContent = text
   if (badge) {
-    badge.classList.remove('connecting', 'error')
-    if (type === 'error') badge.classList.add('error')
-    else if (type === 'connecting') badge.classList.add('connecting')
+    const dot = badge.querySelector('.status-dot')
+    const textEl = document.getElementById('serverStatusText')
+    if (textEl) textEl.textContent = text
+    badge.classList.remove('connecting', 'error', 'reconnecting')
+    if (type === 'error' || type === 'disconnected') badge.classList.add('error')
+    else if (type === 'connecting' || type === 'reconnecting') badge.classList.add('connecting')
+    if (dot) {
+      dot.classList.remove('connecting', 'error', 'reconnecting')
+      if (type === 'error' || type === 'disconnected') dot.classList.add('error')
+      else if (type === 'connecting' || type === 'reconnecting') dot.classList.add('connecting')
+    }
   }
-  if (dot) {
-    dot.classList.remove('connecting', 'error')
-    if (type === 'error') dot.classList.add('error')
-    else if (type === 'connecting') dot.classList.add('connecting')
+  // 更新主控端状态
+  const controllerBadge = document.getElementById('controllerServerStatus')
+  if (controllerBadge) {
+    const controllerDot = document.getElementById('controllerStatusDot')
+    const controllerText = document.getElementById('controllerStatusText')
+    if (controllerText) controllerText.textContent = text
+    controllerBadge.classList.remove('connecting', 'error', 'reconnecting')
+    if (type === 'error' || type === 'disconnected') controllerBadge.classList.add('error')
+    else if (type === 'connecting' || type === 'reconnecting') controllerBadge.classList.add('connecting')
+    if (controllerDot) {
+      controllerDot.classList.remove('connecting', 'error', 'reconnecting')
+      if (type === 'error' || type === 'disconnected') controllerDot.classList.add('error')
+      else if (type === 'connecting' || type === 'reconnecting') controllerDot.classList.add('connecting')
+    }
   }
 }
 

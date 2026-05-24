@@ -2,6 +2,12 @@
   var exitBehavior = (function() {
     try { return localStorage.getItem('ycdesk_exit_behavior') || 'lock_and_disconnect' } catch(e) { return 'lock_and_disconnect' }
   })()
+  var statsBarVisible = (function() {
+    try { return localStorage.getItem('ycdesk_stats_bar_hidden') !== '1' } catch(e) { return true }
+  })()
+  var toolbarVisible = true
+  var idleTimer = null
+  var idleTimeout = 0 // 0 means auto-hide disabled
 
   window.ToolbarManager = {
     lockRemoteScreen: function (getConnectionManager) {
@@ -48,9 +54,11 @@
     },
 
     unlockPanel: function () {
-      if (window.UnlockUI) {
-        var ui = new window.UnlockUI()
-        ui.showOverlay()
+      if (window.unlockUI) {
+        window.unlockUI.showOverlay()
+      } else if (window.UnlockUI) {
+        window.unlockUI = new window.UnlockUI()
+        window.unlockUI.showOverlay()
       }
     },
 
@@ -83,9 +91,116 @@
       } else {
         this.disconnect(getConnectionManager)
       }
+    },
+
+    // ==================== 状态栏开关 ====================
+    isStatsBarVisible: function () {
+      return statsBarVisible
+    },
+
+    toggleStatsBar: function () {
+      var el = document.getElementById('toolbarStats')
+      if (!el) return
+      statsBarVisible = !statsBarVisible
+      if (statsBarVisible) {
+        el.classList.remove('hidden')
+      } else {
+        el.classList.add('hidden')
+      }
+      try { localStorage.setItem('ycdesk_stats_bar_hidden', statsBarVisible ? '0' : '1') } catch(e) {}
+      var btn = document.getElementById('statsBtn')
+      if (btn) btn.textContent = statsBarVisible ? '📊 状态' : '📊 状态(关)'
+    },
+
+    // ==================== 工具栏显示/隐藏 ====================
+    isToolbarVisible: function () {
+      return toolbarVisible
+    },
+
+    toggleToolbar: function () {
+      var toolbar = document.querySelector('.toolbar')
+      if (!toolbar) return
+      toolbarVisible = !toolbarVisible
+      toolbar.style.display = toolbarVisible ? 'flex' : 'none'
+      var btn = document.getElementById('hideToolbarBtn')
+      if (btn) btn.textContent = toolbarVisible ? '👁️ 隐藏栏' : '👁️‍🗨️ 显示栏'
+    },
+
+    // ==================== 状态栏数据更新 ====================
+    updateLatency: function (latencyMs) {
+      var el = document.getElementById('latency')
+      if (el) el.textContent = latencyMs + ' ms'
+    },
+
+    updateFps: function (fps) {
+      var el = document.getElementById('fps')
+      if (el) el.textContent = fps + ' fps'
+    },
+
+    updateResolution: function (width, height) {
+      var el = document.getElementById('resolution')
+      if (el) el.textContent = width + 'x' + height
+    },
+
+    updateConnectionState: function (state) {
+      var el = document.getElementById('connectionState')
+      if (el) el.textContent = state
+    },
+
+    // ==================== 控制栏自动隐藏 ====================
+    setIdleTimeout: function (seconds) {
+      idleTimeout = seconds
+      if (idleTimer) { clearTimeout(idleTimer); idleTimer = null }
+      if (seconds > 0) {
+        this._resetIdleTimer()
+      } else {
+        // 恢复显示工具栏
+        if (!toolbarVisible) this.toggleToolbar()
+      }
+    },
+
+    _resetIdleTimer: function () {
+      var self = this
+      if (idleTimer) clearTimeout(idleTimer)
+      if (idleTimeout <= 0) return
+      idleTimer = setTimeout(function () {
+        if (toolbarVisible) self.toggleToolbar()
+        idleTimer = null
+      }, idleTimeout * 1000)
+    },
+
+    _onUserActivity: function () {
+      if (idleTimeout <= 0) return
+      if (!toolbarVisible) {
+        var toolbar = document.querySelector('.toolbar')
+        if (toolbar) {
+          toolbarVisible = true
+          toolbar.style.display = 'flex'
+          var btn = document.getElementById('hideToolbarBtn')
+          if (btn) btn.textContent = '👁️ 隐藏栏'
+        }
+      }
+      this._resetIdleTimer()
     }
   }
 
+  // 全局引用
   window.resetInputModifiers = window.ToolbarManager.resetInputModifiers
-  setTimeout(function () { window.ToolbarManager.updateExitButton() }, 0)
+
+  // 初始化
+  setTimeout(function () {
+    window.ToolbarManager.updateExitButton()
+
+    // 恢复状态栏状态
+    var statsEl = document.getElementById('toolbarStats')
+    if (statsEl && !statsBarVisible) {
+      statsEl.classList.add('hidden')
+    }
+
+    // 设置用户活动监听（用于自动隐藏控制栏）
+    var activityEvents = ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart']
+    activityEvents.forEach(function (evt) {
+      document.addEventListener(evt, function () { window.ToolbarManager._onUserActivity() }, { passive: true })
+    })
+  }, 0)
 })()

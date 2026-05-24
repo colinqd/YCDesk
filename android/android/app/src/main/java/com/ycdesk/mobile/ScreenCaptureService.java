@@ -6,6 +6,7 @@ import android.hardware.display.DisplayManager;
 import android.hardware.display.VirtualDisplay;
 import android.media.projection.MediaProjection;
 import android.os.Binder;
+import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
@@ -15,6 +16,7 @@ import android.view.Display;
 import android.view.Surface;
 import android.view.WindowManager;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -67,14 +69,21 @@ public class ScreenCaptureService extends Service {
         super.onDestroy();
     }
 
+    @SuppressWarnings("deprecation")
     private void updateDisplaySize() {
         WindowManager windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         if (windowManager != null) {
-            Display display = windowManager.getDefaultDisplay();
-            DisplayMetrics metrics = new DisplayMetrics();
-            display.getRealMetrics(metrics);
-            displayWidth = metrics.widthPixels;
-            displayHeight = metrics.heightPixels;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                var bounds = windowManager.getCurrentWindowMetrics().getBounds();
+                displayWidth = bounds.width();
+                displayHeight = bounds.height();
+            } else {
+                Display display = windowManager.getDefaultDisplay();
+                DisplayMetrics metrics = new DisplayMetrics();
+                display.getRealMetrics(metrics);
+                displayWidth = metrics.widthPixels;
+                displayHeight = metrics.heightPixels;
+            }
             Log.d(TAG, "Updated display size: " + displayWidth + "x" + displayHeight);
         } else {
             // Default size if unable to get display metrics
@@ -168,10 +177,12 @@ public class ScreenCaptureService extends Service {
     public void updateDisplay() {
         updateDisplaySize();
         if (isCapturing.get() && virtualDisplay != null) {
-            // Recreate virtual display with new size
+            // Save references before stopping, since stopCapture() nulls them out
+            MediaProjection savedProjection = mediaProjection;
+            Surface savedSurface = surface;
             stopCapture();
-            if (mediaProjection != null && surface != null) {
-                startCapture(mediaProjection, surface);
+            if (savedProjection != null && savedSurface != null) {
+                startCapture(savedProjection, savedSurface);
             }
         }
     }

@@ -24,23 +24,38 @@ function setConnectionLogDiv(elementId) {
 }
 
 function updateServerStatus(text, status) {
-  const statusText = document.getElementById('serverStatusText')
-  const statusBadge = document.getElementById('serverStatus')
-  const statusDot = document.querySelector('.status-dot')
-  
-  if (!statusText || !statusBadge || !statusDot) return
-  
-  statusText.textContent = text
-  
-  statusBadge.classList.remove('connecting', 'error')
-  statusDot.classList.remove('connecting', 'error')
-  
-  if (status === 'connecting') {
-    statusBadge.classList.add('connecting')
-    statusDot.classList.add('connecting')
-  } else if (status === 'error') {
-    statusBadge.classList.add('error')
-    statusDot.classList.add('error')
+  // 更新被控端状态
+  const controlledText = document.getElementById('serverStatusText')
+  const controlledBadge = document.getElementById('serverStatus')
+  const controlledDot = document.querySelector('#controlledPage .status-dot')
+
+  if (controlledText) controlledText.textContent = text
+  if (controlledBadge) controlledBadge.classList.remove('connecting', 'error', 'reconnecting')
+  if (controlledDot) controlledDot.classList.remove('connecting', 'error', 'reconnecting')
+
+  if (status === 'connecting' || status === 'reconnecting') {
+    if (controlledBadge) controlledBadge.classList.add('connecting')
+    if (controlledDot) controlledDot.classList.add('connecting')
+  } else if (status === 'error' || status === 'disconnected') {
+    if (controlledBadge) controlledBadge.classList.add('error')
+    if (controlledDot) controlledDot.classList.add('error')
+  }
+
+  // 更新主控端状态
+  const controllerText = document.getElementById('controllerStatusText')
+  const controllerBadge = document.getElementById('controllerServerStatus')
+  const controllerDot = document.getElementById('controllerStatusDot')
+
+  if (controllerText) controllerText.textContent = text
+  if (controllerBadge) controllerBadge.classList.remove('connecting', 'error', 'reconnecting')
+  if (controllerDot) controllerDot.classList.remove('connecting', 'error', 'reconnecting')
+
+  if (status === 'connecting' || status === 'reconnecting') {
+    if (controllerBadge) controllerBadge.classList.add('connecting')
+    if (controllerDot) controllerDot.classList.add('connecting')
+  } else if (status === 'error' || status === 'disconnected') {
+    if (controllerBadge) controllerBadge.classList.add('error')
+    if (controllerDot) controllerDot.classList.add('error')
   }
 }
 

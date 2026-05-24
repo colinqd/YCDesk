@@ -118,7 +118,7 @@ class DirectModeManager {
         case 'offer':
           if (this.isDirectController) {
             this.logFn('主控端收到 offer，转发给远程窗口')
-            window.electronAPI.sendToRemoteWindow('webrtc-offer', { offer: message.offer })
+            await window.electronAPI.sendToRemoteWindow('webrtc-offer', { offer: message.offer })
           } else {
             await this.handleOffer(clientId, message.offer)
           }
@@ -126,7 +126,7 @@ class DirectModeManager {
         case 'answer':
           if (this.isDirectController) {
             this.logFn('主控端收到 answer，转发给远程窗口')
-            window.electronAPI.sendToRemoteWindow('webrtc-answer', { answer: message.answer })
+            await window.electronAPI.sendToRemoteWindow('webrtc-answer', { answer: message.answer })
           } else {
             await this.handleAnswer(clientId, message.answer)
           }
@@ -134,7 +134,7 @@ class DirectModeManager {
         case 'ice-candidate':
           if (this.isDirectController) {
             this.logFn('主控端收到 ICE 候选，转发给远程窗口')
-            window.electronAPI.sendToRemoteWindow('webrtc-ice-candidate', { candidate: message.candidate })
+            await window.electronAPI.sendToRemoteWindow('webrtc-ice-candidate', { candidate: message.candidate })
           } else {
             await this.handleIceCandidate(clientId, message.candidate)
           }
@@ -200,7 +200,7 @@ class DirectModeManager {
     await this.directPeerConnection.setLocalDescription(offer)
     
     this.logFn('发送 offer 给主控端')
-    this.sendMessage({
+    await this.sendMessage({
       type: 'offer',
       offer: {
         type: offer.type,
@@ -229,6 +229,16 @@ class DirectModeManager {
       } else if (data.type === 'video-refresh-request') {
         this.logFn('收到视频刷新请求，重新初始化屏幕捕获...')
         this.refreshVideoStream()
+      } else if (data.type === 'resolution-change') {
+        this.logFn('收到分辨率变更请求: ' + data.width + 'x' + data.height)
+        this.refreshVideoStream(data.width, data.height)
+      } else if (data.type === 'resolution-request') {
+        this.logFn('收到分辨率请求: ' + data.width + 'x' + data.height)
+        this.dataChannelManager.send({
+          type: 'resolution-response',
+          width: this.config.screenCapture?.maxWidth || 1920,
+          height: this.config.screenCapture?.maxHeight || 1080
+        })
       }
     })
 
@@ -339,12 +349,19 @@ class DirectModeManager {
 
       await this.addPendingIceCandidates()
 
-      this.logFn('创建初始answer（不含视频）...')
+      // 先捕获屏幕，再创建包含视频轨道的 answer（与信令模式一致）
+      this.logFn('开始捕获屏幕...')
+      const maxWidth = this.config.screenCapture?.maxWidth || 1920
+      const maxHeight = this.config.screenCapture?.maxHeight || 1080
+      const actualResolution = await this.startScreenCapture(maxWidth, maxHeight)
+      this.logFn('屏幕捕获完成，分辨率: ' + actualResolution.width + 'x' + actualResolution.height)
+
+      this.logFn('创建answer（含视频）...')
       const answer = await this.directPeerConnection.createAnswer()
       await this.directPeerConnection.setLocalDescription(answer)
       this.logFn('本地描述设置成功')
 
-      this.sendMessage({
+      await this.sendMessage({
         type: 'answer',
         answer: {
           type: answer.type,
@@ -352,45 +369,21 @@ class DirectModeManager {
         }
       })
 
-      this.logFn('已发送初始answer，等待数据通道打开...')
-      
-      const resolutionPromise = this.waitForResolutionRequest()
+      this.logFn('已发送answer（含视频），等待数据通道打开...')
 
       await this.waitForDataChannelOpen()
-      
+
       this.logFn('数据通道已打开，等待分辨率请求...')
-      const resolution = await resolutionPromise
-      
+      const resolution = await this.waitForResolutionRequest()
       this.logFn('收到分辨率请求: ' + resolution.width + 'x' + resolution.height)
-      this.logFn('根据客户端窗口尺寸调整虚拟显示器分辨率...')
-      
-      const targetWidth = resolution.width || 1920
-      const targetHeight = resolution.height || 1080
-      
-      this.logFn('目标捕获分辨率: ' + targetWidth + 'x' + targetHeight)
-      
-      this.logFn('开始捕获屏幕...')
-      const actualResolution = await this.startScreenCapture(targetWidth, targetHeight)
-      
-      this.logFn('创建renegotiation offer（含视频）...')
-      const renegotiateOffer = await this.directPeerConnection.createOffer()
-      await this.directPeerConnection.setLocalDescription(renegotiateOffer)
-      
-      this.sendMessage({
-        type: 'offer',
-        offer: {
-          type: renegotiateOffer.type,
-          sdp: renegotiateOffer.sdp
-        }
-      })
-      
+
       this.dataChannelManager.send({
         type: 'resolution-response',
         width: actualResolution.width,
         height: actualResolution.height
       })
-      
-      this.logFn('已发送renegotiation offer和分辨率响应: ' + actualResolution.width + 'x' + actualResolution.height)
+
+      this.logFn('直连被控端连接建立完成: ' + actualResolution.width + 'x' + actualResolution.height)
     } catch (error) {
       this.logFn('处理offer失败: ' + error.message)
       console.error('处理offer详细错误:', error)
@@ -404,12 +397,14 @@ class DirectModeManager {
         resolve()
         return
       }
-      
+
+      let checkInterval = null
       const timeout = setTimeout(() => {
+        if (checkInterval) clearInterval(checkInterval)
         reject(new Error('等待数据通道打开超时'))
       }, 15000)
-      
-      const checkInterval = setInterval(() => {
+
+      checkInterval = setInterval(() => {
         if (this.dataChannelManager && this.dataChannelManager.isOpen()) {
           clearTimeout(timeout)
           clearInterval(checkInterval)
@@ -421,11 +416,12 @@ class DirectModeManager {
   
   waitForResolutionRequest() {
     return new Promise((resolve, reject) => {
+      const originalOnMessage = this.dataChannelManager.callbacks ? this.dataChannelManager.callbacks.onMessage : null
       const timeout = setTimeout(() => {
+        this.dataChannelManager.setOnMessage(originalOnMessage)
         reject(new Error('等待分辨率请求超时'))
       }, 15000)
-      
-      const originalOnMessage = this.dataChannelManager.callbacks ? this.dataChannelManager.callbacks.onMessage : null
+
       this.dataChannelManager.setOnMessage((data) => {
         if (data.type === 'resolution-request') {
           clearTimeout(timeout)
@@ -645,10 +641,10 @@ class DirectModeManager {
   _setupServiceFrameReceiver() {
     var self = this
     window.electronAPI.onServiceFrame(function(frameData) {
+      // 优先使用优化视频通道，仅在其不可用时回退到数据通道
       if (self.optimizedVideoChannel && self.optimizedVideoChannel.readyState === 'open') {
         self.videoFrameTransmitter.sendEncodedFrame(frameData.jpeg, frameData.width, frameData.height)
-      }
-      if (self.dataChannelManager && self.dataChannelManager.isOpen()) {
+      } else if (self.dataChannelManager && self.dataChannelManager.isOpen()) {
         self.dataChannelManager.send({
           type: 'service-video-frame',
           width: frameData.width,
@@ -661,27 +657,25 @@ class DirectModeManager {
     this.logFn('服务帧接收器已就绪')
   }
 
-  async refreshVideoStream() {
+  async refreshVideoStream(targetWidth, targetHeight) {
     this.logFn('开始刷新视频流...')
     try {
-      this.stopScreenCapture()
-
       const sources = await window.electronAPI.getSources()
       if (sources.length === 0) {
         this.logFn('未找到屏幕源，刷新失败')
         return
       }
 
-      const maxWidth = this.config.screenCapture?.maxWidth || 1920
-      const maxHeight = this.config.screenCapture?.maxHeight || 1080
+      const maxWidth = targetWidth || this.config.screenCapture?.maxWidth || 1920
+      const maxHeight = targetHeight || this.config.screenCapture?.maxHeight || 1080
 
       var selectedSourceId = window.getSelectedSourceId ? window.getSelectedSourceId() : null
       if (!selectedSourceId) {
         selectedSourceId = sources.find(function(s) { return s.id && s.id.startsWith('screen:') })?.id || (sources.length > 0 ? sources[0].id : null)
       }
-      this.logFn('刷新使用捕获源: ' + (selectedSourceId || '无'))
+      this.logFn('刷新使用捕获源: ' + (selectedSourceId || '无') + ', 目标分辨率: ' + maxWidth + 'x' + maxHeight)
 
-      this.currentStream = await navigator.mediaDevices.getUserMedia({
+      const newStream = await navigator.mediaDevices.getUserMedia({
         audio: false,
         video: {
           mandatory: {
@@ -694,33 +688,56 @@ class DirectModeManager {
         }
       })
 
-      const tracks = this.currentStream.getVideoTracks()
-      tracks.forEach(track => {
-        const sender = this.directPeerConnection.addTrack(track, this.currentStream)
-        try {
-          const parameters = sender.getParameters()
-          if (!parameters.encodings || parameters.encodings.length === 0) {
-            parameters.encodings = [{}]
-          }
-          parameters.encodings[0].maxBitrate = 8000000
-          parameters.encodings[0].maxFramerate = 30
-          sender.setParameters(parameters)
-        } catch (e) {}
-      })
+      const newTracks = newStream.getVideoTracks()
+      const senders = this.directPeerConnection.getSenders()
+      const videoSender = senders.find(s => s.track && s.track.kind === 'video')
 
-      this.logFn('视频流已刷新，发起重新协商...')
-      const offer = await this.directPeerConnection.createOffer()
-      await this.directPeerConnection.setLocalDescription(offer)
+      if (videoSender && newTracks.length > 0) {
+        // 先替换轨道，再停止旧流 —— 避免发送端出现无视频帧的空隙
+        this.logFn('使用 replaceTrack 替换视频轨道...')
+        const oldStream = this.currentStream
+        await videoSender.replaceTrack(newTracks[0])
+        this.currentStream = newStream
 
-      this.sendMessage({
-        type: 'offer',
-        offer: {
-          type: offer.type,
-          sdp: offer.sdp
+        // 替换成功后，安全停止旧的流
+        if (oldStream) {
+          oldStream.getTracks().forEach(track => track.stop())
         }
-      })
+        this.logFn('视频轨道已替换，无需重新协商')
+      } else {
+        // 没有 sender 时回退到 addTrack 方式
+        this.logFn('未找到视频 sender，使用 addTrack 方式...')
+        if (this.currentStream) {
+          this.currentStream.getTracks().forEach(track => track.stop())
+        }
+        this.currentStream = newStream
+        newTracks.forEach(track => {
+          const sender = this.directPeerConnection.addTrack(track, this.currentStream)
+          try {
+            const parameters = sender.getParameters()
+            if (!parameters.encodings || parameters.encodings.length === 0) {
+              parameters.encodings = [{}]
+            }
+            parameters.encodings[0].maxBitrate = 8000000
+            parameters.encodings[0].maxFramerate = 30
+            sender.setParameters(parameters)
+          } catch (e) {}
+        })
 
-      this.logFn('重新协商 offer 已发送')
+        this.logFn('视频流已刷新，发起重新协商...')
+        const offer = await this.directPeerConnection.createOffer()
+        await this.directPeerConnection.setLocalDescription(offer)
+
+        await this.sendMessage({
+          type: 'offer',
+          offer: {
+            type: offer.type,
+            sdp: offer.sdp
+          }
+        })
+
+        this.logFn('重新协商 offer 已发送')
+      }
     } catch (error) {
       this.logFn('刷新视频流失败: ' + error.message)
     }

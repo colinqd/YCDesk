@@ -7,14 +7,19 @@ import android.content.Intent;
 import android.content.ServiceConnection;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.provider.Settings;
 import android.util.Log;
+
+import androidx.activity.result.ActivityResult;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
@@ -30,7 +35,6 @@ import com.getcapacitor.annotation.PermissionCallback;
 )
 public class FloatingMousePlugin extends Plugin {
     private static final String TAG = "FloatingMousePlugin";
-    private static final int OVERLAY_PERMISSION_REQUEST_CODE = 1001;
 
     private FloatingMouseService floatingMouseService;
     private boolean isBound = false;
@@ -69,39 +73,47 @@ public class FloatingMousePlugin extends Plugin {
         return true;
     }
 
-    private void requestOverlayPermission() {
+    private void requestOverlayPermission(PluginCall call) {
         Log.d(TAG, "requestOverlayPermission called");
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if (!Settings.canDrawOverlays(getContext())) {
                 Log.d(TAG, "Opening overlay permission settings");
+                savedCall = call;
                 Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                     Uri.parse("package:" + getContext().getPackageName()));
-                getActivity().startActivityForResult(intent, OVERLAY_PERMISSION_REQUEST_CODE);
+                startActivityForResult(call, intent, "handleOverlayResult");
             } else {
                 Log.d(TAG, "Already has overlay permission");
+                JSObject result = new JSObject();
+                result.put("granted", true);
+                call.resolve(result);
             }
         }
     }
 
-    @Override
-    protected void handleOnActivityResult(int requestCode, int resultCode, Intent data) {
-        super.handleOnActivityResult(requestCode, resultCode, data);
-        Log.d(TAG, "handleOnActivityResult: requestCode=" + requestCode + ", hasPermission=" + hasOverlayPermission());
-        
-        if (requestCode == OVERLAY_PERMISSION_REQUEST_CODE) {
-            if (savedCall != null) {
-                if (hasOverlayPermission()) {
-                    Log.d(TAG, "Overlay permission granted, showing floating mouse");
-                    showFloatingMouseInternal(savedCall);
+    @ActivityCallback
+    private void handleOverlayResult(PluginCall call, ActivityResult result) {
+        Log.d(TAG, "handleOverlayResult: hasPermission=" + hasOverlayPermission());
+
+        if (hasOverlayPermission()) {
+            Log.d(TAG, "Overlay permission granted, showing floating mouse");
+            if (call != null) {
+                if ("requestPermission".equals(call.getMethodName())) {
+                    JSObject res = new JSObject();
+                    res.put("granted", true);
+                    call.resolve(res);
                 } else {
-                    Log.e(TAG, "Overlay permission denied");
-                    JSObject result = new JSObject();
-                    result.put("success", false);
-                    result.put("error", "悬浮窗权限被拒绝，请在设置中开启");
-                    result.put("needPermission", true);
-                    savedCall.resolve(result);
+                    showFloatingMouseInternal(call);
                 }
-                savedCall = null;
+            }
+        } else {
+            Log.e(TAG, "Overlay permission denied");
+            if (call != null) {
+                JSObject res = new JSObject();
+                res.put("success", false);
+                res.put("error", "悬浮窗权限被拒绝，请在设置中开启");
+                res.put("needPermission", true);
+                call.resolve(res);
             }
         }
     }
@@ -111,17 +123,17 @@ public class FloatingMousePlugin extends Plugin {
         Log.d(TAG, "startService called");
         Activity activity = getActivity();
         Intent intent = new Intent(activity, FloatingMouseService.class);
-        
+
         try {
             activity.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE);
-            
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 activity.startForegroundService(intent);
             } else {
                 activity.startService(intent);
             }
 
-            new android.os.Handler().postDelayed(() -> {
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
                 JSObject result = new JSObject();
                 result.put("success", true);
                 result.put("hasPermission", hasOverlayPermission());
@@ -144,10 +156,10 @@ public class FloatingMousePlugin extends Plugin {
             getActivity().unbindService(serviceConnection);
             isBound = false;
         }
-        
+
         Intent intent = new Intent(getActivity(), FloatingMouseService.class);
         getActivity().stopService(intent);
-        
+
         JSObject result = new JSObject();
         result.put("success", true);
         call.resolve(result);
@@ -170,28 +182,26 @@ public class FloatingMousePlugin extends Plugin {
             result.put("granted", true);
             call.resolve(result);
         } else {
-            savedCall = call;
-            requestOverlayPermission();
+            requestOverlayPermission(call);
         }
     }
 
     @PluginMethod
     public void show(PluginCall call) {
         Log.d(TAG, "show called, isBound=" + isBound + ", hasPermission=" + hasOverlayPermission());
-        
+
         if (!hasOverlayPermission()) {
             Log.d(TAG, "No overlay permission, requesting...");
-            savedCall = call;
-            requestOverlayPermission();
+            requestOverlayPermission(call);
             return;
         }
-        
+
         showFloatingMouseInternal(call);
     }
-    
+
     private void showFloatingMouseInternal(PluginCall call) {
         Log.d(TAG, "showFloatingMouseInternal called, floatingMouseService=" + floatingMouseService);
-        
+
         if (floatingMouseService == null) {
             Log.e(TAG, "Service not started");
             JSObject result = new JSObject();
@@ -241,7 +251,7 @@ public class FloatingMousePlugin extends Plugin {
                         sendMouseEvent("dragend", button, x, y, 0);
                     }
                 });
-                
+
                 JSObject result = new JSObject();
                 result.put("success", true);
                 call.resolve(result);

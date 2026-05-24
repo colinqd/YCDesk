@@ -13,6 +13,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -23,6 +24,7 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import androidx.annotation.NonNull;
 import androidx.core.app.NotificationCompat;
 
 import com.ycdesk.mobile.R;
@@ -68,7 +70,7 @@ public class FloatingMouseService extends Service {
     private int windowWidth = 300;
     private int windowHeight = 300;
 
-    private Handler handler = new Handler();
+    private Handler handler = new Handler(Looper.getMainLooper());
     private Runnable longPressRunnable;
 
     private OnMouseEventListener mouseEventListener;
@@ -173,8 +175,7 @@ public class FloatingMouseService extends Service {
             return;
         }
         
-        Point size = new Point();
-        windowManager.getDefaultDisplay().getRealSize(size);
+        Point size = getRealScreenSize(windowManager);
         screenWidth = size.x;
         screenHeight = size.y;
         windowX = screenWidth / 2;
@@ -229,6 +230,7 @@ public class FloatingMouseService extends Service {
 
     @SuppressLint("ClickableViewAccessibility")
     private void createFloatingView() {
+        @SuppressWarnings("deprecation")
         int layoutFlag = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
             ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             : WindowManager.LayoutParams.TYPE_PHONE;
@@ -443,6 +445,7 @@ public class FloatingMouseService extends Service {
         isMinimized = true;
         
         // 创建最小化视图
+        @SuppressWarnings("deprecation")
         int layoutFlag = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
             ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             : WindowManager.LayoutParams.TYPE_PHONE;
@@ -750,5 +753,19 @@ public class FloatingMouseService extends Service {
             windowManager.removeView(minimizedView);
         }
         Log.d(TAG, "FloatingMouseService destroyed");
+    }
+
+    @SuppressWarnings("deprecation")
+    @NonNull
+    private Point getRealScreenSize(@NonNull WindowManager wm) {
+        Point size = new Point();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            var bounds = wm.getCurrentWindowMetrics().getBounds();
+            size.x = bounds.width();
+            size.y = bounds.height();
+        } else {
+            wm.getDefaultDisplay().getRealSize(size);
+        }
+        return size;
     }
 }

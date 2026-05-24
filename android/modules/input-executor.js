@@ -80,12 +80,22 @@ async function handleReceivedInput(inputData) {
         break;
       case 'keydown':
         await InputExecutor.executeKeyDown({
-          key: inputData.key
+          key: inputData.key,
+          code: inputData.code,
+          ctrlKey: inputData.ctrlKey || false,
+          shiftKey: inputData.shiftKey || false,
+          altKey: inputData.altKey || false,
+          metaKey: inputData.metaKey || false
         });
         break;
       case 'keyup':
         await InputExecutor.executeKeyUp({
-          key: inputData.key
+          key: inputData.key,
+          code: inputData.code,
+          ctrlKey: inputData.ctrlKey || false,
+          shiftKey: inputData.shiftKey || false,
+          altKey: inputData.altKey || false,
+          metaKey: inputData.metaKey || false
         });
         break;
       case 'lock_screen':
@@ -144,19 +154,29 @@ function simulateWheel(deltaY, deltaX) {
 }
 
 function simulateKeyDown(code, key, modifiers) {
-  if (typeof window.log === 'function') window.log('模拟键盘按下: ' + code + ', key: ' + key + 
+  if (typeof window.log === 'function') window.log('模拟键盘按下: ' + code + ', key: ' + key +
       ', ctrl: ' + (modifiers.ctrlKey || false) +
       ', shift: ' + (modifiers.shiftKey || false) +
       ', alt: ' + (modifiers.altKey || false))
   InputExecutor.executeKeyDown({
-    key: key
+    key: key,
+    code: code,
+    ctrlKey: modifiers.ctrlKey || false,
+    shiftKey: modifiers.shiftKey || false,
+    altKey: modifiers.altKey || false,
+    metaKey: modifiers.metaKey || false
   }).catch(e => { if (typeof window.log === 'function') window.log('执行键盘按下失败: ' + e.message) })
 }
 
 function simulateKeyUp(code, key, modifiers) {
   if (typeof window.log === 'function') window.log('模拟键盘释放: ' + code + ', key: ' + key)
   InputExecutor.executeKeyUp({
-    key: key
+    key: key,
+    code: code,
+    ctrlKey: modifiers.ctrlKey || false,
+    shiftKey: modifiers.shiftKey || false,
+    altKey: modifiers.altKey || false,
+    metaKey: modifiers.metaKey || false
   }).catch(e => { if (typeof window.log === 'function') window.log('执行键盘释放失败: ' + e.message) })
 }
 

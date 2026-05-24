@@ -23,6 +23,113 @@ function getIceConfig() {
   return { iceServers }
 }
 
+function setupOnTrackHandler(peerConnection) {
+  const log = typeof window.log === 'function' ? window.log : console.log
+
+  peerConnection.ontrack = (event) => {
+    log('收到远程媒体流，track类型: ' + event.track.kind)
+    const stream = event.streams[0]
+    if (stream) {
+      log('流ID: ' + stream.id + ', tracks数量: ' + stream.getTracks().length)
+      const remoteVideo = document.getElementById('remoteVideo')
+      remoteVideo.srcObject = stream
+
+      remoteVideo.muted = true
+      remoteVideo.playsInline = true
+
+      remoteVideo.play().then(() => {
+        log('视频自动播放成功')
+      }).catch(e => {
+        log('视频自动播放失败（需要用户交互）: ' + e.message)
+        const tryPlayOnInteraction = () => {
+          remoteVideo.play().then(() => {
+            log('用户交互后视频播放成功')
+          }).catch(playErr => {
+            log('用户交互后视频播放仍失败: ' + playErr.message)
+          })
+          document.removeEventListener('touchstart', tryPlayOnInteraction)
+          document.removeEventListener('click', tryPlayOnInteraction)
+        }
+        document.addEventListener('touchstart', tryPlayOnInteraction, { once: true })
+        document.addEventListener('click', tryPlayOnInteraction, { once: true })
+      })
+
+      log('视频流已设置到video元素')
+
+      // 收到视频流后显示远程屏幕（信令模式或直连模式主控端）
+      if ((s.isController || s.isDirectControllerMode) && typeof window.showRemoteScreen === 'function') {
+        setTimeout(() => {
+          window.showRemoteScreen()
+        }, 200)
+      }
+
+      remoteVideo.onloadedmetadata = () => {
+        log('视频元数据加载: ' + remoteVideo.videoWidth + 'x' + remoteVideo.videoHeight)
+        if (s.matrixTransformer) {
+          s.matrixTransformer.setVideoSize(remoteVideo.videoWidth, remoteVideo.videoHeight)
+          // 用视频实际分辨率更新远程屏幕尺寸（覆盖默认的1920x1080）
+          s.matrixTransformer.setRemoteScreenSize(remoteVideo.videoWidth, remoteVideo.videoHeight)
+
+          const videoContainer = document.getElementById('videoContainer')
+          const videoWrapper = document.getElementById('videoWrapper')
+          if (videoContainer && videoWrapper) {
+            s.matrixTransformer.applyContainerSize(videoContainer, videoWrapper)
+            log('视频加载后更新 container: ' + s.matrixTransformer.displayWidth + 'x' + s.matrixTransformer.displayHeight)
+          }
+        }
+      }
+
+      remoteVideo.oncanplay = () => {
+        log('视频可以播放')
+        remoteVideo.play().catch(e => {
+          log('视频oncanplay时播放失败: ' + e.message)
+        })
+      }
+    }
+  }
+}
+
+function setupInputChannelHandler(channel) {
+  const log = typeof window.log === 'function' ? window.log : console.log
+
+  channel.binaryType = 'arraybuffer'
+  s.inputChannelReady = true
+  channel.onmessage = (msgEvent) => {
+    try {
+      const data = JSON.parse(msgEvent.data)
+      if (data.type === 'input') {
+        handleReceivedInput(data)
+      }
+    } catch (e) {
+      log('输入通道消息解析失败: ' + e.message)
+    }
+  }
+  channel.onclose = () => {
+    s.inputChannelReady = false
+    log('输入数据通道已关闭')
+  }
+  channel.onerror = (error) => {
+    s.inputChannelReady = false
+    log('输入数据通道错误: ' + error)
+  }
+  log('输入数据通道已就绪（接收端）')
+}
+
+function setupOnDataChannelHandler(peerConnection) {
+  const log = typeof window.log === 'function' ? window.log : console.log
+
+  peerConnection.ondatachannel = (event) => {
+    log('收到数据通道: ' + event.channel.label)
+    if (event.channel.label === 'control') {
+      s.dataChannel = event.channel
+      setupDataChannel()
+    } else if (event.channel.label === 'input') {
+      s.inputChannel = event.channel
+      setupInputChannelHandler(s.inputChannel)
+    }
+  }
+}
+
 async function startDirectControllerConnection() {
   const log = typeof window.log === 'function' ? window.log : console.log
   log('作为主控端建立直连WebRTC连接')
@@ -50,94 +157,28 @@ async function startDirectControllerConnection() {
     }
   }
   
-  s.directPeerConnection.ontrack = (event) => {
-    log('收到远程媒体流，track类型: ' + event.track.kind)
-    const stream = event.streams[0]
-    if (stream) {
-      log('流ID: ' + stream.id + ', tracks数量: ' + stream.getTracks().length)
-      const remoteVideo = document.getElementById('remoteVideo')
-      remoteVideo.srcObject = stream
-      
-      remoteVideo.muted = true
-      remoteVideo.playsInline = true
-      
-      remoteVideo.play().then(() => {
-        log('视频自动播放成功')
-      }).catch(e => {
-        log('视频自动播放失败（需要用户交互）: ' + e.message)
-        const tryPlayOnInteraction = () => {
-          remoteVideo.play().then(() => {
-            log('用户交互后视频播放成功')
-          }).catch(playErr => {
-            log('用户交互后视频播放仍失败: ' + playErr.message)
-          })
-          document.removeEventListener('touchstart', tryPlayOnInteraction)
-          document.removeEventListener('click', tryPlayOnInteraction)
-        }
-        document.addEventListener('touchstart', tryPlayOnInteraction, { once: true })
-        document.addEventListener('click', tryPlayOnInteraction, { once: true })
-      })
-      
-      log('视频流已设置到video元素')
-      
-      remoteVideo.onloadedmetadata = () => {
-        log('视频元数据加载: ' + remoteVideo.videoWidth + 'x' + remoteVideo.videoHeight)
-        if (s.matrixTransformer) {
-          s.matrixTransformer.setVideoSize(remoteVideo.videoWidth, remoteVideo.videoHeight)
-          
-          const videoContainer = document.getElementById('videoContainer')
-          const videoWrapper = document.getElementById('videoWrapper')
-          if (videoContainer && videoWrapper) {
-            s.matrixTransformer.applyContainerSize(videoContainer, videoWrapper)
-            log('视频加载后更新 container: ' + s.matrixTransformer.displayWidth + 'x' + s.matrixTransformer.displayHeight)
-          }
-        }
-      }
-      
-      remoteVideo.oncanplay = () => {
-        log('视频可以播放')
-        remoteVideo.play().catch(e => {
-          log('视频oncanplay时播放失败: ' + e.message)
-        })
-      }
-    }
-  }
+  setupOnTrackHandler(s.directPeerConnection)
   
   s.directPeerConnection.onconnectionstatechange = () => {
     log('WebRTC连接状态: ' + s.directPeerConnection.connectionState)
-  }
-  
-  s.directPeerConnection.ondatachannel = (event) => {
-    log('收到数据通道: ' + event.channel.label)
-    if (event.channel.label === 'control') {
-      s.dataChannel = event.channel
-      setupDataChannel()
-    } else if (event.channel.label === 'input') {
-      s.inputChannel = event.channel
-      s.inputChannel.binaryType = 'arraybuffer'
-      s.inputChannelReady = true
-      s.inputChannel.onmessage = (msgEvent) => {
-        try {
-          const data = JSON.parse(msgEvent.data)
-          if (data.type === 'input') {
-            handleReceivedInput(data)
-          }
-        } catch (e) {
-          log('输入通道消息解析失败: ' + e.message)
-        }
+    if (s.directPeerConnection.connectionState === 'connected') {
+      s.isConnected = true
+      if (typeof window.showToast === 'function') window.showToast('连接成功')
+      // 直连模式主控端：连接成功后显示远程屏幕
+      if (typeof window.showRemoteScreen === 'function') {
+        setTimeout(() => {
+          window.showRemoteScreen()
+        }, 300)
       }
-      s.inputChannel.onclose = () => {
-        s.inputChannelReady = false
-        log('输入数据通道已关闭')
-      }
-      s.inputChannel.onerror = (error) => {
-        s.inputChannelReady = false
-        log('输入数据通道错误: ' + error)
-      }
-      log('输入数据通道已就绪（接收端）')
+    } else if (s.directPeerConnection.connectionState === 'disconnected' || s.directPeerConnection.connectionState === 'failed') {
+      s.isConnected = false
+      if (typeof window.showToast === 'function') window.showToast('连接已断开')
+      if (typeof window.hideRemoteScreen === 'function') window.hideRemoteScreen()
     }
   }
   
+  setupOnDataChannelHandler(s.directPeerConnection)
+
   s.directPeerConnection.addTransceiver('video', { direction: 'recvonly' })
   s.directPeerConnection.addTransceiver('audio', { direction: 'recvonly' })
   log('已添加视频和音频接收器')
@@ -226,39 +267,12 @@ async function handleDirectOffer(offer) {
       log('WebRTC连接状态: ' + s.directPeerConnection.connectionState)
     }
     
-    s.directPeerConnection.ondatachannel = (event) => {
-      log('收到数据通道: ' + event.channel.label)
-      if (event.channel.label === 'control') {
-        s.dataChannel = event.channel
-        setupDataChannel()
-      } else if (event.channel.label === 'input') {
-        s.inputChannel = event.channel
-        s.inputChannel.binaryType = 'arraybuffer'
-        s.inputChannelReady = true
-        s.inputChannel.onmessage = (msgEvent) => {
-          try {
-            const data = JSON.parse(msgEvent.data)
-            if (data.type === 'input') {
-              handleReceivedInput(data)
-            }
-          } catch (e) {
-            log('输入通道消息解析失败: ' + e.message)
-          }
-        }
-        s.inputChannel.onclose = () => {
-          s.inputChannelReady = false
-          log('输入数据通道已关闭')
-        }
-        s.inputChannel.onerror = (error) => {
-          s.inputChannelReady = false
-          log('输入数据通道错误: ' + error)
-        }
-        log('输入数据通道已就绪（接收端）')
-      }
-    }
+    setupOnDataChannelHandler(s.directPeerConnection)
+
     
     await s.directPeerConnection.setRemoteDescription(new RTCSessionDescription(offer))
     log('远程描述设置成功')
+    await addDirectPendingIceCandidates()
     
     const answer = await s.directPeerConnection.createAnswer()
     await s.directPeerConnection.setLocalDescription(answer)
@@ -288,6 +302,7 @@ async function handleDirectAnswer(answer) {
   try {
     await s.directPeerConnection.setRemoteDescription(new RTCSessionDescription(answer))
     log('Answer设置成功')
+    await addDirectPendingIceCandidates()
   } catch (error) {
     log('设置Answer失败: ' + error.message)
   }
@@ -303,6 +318,7 @@ async function handleRenegotiationAnswer(answer) {
   try {
     await s.directPeerConnection.setRemoteDescription(new RTCSessionDescription(answer))
     log('renegotiation answer设置成功，视频流即将到达')
+    await addDirectPendingIceCandidates()
   } catch (error) {
     log('设置renegotiation answer失败: ' + error.message)
   }
@@ -311,12 +327,37 @@ async function handleRenegotiationAnswer(answer) {
 async function handleDirectIceCandidate(candidate) {
   if (!candidate || !s.directPeerConnection) return
   
+  // 过滤空候选
+  if (candidate.sdpMid === null && candidate.sdpMLineIndex === null) return
+  
+  // 如果远程描述未设置，缓存ICE候选
+  if (!s.directPeerConnection.remoteDescription) {
+    if (s.pendingDirectIceCandidates.length < 50) {
+      s.pendingDirectIceCandidates.push(candidate)
+      if (typeof window.log === 'function') window.log('缓存直连ICE候选（远程描述未设置）')
+    }
+    return
+  }
+  
   try {
     await s.directPeerConnection.addIceCandidate(new RTCIceCandidate(candidate))
-    if (typeof window.log === 'function') window.log('ICE候选添加成功')
+    if (typeof window.log === 'function') window.log('直连ICE候选添加成功')
   } catch (error) {
-    if (typeof window.log === 'function') window.log('添加ICE候选失败: ' + error.message)
+    if (typeof window.log === 'function') window.log('添加直连ICE候选失败: ' + error.message)
   }
+}
+
+async function addDirectPendingIceCandidates() {
+  if (s.pendingDirectIceCandidates.length === 0) return
+  if (typeof window.log === 'function') window.log('添加缓存的直连ICE候选: ' + s.pendingDirectIceCandidates.length + ' 个')
+  for (const candidate of s.pendingDirectIceCandidates) {
+    try {
+      await s.directPeerConnection.addIceCandidate(new RTCIceCandidate(candidate))
+    } catch (error) {
+      if (typeof window.log === 'function') window.log('添加缓存直连ICE候选失败: ' + error.message)
+    }
+  }
+  s.pendingDirectIceCandidates = []
 }
 
 async function handleRenegotiationOffer(offer) {
@@ -362,10 +403,16 @@ function setupDataChannel() {
     log('[SIGNALING] 数据通道已打开 (control)')
     
     if (s.isDirectControllerMode) {
-      if (typeof window.showToast === 'function') window.showToast('正在协商分辨率...')
+      if (typeof window.showToast === 'function') window.showToast('连接成功！正在加载远程屏幕...')
       
+      // 直连模式：Windows被控端在初始answer中已包含视频流，无需renegotiation
+      // 直接显示远程屏幕
+      setTimeout(() => {
+        if (typeof window.showRemoteScreen === 'function') window.showRemoteScreen()
+      }, 500)
+      
+      // 发送分辨率请求（仅用于获取被控端实际分辨率信息，不触发renegotiation）
       const dpr = window.devicePixelRatio || 1
-      
       const remoteScreen = document.getElementById('remoteScreen')
       let localCssWidth = window.innerWidth
       let localCssHeight = window.innerHeight
@@ -373,52 +420,25 @@ function setupDataChannel() {
         localCssWidth = remoteScreen.clientWidth
         localCssHeight = remoteScreen.clientHeight
       }
-      
       const localPhysicalWidth = Math.round(localCssWidth * dpr)
       const localPhysicalHeight = Math.round(localCssHeight * dpr)
       
       log('本地窗口: CSS=' + localCssWidth + 'x' + localCssHeight + ', 物理=' + localPhysicalWidth + 'x' + localPhysicalHeight + ', DPR=' + dpr)
       
-      const sendResolutionRequest = () => {
-        if (!s.dataChannel || s.dataChannel.readyState !== 'open') {
-          log('数据通道已关闭，无法发送分辨率请求')
-          return
-        }
-        
-        try {
-          s.dataChannel.send(JSON.stringify({
-            type: 'resolution-request',
-            width: localPhysicalWidth,
-            height: localPhysicalHeight,
-            devicePixelRatio: dpr
-          }))
-          log('分辨率请求已发送: ' + localPhysicalWidth + 'x' + localPhysicalHeight)
-        } catch (e) {
-          log('发送分辨率请求失败: ' + e.message)
-        }
-      }
-      
-      s.isWaitingRenegotiation = true
-      
       setTimeout(() => {
-        log('主控端：发送分辨率请求...')
-        sendResolutionRequest()
-        
-        let retryCount = 0
-        const retryInterval = setInterval(() => {
-          if (!s.isWaitingRenegotiation) {
-            clearInterval(retryInterval)
-            return
+        if (s.dataChannel && s.dataChannel.readyState === 'open') {
+          try {
+            s.dataChannel.send(JSON.stringify({
+              type: 'resolution-request',
+              width: localPhysicalWidth,
+              height: localPhysicalHeight,
+              devicePixelRatio: dpr
+            }))
+            log('分辨率请求已发送: ' + localPhysicalWidth + 'x' + localPhysicalHeight)
+          } catch (e) {
+            log('发送分辨率请求失败: ' + e.message)
           }
-          retryCount++
-          if (retryCount > 5) {
-            clearInterval(retryInterval)
-            log('分辨率请求重试次数已用完')
-            return
-          }
-          log('重发分辨率请求 (' + retryCount + '/5)')
-          sendResolutionRequest()
-        }, 3000)
+        }
       }, 1000)
     } else {
       if (typeof window.showToast === 'function') window.showToast('连接成功！正在加载远程屏幕...')
@@ -439,6 +459,10 @@ function setupDataChannel() {
           s.matrixTransformer.setRemoteScreenSize(data.width, data.height)
           if (data.originalWidth && data.originalHeight) {
             log('原始屏幕尺寸: ' + data.originalWidth + 'x' + data.originalHeight)
+          }
+          // 更新 videoContainer 位置和尺寸以匹配新的分辨率
+          if (typeof window.updateContainerSizeAfterVideoLoad === 'function') {
+            window.updateContainerSizeAfterVideoLoad()
           }
         }
       } else if (data.type === 'screen-size') {
@@ -500,58 +524,7 @@ async function createPeerConnection() {
     }
   }
 
-  s.peerConnection.ontrack = (event) => {
-    log('收到远程媒体流，track类型: ' + event.track.kind)
-    const stream = event.streams[0]
-    if (stream) {
-      log('流ID: ' + stream.id + ', tracks数量: ' + stream.getTracks().length)
-      const remoteVideo = document.getElementById('remoteVideo')
-      remoteVideo.srcObject = stream
-      
-      remoteVideo.muted = true
-      remoteVideo.playsInline = true
-      
-      remoteVideo.play().then(() => {
-        log('视频自动播放成功')
-      }).catch(e => {
-        log('视频自动播放失败（需要用户交互）: ' + e.message)
-        const tryPlayOnInteraction = () => {
-          remoteVideo.play().then(() => {
-            log('用户交互后视频播放成功')
-          }).catch(playErr => {
-            log('用户交互后视频播放仍失败: ' + playErr.message)
-          })
-          document.removeEventListener('touchstart', tryPlayOnInteraction)
-          document.removeEventListener('click', tryPlayOnInteraction)
-        }
-        document.addEventListener('touchstart', tryPlayOnInteraction, { once: true })
-        document.addEventListener('click', tryPlayOnInteraction, { once: true })
-      })
-      
-      log('视频流已设置到video元素')
-      
-      remoteVideo.onloadedmetadata = () => {
-        log('视频元数据加载: ' + remoteVideo.videoWidth + 'x' + remoteVideo.videoHeight)
-        if (s.matrixTransformer) {
-          s.matrixTransformer.setVideoSize(remoteVideo.videoWidth, remoteVideo.videoHeight)
-          
-          const videoContainer = document.getElementById('videoContainer')
-          const videoWrapper = document.getElementById('videoWrapper')
-          if (videoContainer && videoWrapper) {
-            s.matrixTransformer.applyContainerSize(videoContainer, videoWrapper)
-            log('视频加载后更新 container: ' + s.matrixTransformer.displayWidth + 'x' + s.matrixTransformer.displayHeight)
-          }
-        }
-      }
-      
-      remoteVideo.oncanplay = () => {
-        log('视频可以播放')
-        remoteVideo.play().catch(e => {
-          log('视频oncanplay时播放失败: ' + e.message)
-        })
-      }
-    }
-  }
+  setupOnTrackHandler(s.peerConnection)
 
   s.peerConnection.onconnectionstatechange = () => {
     log('[SIGNALING] 连接状态: ' + s.peerConnection.connectionState)
@@ -561,6 +534,12 @@ async function createPeerConnection() {
       if (typeof window.saveConnectedDevice === 'function' && s.incomingFromDeviceId) {
         window.saveConnectedDevice(s.incomingFromDeviceId)
       }
+      // 信令模式主控端：连接成功后显示远程屏幕
+      if (s.isController && typeof window.showRemoteScreen === 'function') {
+        setTimeout(() => {
+          window.showRemoteScreen()
+        }, 300)
+      }
     } else if (s.peerConnection.connectionState === 'disconnected' || s.peerConnection.connectionState === 'failed') {
       s.isConnected = false
       if (typeof window.showToast === 'function') window.showToast('连接已断开')
@@ -568,36 +547,7 @@ async function createPeerConnection() {
     }
   }
 
-  s.peerConnection.ondatachannel = (event) => {
-    log('收到数据通道: ' + event.channel.label)
-    if (event.channel.label === 'control') {
-      s.dataChannel = event.channel
-      setupDataChannel()
-    } else if (event.channel.label === 'input') {
-      s.inputChannel = event.channel
-      s.inputChannel.binaryType = 'arraybuffer'
-      s.inputChannelReady = true
-      s.inputChannel.onmessage = (msgEvent) => {
-        try {
-          const data = JSON.parse(msgEvent.data)
-          if (data.type === 'input') {
-            handleReceivedInput(data)
-          }
-        } catch (e) {
-          log('输入通道消息解析失败: ' + e.message)
-        }
-      }
-      s.inputChannel.onclose = () => {
-        s.inputChannelReady = false
-        log('输入数据通道已关闭')
-      }
-      s.inputChannel.onerror = (error) => {
-        s.inputChannelReady = false
-        log('输入数据通道错误: ' + error)
-      }
-      log('输入数据通道已就绪（接收端）')
-    }
-  }
+  setupOnDataChannelHandler(s.peerConnection)
 
   if (s.isController) {
     s.peerConnection.addTransceiver('video', { direction: 'recvonly' })
@@ -825,5 +775,6 @@ export {
   startAndroidScreenCapture,
   handleAnswer,
   addPendingIceCandidates,
-  handleIceCandidate
+  handleIceCandidate,
+  addDirectPendingIceCandidates
 }

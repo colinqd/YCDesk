@@ -573,8 +573,10 @@ class BaseConnectionManager {
                 this.dataChannelManager.send({ type: 'pong', timestamp: data.timestamp })
                 break
             case 'input':
-                if (window.electronAPI) {
-                    window.electronAPI.send('remote-input', data)
+                if (data.inputType || data.type === 'input') {
+                    if (window.electronAPI) {
+                        window.electronAPI.send('remote-input', data)
+                    }
                 }
                 break
             default:
@@ -602,17 +604,19 @@ class BaseConnectionManager {
 
     handleIceCandidate(candidate) {
         if (!candidate) return
-        
+
         if (candidate.sdpMid === null && candidate.sdpMLineIndex === null) {
             return
         }
-        
+
         if (!this.peerConnection || !this.peerConnection.remoteDescription) {
-            this.log('缓存ICE候选（远程描述未设置）')
-            this.pendingIceCandidates.push(candidate)
+            if (this.pendingIceCandidates.length < 50) {
+                this.log('缓存ICE候选（远程描述未设置）')
+                this.pendingIceCandidates.push(candidate)
+            }
             return
         }
-        
+
         this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
             .then(() => {
                 this.log('ICE候选添加成功')
@@ -658,7 +662,7 @@ class BaseConnectionManager {
     
     handleInputChannelMessage(data) {
         this.log('DIAG handleInputChannelMessage: type=' + data.type + ', inputType=' + data.inputType)
-        if (data.type === 'input') {
+        if (data.type === 'input' || data.inputType) {
             if (window.electronAPI) {
                 window.electronAPI.send('remote-input', data)
                 this.log('DIAG handleInputChannelMessage: 已转发到remote-input IPC')

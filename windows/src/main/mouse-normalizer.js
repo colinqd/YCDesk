@@ -6,6 +6,7 @@
  */
 
 const { pressedButtons, getButtonName } = require('./keycodes')
+const fs = require('fs')
 
 // ---- 注入的依赖 ----
 
@@ -26,6 +27,11 @@ function log(level, message, data) {
 // ---- SendInput 后端（通过 input-sendinput.createClient 共享惰性初始化）
 let _siUnavailableLogged = false
 
+// 注册 SendInput 客户端可用回调，重置不可用标志
+require('./input-sendinput').onClientAvailable(function () {
+  _siUnavailableLogged = false
+})
+
 function _logSiUnavailable(label) {
   if (_siUnavailableLogged) return
   _siUnavailableLogged = true
@@ -36,44 +42,80 @@ function _logSiUnavailable(label) {
   } catch (e) {}
 }
 
+function _retryOrLog(label, retryFn) {
+  const siModule = require("./input-sendinput")
+  if (siModule._clientRef && !siModule.isAvailable) {
+    setTimeout(function () {
+      const si2 = siModule.createClient(logger)
+      if (si2) {
+        _siUnavailableLogged = false
+        retryFn(si2)
+      } else if (!_siUnavailableLogged) {
+        _siUnavailableLogged = true
+        log('error', '[鼠标] SendInput 不可用，' + label + '被丢弃')
+      }
+    }, 1000)
+  } else if (!_siUnavailableLogged) {
+    _siUnavailableLogged = true
+    log('error', '[鼠标] SendInput 不可用，' + label + '被丢弃')
+  }
+}
+
 function _execMoveMouse(x, y, sw, sh) {
   const si = require("./input-sendinput").createClient(logger)
   if (si) {
+    _siUnavailableLogged = false
     const nx = Math.round((x / sw) * 65535)
     const ny = Math.round((y / sh) * 65535)
     si.moveMouse(Math.max(0, Math.min(65535, nx)), Math.max(0, Math.min(65535, ny)))
   } else {
-    _logSiUnavailable('鼠标移动')
+    _retryOrLog('鼠标移动', function (si2) {
+      const nx = Math.round((x / sw) * 65535)
+      const ny = Math.round((y / sh) * 65535)
+      si2.moveMouse(Math.max(0, Math.min(65535, nx)), Math.max(0, Math.min(65535, ny)))
+    })
   }
 }
 
 function _execMouseToggle(direction, btnName) {
   const si = require("./input-sendinput").createClient(logger)
   if (si) {
+    _siUnavailableLogged = false
     const btnNum = btnName === 'right' ? 2 : (btnName === 'middle' ? 1 : 0)
     if (direction === 'down') si.mouseDown(btnNum)
     else si.mouseUp(btnNum)
   } else {
-    _logSiUnavailable('鼠标按键')
+    _retryOrLog('鼠标按键', function (si2) {
+      const btnNum = btnName === 'right' ? 2 : (btnName === 'middle' ? 1 : 0)
+      if (direction === 'down') si2.mouseDown(btnNum)
+      else si2.mouseUp(btnNum)
+    })
   }
 }
 
 function _execMouseClick(btnName) {
   const si = require("./input-sendinput").createClient(logger)
   if (si) {
+    _siUnavailableLogged = false
     const btnNum = btnName === 'right' ? 2 : (btnName === 'middle' ? 1 : 0)
     si.mouseClick(btnNum)
   } else {
-    _logSiUnavailable('鼠标点击')
+    _retryOrLog('鼠标点击', function (si2) {
+      const btnNum = btnName === 'right' ? 2 : (btnName === 'middle' ? 1 : 0)
+      si2.mouseClick(btnNum)
+    })
   }
 }
 
 function _execScrollMouse(x, y) {
   const si = require("./input-sendinput").createClient(logger)
   if (si && y !== 0) {
+    _siUnavailableLogged = false
     si.mouseWheel(-y * 120)
   } else if (!si) {
-    _logSiUnavailable('滚轮')
+    _retryOrLog('滚轮', function (si2) {
+      if (y !== 0) si2.mouseWheel(-y * 120)
+    })
   }
 }
 
@@ -222,7 +264,7 @@ function handleMouseWheel(deltaY, deltaX, x, y, screenWidth, screenHeight) {
     wheelAccumulatorY += deltaY
     const scrollAmount = Math.trunc(wheelAccumulatorY / 40)
     if (scrollAmount !== 0) {
-      _execScrollMouse(0, -scrollAmount)
+      _execScrollMouse(0, scrollAmount)
       wheelAccumulatorY -= scrollAmount * 40
     }
   }
@@ -240,7 +282,7 @@ function handleMouseWheel(deltaY, deltaX, x, y, screenWidth, screenHeight) {
 function handleMouseWheelBatch(accumulatedDeltaY, accumulatedDeltaX) {
   if (accumulatedDeltaY) {
     const scrollAmount = Math.round(accumulatedDeltaY / 120)
-    _execScrollMouse(0, -scrollAmount)
+    _execScrollMouse(0, scrollAmount)
   }
 
   if (accumulatedDeltaX) {

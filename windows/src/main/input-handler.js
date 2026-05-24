@@ -14,38 +14,97 @@ const { getVkCode } = require('./key-to-vk')
 let _firstInputLogged = false
 let _siUnavailableLogged = false
 
+// 注册 SendInput 客户端可用回调，重置不可用标志
+require('./input-sendinput').onClientAvailable(function () {
+  _siUnavailableLogged = false
+})
+
 function _execKeyToggle(keyName, direction) {
   const si = require("./input-sendinput").createClient(logger)
   if (si) {
+    _siUnavailableLogged = false
     const vk = getVkCode(keyName)
     if (vk) {
       if (direction === 'down') si.keyDown(vk)
       else si.keyUp(vk)
     }
-  } else if (!_siUnavailableLogged) {
-    _siUnavailableLogged = true
-    log('error', '[输入] SendInput 不可用，按键输入被丢弃')
+  } else {
+    // 如果预热正在进行（_clientRef 已设置但 isAvailable 尚为 false），
+    // 1000ms 后重试一次。PowerShell 启动通常需要 1-3 秒。
+    const siModule = require("./input-sendinput")
+    if (siModule._clientRef && !siModule.isAvailable) {
+      setTimeout(() => {
+        const si2 = siModule.createClient(logger)
+        if (si2) {
+          _siUnavailableLogged = false
+          const vk2 = getVkCode(keyName)
+          if (vk2) {
+            if (direction === 'down') si2.keyDown(vk2)
+            else si2.keyUp(vk2)
+          }
+        } else if (!_siUnavailableLogged) {
+          _siUnavailableLogged = true
+          log('error', '[输入] SendInput 不可用，按键输入被丢弃')
+        }
+      }, 1000)
+    } else if (!_siUnavailableLogged) {
+      _siUnavailableLogged = true
+      log('error', '[输入] SendInput 不可用，按键输入被丢弃')
+    }
   }
 }
 
 function _execTypeString(text) {
   const si = require("./input-sendinput").createClient(logger)
-  if (si) si.typeString(text)
-  else if (!_siUnavailableLogged) {
-    _siUnavailableLogged = true
-    log('error', '[输入] SendInput 不可用，文本输入被丢弃: ' + text.substring(0, 20))
+  if (si) {
+    _siUnavailableLogged = false
+    si.typeString(text)
+  } else {
+    const siModule = require("./input-sendinput")
+    if (siModule._clientRef && !siModule.isAvailable) {
+      setTimeout(() => {
+        const si2 = siModule.createClient(logger)
+        if (si2) {
+          _siUnavailableLogged = false
+          si2.typeString(text)
+        } else if (!_siUnavailableLogged) {
+          _siUnavailableLogged = true
+          log('error', '[输入] SendInput 不可用，文本输入被丢弃: ' + text.substring(0, 20))
+        }
+      }, 1000)
+    } else if (!_siUnavailableLogged) {
+      _siUnavailableLogged = true
+      log('error', '[输入] SendInput 不可用，文本输入被丢弃: ' + text.substring(0, 20))
+    }
   }
 }
 
 function _execMouseToggle(direction, btnName) {
   const si = require("./input-sendinput").createClient(logger)
   if (si) {
+    _siUnavailableLogged = false
     const btnNum = btnName === 'right' ? 2 : (btnName === 'middle' ? 1 : 0)
     if (direction === 'down') si.mouseDown(btnNum)
     else si.mouseUp(btnNum)
-  } else if (!_siUnavailableLogged) {
-    _siUnavailableLogged = true
-    log('error', '[输入] SendInput 不可用，鼠标输入被丢弃')
+  } else {
+    const siModule = require("./input-sendinput")
+    if (siModule._clientRef && !siModule.isAvailable) {
+      setTimeout(() => {
+        const si2 = siModule.createClient(logger)
+        if (si2) {
+          _siUnavailableLogged = false
+          const btnNum = btnName === 'right' ? 2 : (btnName === 'middle' ? 1 : 0)
+          if (direction === 'down') si2.mouseDown(btnNum)
+          else si2.mouseUp(btnNum)
+        } else if (!_siUnavailableLogged) {
+          _siUnavailableLogged = true
+          log('error', '[输入] SendInput 不可用，鼠标输入被丢弃')
+        }
+      }, 1000)
+    } else if (!_siUnavailableLogged) {
+      _siUnavailableLogged = true
+      log('error', '[输入] SendInput 不可用，鼠标输入被丢弃')
+    }
   }
 }
 
@@ -95,7 +154,14 @@ function log(level, message, data) {
 
 function initRobot() {
   log('info', '初始化输入控制: 使用 SendInput (PowerShell C#)')
-  log('info', 'SendInput 将在首次使用时延迟初始化')
+
+  // 提前预热 SendInput 后端，使其在远程连接建立前完成初始化
+  // 避免首次键盘输入因惰性初始化被丢弃
+  require('./input-sendinput').init().then(() => {
+    log('info', 'SendInput 后端已就绪（启动时预热完成）')
+  }).catch(err => {
+    log('warn', `SendInput 预热失败，将在首次输入时重试: ${err.message}`)
+  })
 }
 
 const DIAG_LOG_FILE = 'C:\\ProgramData\\YCDesk\\input_handler.log'

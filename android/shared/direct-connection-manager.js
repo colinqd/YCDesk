@@ -9,6 +9,8 @@ class DirectConnectionManager extends BaseConnectionManager {
         this.offerResolve = null
         this.answerResolve = null
         this.renegotiateResolve = null
+        this.iceServers = []
+        this._iceRestartInProgress = false
     }
 
     setModeData(data) {
@@ -84,30 +86,30 @@ class DirectConnectionManager extends BaseConnectionManager {
         return capabilities
     }
 
-    sendSignalingMessage(message) {
+    async sendSignalingMessage(message) {
         switch (message.type) {
             case 'offer':
-                window.electronAPI.sendToMainWindow('webrtc-offer', {
+                await window.electronAPI.sendToMainWindow('webrtc-offer', {
                     offer: message.offer
                 })
                 break
             case 'answer':
-                window.electronAPI.sendToMainWindow('webrtc-answer', {
+                await window.electronAPI.sendToMainWindow('webrtc-answer', {
                     answer: message.answer
                 })
                 break
             case 'ice-candidate':
-                window.electronAPI.sendToMainWindow('webrtc-ice-candidate', {
+                await window.electronAPI.sendToMainWindow('webrtc-ice-candidate', {
                     candidate: message.candidate
                 })
                 break
             case 'renegotiate':
-                window.electronAPI.sendToMainWindow('webrtc-renegotiate', {
+                await window.electronAPI.sendToMainWindow('webrtc-renegotiate', {
                     offer: message.offer
                 })
                 break
             default:
-                window.electronAPI.sendToMainWindow('webrtc-signaling', message)
+                await window.electronAPI.sendToMainWindow('webrtc-signaling', message)
         }
     }
 
@@ -142,7 +144,10 @@ class DirectConnectionManager extends BaseConnectionManager {
             
             this.stateMachine.transition(ConnectionState.CONNECTED)
             this.log('连接建立完成')
-            
+
+            // 连接建立后设置断连恢复监控
+            this._setupConnectionRecovery()
+
             return { success: true }
             
         } catch (error) {
@@ -157,11 +162,17 @@ class DirectConnectionManager extends BaseConnectionManager {
 
         await this.createDataChannel()
 
-        this.log('创建初始 offer（不含视频）...')
+        // 添加 recvonly 视频收发器，以便接收被控端的视频轨道
+        this.log('添加视频收发器（recvonly）...')
+        this.peerConnection.addTransceiver('video', {
+            direction: 'recvonly'
+        })
+
+        this.log('创建 offer（含视频收发器）...')
         const offer = await this.peerConnection.createOffer()
         await this.peerConnection.setLocalDescription(offer)
 
-        this.sendSignalingMessage({
+        await this.sendSignalingMessage({
             type: 'offer',
             offer: {
                 type: offer.type,
@@ -169,10 +180,10 @@ class DirectConnectionManager extends BaseConnectionManager {
             }
         })
 
-        this.log('等待被控端发送初始 answer...')
+        this.log('等待被控端发送 answer（含视频）...')
         await this.waitForAnswer()
 
-        this.log('收到初始 answer，数据通道应该已打开')
+        this.log('收到 answer，数据通道应该已打开')
 
         await this.waitForDataChannelOpen()
 
@@ -181,12 +192,8 @@ class DirectConnectionManager extends BaseConnectionManager {
         const displaySize = await this.negotiateResolution()
         this.adjustVideoContainer(displaySize)
 
-        this.log('分辨率协商完成，等待 renegotiation offer（含视频）...')
+        this.log('分辨率协商完成，等待视频轨道...')
         this.stateMachine.transition(ConnectionState.WAITING_VIDEO)
-
-        await this.waitForRenegotiationOffer()
-
-        this.log('收到 renegotiation offer，处理中...')
 
         // 等待首帧，但如果超时或没有视频轨道，不阻塞连接
         try {
@@ -195,7 +202,6 @@ class DirectConnectionManager extends BaseConnectionManager {
             this.log('首帧显示成功')
         } catch (error) {
             this.log('首帧等待未完成（可能无视频轨道或屏幕捕获失败）: ' + error.message)
-            // 即使没有视频，数据通道和其他功能仍然可用
             this.stateMachine.transition(ConnectionState.DISPLAYING_FIRST_FRAME)
         }
 
@@ -269,18 +275,18 @@ class DirectConnectionManager extends BaseConnectionManager {
 
     async createAndSendOffer() {
         this.log('创建并发送 offer')
-        
+
         const offer = await this.peerConnection.createOffer()
         await this.peerConnection.setLocalDescription(offer)
-        
-        this.sendSignalingMessage({
+
+        await this.sendSignalingMessage({
             type: 'offer',
             offer: {
                 type: offer.type,
                 sdp: offer.sdp
             }
         })
-        
+
         this.log('offer 已发送')
     }
 
@@ -331,8 +337,8 @@ class DirectConnectionManager extends BaseConnectionManager {
             this.log('创建 renegotiation answer...')
             const answer = await this.peerConnection.createAnswer()
             await this.peerConnection.setLocalDescription(answer)
-            
-            this.sendSignalingMessage({
+
+            await this.sendSignalingMessage({
                 type: 'answer',
                 answer: {
                     type: answer.type,
@@ -367,6 +373,95 @@ class DirectConnectionManager extends BaseConnectionManager {
             .catch(error => {
                 this.error('设置远程描述失败:', error)
             })
+    }
+
+    _setupConnectionRecovery() {
+        if (!this.peerConnection) return
+
+        this.peerConnection.oniceconnectionstatechange = () => {
+            const state = this.peerConnection.iceConnectionState
+            this.log('ICE连接状态: ' + state)
+            this.emit('ice-state-change', state)
+
+            if (state === 'failed' && !this._iceRestartInProgress) {
+                this.log('ICE连接失败，尝试 ICE restart...')
+                this._attemptIceRestart()
+            }
+        }
+
+        this.peerConnection.onconnectionstatechange = () => {
+            const state = this.peerConnection.connectionState
+            this.log('连接状态: ' + state)
+            this.emit('connection-state-change', state)
+
+            if (state === 'failed' && !this._iceRestartInProgress) {
+                this.log('WebRTC连接失败，尝试 ICE restart...')
+                this._attemptIceRestart()
+            } else if (state === 'disconnected') {
+                this.log('WebRTC连接断开，等待自动恢复...')
+            }
+        }
+    }
+
+    async _attemptIceRestart() {
+        if (this._iceRestartInProgress) return
+        this._iceRestartInProgress = true
+
+        try {
+            this.log('开始 ICE restart...')
+
+            // 仅主控端发起 ICE restart（避免双方同时发起）
+            if (!this.isController) {
+                this.log('被控端不主动发起 ICE restart，等待主控端')
+                this._iceRestartInProgress = false
+                return
+            }
+
+            const offer = await this.peerConnection.createOffer({ iceRestart: true })
+            await this.peerConnection.setLocalDescription(offer)
+
+            await this.sendSignalingMessage({
+                type: 'offer',
+                offer: {
+                    type: offer.type,
+                    sdp: offer.sdp
+                }
+            })
+
+            this.log('ICE restart offer 已发送')
+
+            // 等待 ICE restart 完成（最多10秒）
+            await new Promise((resolve) => {
+                const timeout = setTimeout(() => {
+                    this.log('ICE restart 超时')
+                    resolve()
+                }, 10000)
+
+                const checkState = () => {
+                    if (this.peerConnection &&
+                        (this.peerConnection.iceConnectionState === 'connected' ||
+                         this.peerConnection.iceConnectionState === 'completed')) {
+                        clearTimeout(timeout)
+                        this.log('ICE restart 成功')
+                        resolve()
+                    }
+                }
+
+                this.peerConnection.oniceconnectionstatechange = () => {
+                    checkState()
+                    // 恢复正常的连接状态监控
+                    if (this.peerConnection.iceConnectionState === 'connected' ||
+                        this.peerConnection.iceConnectionState === 'completed' ||
+                        this.peerConnection.iceConnectionState === 'failed') {
+                        this._setupConnectionRecovery()
+                    }
+                }
+            })
+        } catch (error) {
+            this.error('ICE restart 失败:', error)
+        } finally {
+            this._iceRestartInProgress = false
+        }
     }
 
     disconnect() {

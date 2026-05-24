@@ -670,10 +670,10 @@ class SignalingModeManager {
   _setupServiceFrameReceiver() {
     var self = this
     window.electronAPI.onServiceFrame(function(frameData) {
+      // 优先使用优化视频通道，仅在其不可用时回退到数据通道
       if (self.optimizedVideoChannel && self.optimizedVideoChannel.readyState === 'open') {
         self.videoFrameTransmitter.sendEncodedFrame(frameData.jpeg, frameData.width, frameData.height)
-      }
-      if (self.dataChannelManager && self.dataChannelManager.isOpen()) {
+      } else if (self.dataChannelManager && self.dataChannelManager.isOpen()) {
         self.dataChannelManager.send({
           type: 'service-video-frame',
           width: frameData.width,
@@ -686,32 +686,27 @@ class SignalingModeManager {
     this.logFn('[信令模式] 服务帧接收器已就绪')
   }
 
-  async refreshVideoStream() {
+  async refreshVideoStream(targetWidth, targetHeight) {
     this.logFn('[信令模式] 开始刷新视频流...')
     try {
-      this.stopScreenCapture()
-
-      this.logFn('[信令模式] 获取屏幕源...')
       const sources = await window.electronAPI.getSources()
       this.logFn('[信令模式] 找到 ' + sources.length + ' 个屏幕源')
-      
+
       if (sources.length === 0) {
         this.logFn('[信令模式] 未找到屏幕源，刷新失败')
         return
       }
 
-      const maxWidth = this.config.screenCapture?.maxWidth || 1920
-      const maxHeight = this.config.screenCapture?.maxHeight || 1080
+      const maxWidth = targetWidth || this.config.screenCapture?.maxWidth || 1920
+      const maxHeight = targetHeight || this.config.screenCapture?.maxHeight || 1080
 
       var selectedSourceId = window.getSelectedSourceId ? window.getSelectedSourceId() : null
       if (!selectedSourceId) {
         selectedSourceId = sources.find(function(s) { return s.id && s.id.startsWith('screen:') })?.id || (sources.length > 0 ? sources[0].id : null)
       }
-      this.logFn('[信令模式] 刷新使用捕获源: ' + (selectedSourceId || '无'))
+      this.logFn('[信令模式] 刷新使用捕获源: ' + (selectedSourceId || '无') + ', 目标分辨率: ' + maxWidth + 'x' + maxHeight)
 
-      this.logFn('[信令模式] 请求屏幕捕获，最大分辨率: ' + maxWidth + 'x' + maxHeight)
-      
-      this.currentStream = await navigator.mediaDevices.getUserMedia({
+      const newStream = await navigator.mediaDevices.getUserMedia({
         audio: false,
         video: {
           mandatory: {
@@ -724,39 +719,62 @@ class SignalingModeManager {
         }
       })
 
-      this.logFn('[信令模式] 屏幕捕获成功，获取到 ' + this.currentStream.getVideoTracks().length + ' 个视频轨道')
+      this.logFn('[信令模式] 屏幕捕获成功，获取到 ' + newStream.getVideoTracks().length + ' 个视频轨道')
 
-      const tracks = this.currentStream.getVideoTracks()
-      tracks.forEach(track => {
-        this.logFn('[信令模式] 添加视频轨道: ' + track.label + ', ' + track.width + 'x' + track.height)
-        const sender = this.peerConnection.addTrack(track, this.currentStream)
-        try {
-          const parameters = sender.getParameters()
-          if (!parameters.encodings || parameters.encodings.length === 0) {
-            parameters.encodings = [{}]
-          }
-          parameters.encodings[0].maxBitrate = 8000000
-          parameters.encodings[0].maxFramerate = 30
-          sender.setParameters(parameters)
-        } catch (e) {
-          this.logFn('[信令模式] 设置编码参数失败: ' + e.message)
+      const newTracks = newStream.getVideoTracks()
+      const senders = this.peerConnection.getSenders()
+      const videoSender = senders.find(s => s.track && s.track.kind === 'video')
+
+      if (videoSender && newTracks.length > 0) {
+        // 先替换轨道，再停止旧流 —— 避免发送端出现无视频帧的空隙
+        this.logFn('[信令模式] 使用 replaceTrack 替换视频轨道...')
+        const oldStream = this.currentStream
+        await videoSender.replaceTrack(newTracks[0])
+        this.currentStream = newStream
+
+        // 替换成功后，安全停止旧的流
+        if (oldStream) {
+          oldStream.getTracks().forEach(track => track.stop())
         }
-      })
+        this.logFn('[信令模式] 视频轨道已替换，无需重新协商')
+      } else {
+        // 没有 sender 时回退到 addTrack 方式
+        this.logFn('[信令模式] 未找到视频 sender，使用 addTrack 方式...')
+        if (this.currentStream) {
+          this.currentStream.getTracks().forEach(track => track.stop())
+        }
+        this.currentStream = newStream
+        newTracks.forEach(track => {
+          this.logFn('[信令模式] 添加视频轨道: ' + track.label)
+          const sender = this.peerConnection.addTrack(track, this.currentStream)
+          try {
+            const parameters = sender.getParameters()
+            if (!parameters.encodings || parameters.encodings.length === 0) {
+              parameters.encodings = [{}]
+            }
+            parameters.encodings[0].maxBitrate = 8000000
+            parameters.encodings[0].maxFramerate = 30
+            sender.setParameters(parameters)
+          } catch (e) {
+            this.logFn('[信令模式] 设置编码参数失败: ' + e.message)
+          }
+        })
 
-      this.logFn('[信令模式] 视频流已刷新，发起重新协商...')
-      const offer = await this.peerConnection.createOffer()
-      await this.peerConnection.setLocalDescription(offer)
+        this.logFn('[信令模式] 视频流已刷新，发起重新协商...')
+        const offer = await this.peerConnection.createOffer()
+        await this.peerConnection.setLocalDescription(offer)
 
-      this.signalingClient.send('offer', {
-        sessionId: this.currentSessionId,
-        offer: {
-          type: offer.type,
-          sdp: offer.sdp
-        },
-        toDeviceId: this.incomingFromDeviceId
-      })
+        this.signalingClient.send('offer', {
+          sessionId: this.currentSessionId,
+          offer: {
+            type: offer.type,
+            sdp: offer.sdp
+          },
+          toDeviceId: this.incomingFromDeviceId
+        })
 
-      this.logFn('[信令模式] 重新协商 offer 已发送')
+        this.logFn('[信令模式] 重新协商 offer 已发送')
+      }
     } catch (error) {
       this.logFn('[信令模式] 刷新视频流失败: ' + error.message)
       console.error('[信令模式] 刷新视频流详细错误:', error)
