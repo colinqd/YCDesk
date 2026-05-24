@@ -124,6 +124,25 @@ function updateServerStatusDisplay(text, type) {
       else if (type === 'connecting' || type === 'reconnecting') controllerDot.classList.add('connecting')
     }
   }
+
+  // 根据连接状态更新连接按钮
+  updateConnectButtons(type)
+}
+
+function updateConnectButtons(type) {
+  const controlledBtn = document.getElementById('controlledConnectBtn')
+  const controllerBtn = document.getElementById('controllerConnectBtn')
+
+  if (type === 'connected') {
+    if (controlledBtn) { controlledBtn.disabled = true; controlledBtn.textContent = '已连接' }
+    if (controllerBtn) { controllerBtn.disabled = true; controllerBtn.textContent = '已连接' }
+  } else if (type === 'connecting' || type === 'reconnecting') {
+    if (controlledBtn) { controlledBtn.disabled = true; controlledBtn.textContent = '连接中...' }
+    if (controllerBtn) { controllerBtn.disabled = true; controllerBtn.textContent = '连接中...' }
+  } else {
+    if (controlledBtn) { controlledBtn.disabled = false; controlledBtn.textContent = '连接' }
+    if (controllerBtn) { controllerBtn.disabled = false; controllerBtn.textContent = '连接' }
+  }
 }
 
 function showMessage(msg) {

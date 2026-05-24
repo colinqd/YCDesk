@@ -24,7 +24,7 @@ function onAddServerClick() {
   }
 }
 
-function addSignalingServer() {
+async function addSignalingServer() {
   if (!historyManager) { console.error('historyManager 未初始化'); return }
   const nameInput = document.getElementById('newServerName')
   const urlInput = document.getElementById('newServerUrl')
@@ -36,14 +36,14 @@ function addSignalingServer() {
   if (!name) { alert('请输入服务器名称'); return }
   if (!url) { alert('请输入服务器地址'); return }
 
-  historyManager.addServer(name, url)
+  await historyManager.addServer(name, url)
   nameInput.value = ''
   urlInput.value = ''
   renderServerList()
   log('信令服务器已添加: ' + name)
 }
 
-function updateSignalingServer(index) {
+async function updateSignalingServer(index) {
   if (!historyManager) { console.error('historyManager 未初始化'); return }
   const nameInput = document.getElementById('newServerName')
   const urlInput = document.getElementById('newServerUrl')
@@ -55,7 +55,7 @@ function updateSignalingServer(index) {
   if (!name) { alert('请输入服务器名称'); return }
   if (!url) { alert('请输入服务器地址'); return }
 
-  historyManager.editServer(index, name, url)
+  await historyManager.editServer(index, name, url)
   nameInput.value = ''
   urlInput.value = ''
   const addBtn = document.getElementById('addServerBtn')
@@ -99,9 +99,9 @@ function cancelEditServer() {
   }
 }
 
-function deleteSignalingServer(index) {
+async function deleteSignalingServer(index) {
   if (!historyManager) { console.error('historyManager 未初始化'); return }
-  historyManager.deleteServer(index)
+  await historyManager.deleteServer(index)
   renderServerList()
   log('信令服务器已删除')
 }
@@ -166,7 +166,7 @@ function onAddServerClickControlled() {
   }
 }
 
-function addSignalingServerControlled() {
+async function addSignalingServerControlled() {
   if (!historyManager) { console.error('historyManager 未初始化'); return }
   const nameInput = document.getElementById('controlledNewServerName')
   const urlInput = document.getElementById('controlledNewServerUrl')
@@ -178,14 +178,14 @@ function addSignalingServerControlled() {
   if (!name) { alert('请输入服务器名称'); return }
   if (!url) { alert('请输入服务器地址'); return }
 
-  historyManager.addServer(name, url)
+  await historyManager.addServer(name, url)
   nameInput.value = ''
   urlInput.value = ''
   renderServerListControlled()
   log('信令服务器已添加: ' + name)
 }
 
-function updateSignalingServerControlled(index) {
+async function updateSignalingServerControlled(index) {
   if (!historyManager) { console.error('historyManager 未初始化'); return }
   const nameInput = document.getElementById('controlledNewServerName')
   const urlInput = document.getElementById('controlledNewServerUrl')
@@ -197,7 +197,7 @@ function updateSignalingServerControlled(index) {
   if (!name) { alert('请输入服务器名称'); return }
   if (!url) { alert('请输入服务器地址'); return }
 
-  historyManager.editServer(index, name, url)
+  await historyManager.editServer(index, name, url)
   nameInput.value = ''
   urlInput.value = ''
   const addBtn = document.getElementById('controlledAddServerBtn')
@@ -241,9 +241,9 @@ function cancelEditServerControlled() {
   }
 }
 
-function deleteSignalingServerControlled(index) {
+async function deleteSignalingServerControlled(index) {
   if (!historyManager) { console.error('historyManager 未初始化'); return }
-  historyManager.deleteServer(index)
+  await historyManager.deleteServer(index)
   renderServerListControlled()
   log('信令服务器已删除')
 }
@@ -302,6 +302,12 @@ function selectRole(role) {
 }
 
 function switchControlledMode(mode) {
+  if (signalingManager && signalingManager.peerConnection && signalingManager.peerConnection.connectionState === 'connected') {
+    if (!confirm('当前有活跃的远程连接，切换模式将断开连接，是否继续？')) {
+      return
+    }
+  }
+
   currentControlledMode = mode
   uiManager.switchMode('controlled', mode)
 
@@ -315,6 +321,12 @@ function switchControlledMode(mode) {
 }
 
 function switchControllerMode(mode) {
+  if (signalingManager && signalingManager.peerConnection && signalingManager.peerConnection.connectionState === 'connected') {
+    if (!confirm('当前有活跃的远程连接，切换模式将断开连接，是否继续？')) {
+      return
+    }
+  }
+
   currentControllerMode = mode
   uiManager.switchMode('controller', mode)
 
@@ -330,6 +342,12 @@ function switchControllerMode(mode) {
 }
 
 function goBack() {
+  if (signalingManager && signalingManager.peerConnection && signalingManager.peerConnection.connectionState === 'connected') {
+    if (!confirm('当前有活跃的远程连接，返回首页将断开连接，是否继续？')) {
+      return
+    }
+  }
+
   uiManager.goBack()
   stopListening()
   if (signalingManager) {
@@ -340,6 +358,8 @@ function goBack() {
 // ==================== 初始化 ====================
 
 async function initControlled() {
+  if (historyManager) await historyManager.initServers()
+
   myDeviceId = await window.electronAPI.getDeviceId()
   uiManager.setDeviceId(myDeviceId)
   signalingManager.setDeviceId(myDeviceId)
@@ -369,6 +389,8 @@ async function initControlled() {
 }
 
 async function initController() {
+  if (historyManager) await historyManager.initServers()
+
   myDeviceId = await window.electronAPI.getDeviceId()
   signalingManager.setDeviceId(myDeviceId)
   directManager.setDeviceId(myDeviceId)

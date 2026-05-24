@@ -7,89 +7,47 @@ class HistoryManager {
     }
     this.maxItems = options.maxItems || 10
     this.logFn = options.log || console.log
+    this._serversCache = null
+    this._serversInitialized = false
   }
 
-  saveToHistory(type, data) {
-    try {
-      const key = this._getStorageKey(type)
-      let history = this._loadHistory(key)
+  /**
+   * 初始化信令服务器列表（异步从主进程加载，带 localStorage 迁移）
+   */
+  async initServers() {
+    if (this._serversInitialized) return
 
-      const existingIndex = history.findIndex(item => {
-        if (type === 'direct') {
-          return item.ip === data.ip && item.port === data.port
+    try {
+      if (window.electronAPI && window.electronAPI.getSignalingServers) {
+        const result = await window.electronAPI.getSignalingServers()
+        if (result && result.success && result.servers && result.servers.length > 0) {
+          this._serversCache = result.servers
+          this.logFn('从主进程加载信令服务器: ' + result.servers.length + ' 个')
         } else {
-          return item.deviceId === data.deviceId && item.serverUrl === data.serverUrl
+          // 主进程无数据，尝试从 localStorage 迁移旧数据
+          this._serversCache = this._loadServersFromLocalStorage()
+          if (this._serversCache.length > 0) {
+            this.logFn('从 localStorage 迁移信令服务器: ' + this._serversCache.length + ' 个')
+            await this._saveServersToIPC(this._serversCache)
+            // 迁移后清除 localStorage 中的旧数据
+            try { localStorage.removeItem(this.storageKeys.signalingServers) } catch (e) {}
+          } else {
+            this._serversCache = []
+          }
         }
-      })
-
-      if (existingIndex !== -1) {
-        history.splice(existingIndex, 1)
+      } else {
+        // preload API 不可用，回退到 localStorage
+        this._serversCache = this._loadServersFromLocalStorage()
       }
-
-      history.unshift({
-        ...data,
-        timestamp: Date.now()
-      })
-
-      history = history.slice(0, this.maxItems)
-      localStorage.setItem(key, JSON.stringify(history))
-
-      return history
-    } catch (error) {
-      this.logFn('保存历史记录失败:', error)
-      return null
+    } catch (e) {
+      this.logFn('初始化信令服务器列表失败: ' + (e.message || e))
+      this._serversCache = this._loadServersFromLocalStorage()
     }
+
+    this._serversInitialized = true
   }
 
-  loadHistory(type) {
-    try {
-      const key = this._getStorageKey(type)
-      return this._loadHistory(key)
-    } catch (error) {
-      this.logFn('加载历史记录失败:', error)
-      return []
-    }
-  }
-
-  deleteFromHistory(type, index) {
-    try {
-      const key = this._getStorageKey(type)
-      let history = this._loadHistory(key)
-      history.splice(index, 1)
-      localStorage.setItem(key, JSON.stringify(history))
-      return history
-    } catch (error) {
-      this.logFn('删除历史记录失败:', error)
-      return null
-    }
-  }
-
-  renderHistory(type, renderFn) {
-    const history = this.loadHistory(type)
-    if (typeof renderFn === 'function') {
-      renderFn(history)
-    }
-    return history
-  }
-
-  getHistoryItem(type, index) {
-    const history = this.loadHistory(type)
-    return history[index] || null
-  }
-
-  _getStorageKey(type) {
-    return this.storageKeys[type] || this.storageKeys.direct
-  }
-
-  _loadHistory(key) {
-    try {
-      return JSON.parse(localStorage.getItem(key) || '[]')
-    } catch {
-      return []
-    }
-  }
-
-  getServers() {
+  _loadServersFromLocalStorage() {
     try {
       return JSON.parse(localStorage.getItem(this.storageKeys.signalingServers) || '[]')
     } catch {
@@ -97,30 +55,51 @@ class HistoryManager {
     }
   }
 
-  saveServers(servers) {
+  async _saveServersToIPC(servers) {
     try {
-      localStorage.setItem(this.storageKeys.signalingServers, JSON.stringify(servers))
-      return servers
+      if (window.electronAPI && window.electronAPI.saveSignalingServers) {
+        await window.electronAPI.saveSignalingServers(servers)
+      }
     } catch (e) {
-      this.logFn('保存信令服务器列表失败:', e)
-      return null
+      this.logFn('保存信令服务器到主进程失败: ' + (e.message || e))
     }
   }
 
-  addServer(name, url) {
+  getServers() {
+    return this._serversCache || this._loadServersFromLocalStorage()
+  }
+
+  async saveServers(servers) {
+    this._serversCache = servers
+    try {
+      if (window.electronAPI && window.electronAPI.saveSignalingServers) {
+        await window.electronAPI.saveSignalingServers(servers)
+      } else {
+        localStorage.setItem(this.storageKeys.signalingServers, JSON.stringify(servers))
+      }
+      return servers
+    } catch (e) {
+      this.logFn('保存信令服务器列表失败:', e)
+      // 回退到 localStorage
+      try { localStorage.setItem(this.storageKeys.signalingServers, JSON.stringify(servers)) } catch (e2) {}
+      return servers
+    }
+  }
+
+  async addServer(name, url) {
     const servers = this.getServers()
     servers.unshift({ name, url, timestamp: Date.now() })
     return this.saveServers(servers)
   }
 
-  editServer(index, name, url) {
+  async editServer(index, name, url) {
     const servers = this.getServers()
     if (index >= servers.length) return null
     servers[index] = { name, url, timestamp: Date.now() }
     return this.saveServers(servers)
   }
 
-  deleteServer(index) {
+  async deleteServer(index) {
     const servers = this.getServers()
     if (index >= servers.length) return null
     servers.splice(index, 1)

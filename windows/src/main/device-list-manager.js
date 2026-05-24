@@ -7,6 +7,7 @@ class DeviceListManager {
     this.logFn = options.log || console.log
     this.dataDir = options.dataDir || path.join(os.homedir(), '.ycdesk')
     this.devicesFile = path.join(this.dataDir, 'devices.json')
+    this.serversFile = path.join(this.dataDir, 'servers.json')
     this.ensureDataDir()
   }
 
@@ -157,6 +158,64 @@ class DeviceListManager {
     } catch (e) {
       return { success: false, message: '清空失败: ' + e.message }
     }
+  }
+
+  // ==================== 信令服务器列表管理 ====================
+
+  loadServers() {
+    try {
+      if (!fs.existsSync(this.serversFile)) {
+        return []
+      }
+      const data = fs.readFileSync(this.serversFile, 'utf8')
+      return JSON.parse(data)
+    } catch (e) {
+      this.logFn('加载信令服务器列表失败: ' + e.message)
+      return []
+    }
+  }
+
+  saveServers(servers) {
+    try {
+      this.ensureDataDir()
+      fs.writeFileSync(this.serversFile, JSON.stringify(servers, null, 2), 'utf8')
+      this.logFn('信令服务器列表已保存: ' + servers.length + ' 个服务器')
+      return { success: true, servers: servers }
+    } catch (e) {
+      this.logFn('保存信令服务器列表失败: ' + e.message)
+      return { success: false, message: '保存失败: ' + e.message }
+    }
+  }
+
+  addServer(name, url) {
+    if (!name || !url) {
+      return { success: false, message: '服务器名称和地址不能为空' }
+    }
+    const servers = this.loadServers()
+    servers.unshift({ name, url, timestamp: Date.now() })
+    return this.saveServers(servers)
+  }
+
+  editServer(index, name, url) {
+    const servers = this.loadServers()
+    if (index < 0 || index >= servers.length) {
+      return { success: false, message: '服务器不存在' }
+    }
+    servers[index] = { name, url, timestamp: Date.now() }
+    return this.saveServers(servers)
+  }
+
+  deleteServer(index) {
+    const servers = this.loadServers()
+    if (index < 0 || index >= servers.length) {
+      return { success: false, message: '服务器不存在' }
+    }
+    servers.splice(index, 1)
+    return this.saveServers(servers)
+  }
+
+  getServers() {
+    return this.loadServers()
   }
 }
 

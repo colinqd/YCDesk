@@ -163,7 +163,7 @@
                 <input type="text" id="controlledServerUrl" class="input" placeholder="如:192.168.1.100:3000" value="localhost:3000">
               </div>
               <div class="btn-row">
-                <button class="btn btn-primary" onclick="controlledConnectToServer()">连接</button>
+                <button class="btn btn-primary" id="controlledConnectBtn" onclick="controlledConnectToServer()">连接</button>
                 <button class="btn btn-danger" onclick="controlledDisconnectFromServer()">断开</button>
               </div>
             </div>
@@ -272,7 +272,7 @@
                 <input type="text" id="controllerServerUrl" class="input" placeholder="例如: 192.168.1.100:3000" value="localhost:3000">
               </div>
               <div class="btn-row">
-                <button class="btn btn-secondary" onclick="controllerConnectToServer()">连接</button>
+                <button class="btn btn-secondary" id="controllerConnectBtn" onclick="controllerConnectToServer()">连接</button>
                 <button class="btn btn-danger" onclick="controllerDisconnectFromServer()">断开</button>
               </div>
 

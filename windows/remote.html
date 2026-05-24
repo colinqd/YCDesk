@@ -474,6 +474,10 @@
       <div class="placeholder-icon">🖥️</div>
       <div class="placeholder-text">正在建立连接...</div>
       <div class="placeholder-subtext" id="subtext">请稍候</div>
+      <div id="reconnectArea" style="display:none; margin-top: 16px;">
+        <button class="btn btn-primary" id="reconnectBtn" style="font-size:14px; padding:8px 24px;">重新连接</button>
+        <div class="placeholder-subtext" id="reconnectCountdown" style="margin-top:8px;"></div>
+      </div>
     </div>
     <div id="videoWrapper">
       <div id="videoContainer">
@@ -916,6 +920,48 @@
       var _dirStart = function(data) { initDirectMode(data) }
       window.electronAPI.on('direct-mode-start', _dirStart)
       window._cleanupFunctions.push(function() { window.electronAPI.removeAllListeners('direct-mode-start') })
+
+      // 信令服务器断开通知处理
+      var reconnectTimer = null
+      var _sigDisconnected = function(data) {
+        UIState.log('收到信令断开通知: ' + (data ? data.reason : '未知'))
+        UIState.updateStatus('已断开', 'error')
+        UIState.showPlaceholder('连接已断开', '服务器连接丢失，请尝试重新连接')
+
+        // 显示重连按钮和倒计时
+        var reconnectArea = document.getElementById('reconnectArea')
+        var reconnectBtn = document.getElementById('reconnectBtn')
+        var reconnectCountdown = document.getElementById('reconnectCountdown')
+        if (reconnectArea) reconnectArea.style.display = 'block'
+
+        var countdown = 30
+        var updateCountdown = function() {
+          if (reconnectCountdown) reconnectCountdown.textContent = countdown + ' 秒后自动重连...'
+          if (countdown <= 0) {
+            if (reconnectArea) reconnectArea.style.display = 'none'
+            UIState.showPlaceholder('正在重新连接...', '请稍候')
+            window.electronAPI.sendToMainWindow('remote-reconnect-request', {})
+            return
+          }
+          countdown--
+          reconnectTimer = setTimeout(updateCountdown, 1000)
+        }
+        updateCountdown()
+
+        if (reconnectBtn) {
+          reconnectBtn.onclick = function() {
+            if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
+            if (reconnectArea) reconnectArea.style.display = 'none'
+            UIState.showPlaceholder('正在重新连接...', '请稍候')
+            window.electronAPI.sendToMainWindow('remote-reconnect-request', {})
+          }
+        }
+      }
+      window.electronAPI.on('signaling-disconnected', _sigDisconnected)
+      window._cleanupFunctions.push(function() {
+        if (reconnectTimer) clearTimeout(reconnectTimer)
+        window.electronAPI.removeAllListeners('signaling-disconnected')
+      })
 
       window.addEventListener('beforeunload', function() {
         if (window._cleanupFunctions) {

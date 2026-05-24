@@ -42,7 +42,8 @@ const RECEIVE_CHANNELS = Object.freeze([
   'ice-candidate',
   'lock-screen-frame',
   'screen-capture-control',
-  'service-frame'
+  'service-frame',
+  'remote-reconnect-request'
 ])
 
 const listenerRegistry = new Map()
@@ -176,5 +177,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   addDevice: (deviceId, alias, serverUrl) => ipcRenderer.invoke('device-list:add', { deviceId, alias, serverUrl }),
   removeDevice: (deviceId) => ipcRenderer.invoke('device-list:remove', { deviceId }),
   updateDeviceAlias: (deviceId, alias) => ipcRenderer.invoke('device-list:update-alias', { deviceId, alias }),
-  clearDeviceList: () => ipcRenderer.invoke('device-list:clear')
+  clearDeviceList: () => ipcRenderer.invoke('device-list:clear'),
+
+  // 信令服务器列表管理
+  getSignalingServers: () => ipcRenderer.invoke('signaling-server:get'),
+  saveSignalingServers: (servers) => ipcRenderer.invoke('signaling-server:save', servers),
+  addSignalingServer: (name, url) => ipcRenderer.invoke('signaling-server:add', { name, url }),
+  editSignalingServer: (index, name, url) => ipcRenderer.invoke('signaling-server:edit', { index, name, url }),
+  deleteSignalingServer: (index) => ipcRenderer.invoke('signaling-server:delete', { index })
 })

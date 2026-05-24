@@ -21,6 +21,29 @@ function register(safeHandler, deviceListManager) {
   ipcMain.handle('device-list:clear', safeHandler(async () => {
     return deviceListManager.clearDevices()
   }, 'device-list:clear'))
+
+  // ==================== 信令服务器列表 ====================
+
+  ipcMain.handle('signaling-server:get', safeHandler(async () => {
+    const servers = deviceListManager.getServers()
+    return { success: true, servers }
+  }, 'signaling-server:get'))
+
+  ipcMain.handle('signaling-server:save', safeHandler(async (event, servers) => {
+    return deviceListManager.saveServers(servers)
+  }, 'signaling-server:save'))
+
+  ipcMain.handle('signaling-server:add', safeHandler(async (event, { name, url }) => {
+    return deviceListManager.addServer(name, url)
+  }, 'signaling-server:add'))
+
+  ipcMain.handle('signaling-server:edit', safeHandler(async (event, { index, name, url }) => {
+    return deviceListManager.editServer(index, name, url)
+  }, 'signaling-server:edit'))
+
+  ipcMain.handle('signaling-server:delete', safeHandler(async (event, { index }) => {
+    return deviceListManager.deleteServer(index)
+  }, 'signaling-server:delete'))
 }
 
 module.exports = { register }

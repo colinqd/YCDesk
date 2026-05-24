@@ -89,6 +89,15 @@ function log(message) {
 document.addEventListener('DOMContentLoaded', () => {
   initializeApp()
 
+  // beforeunload 保护：有活跃远程连接时提示用户
+  window.addEventListener('beforeunload', (e) => {
+    if (signalingManager && signalingManager.peerConnection && signalingManager.peerConnection.connectionState === 'connected') {
+      e.preventDefault()
+      e.returnValue = '当前有活跃的远程连接，关闭窗口将断开连接。是否继续？'
+      return e.returnValue
+    }
+  })
+
   // 加载解锁密码状态
   setTimeout(() => {
     loadUnlockPasswordStatus()
@@ -121,6 +130,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (signalingManager && signalingManager.dataChannelManager) {
       signalingManager.dataChannelManager.send({ type: 'lock-screen-frame', ...data })
+    }
+  })
+
+  // 远程窗口请求重连（被控端断开后自动恢复）
+  window.electronAPI.on('remote-reconnect-request', () => {
+    log('收到远程窗口重连请求')
+    if (currentControlledMode === 'signaling' || currentControlledMode === undefined) {
+      controlledConnectToServer()
     }
   })
 })
