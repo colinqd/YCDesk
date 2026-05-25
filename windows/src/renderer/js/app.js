@@ -45,17 +45,8 @@ function initializeApp() {
     uiManager: uiManager,
     config: CONFIG,
     onIncomingConnection: (fromDeviceId) => {
-      const autoAccept = document.getElementById('autoAcceptConnection')?.checked
-      if (autoAccept) {
-        log('自动接受来自 ' + fromDeviceId + ' 的连接')
-        acceptConnection()
-      } else {
-        if (uiManager.showIncomingConnectionDialog(fromDeviceId)) {
-          acceptConnection()
-        } else {
-          rejectConnection()
-        }
-      }
+      log('自动接受来自 ' + fromDeviceId + ' 的连接')
+      acceptConnection()
     },
     onWebRTCConnected: (targetDeviceId, serverUrl) => {
       if (targetDeviceId) {
