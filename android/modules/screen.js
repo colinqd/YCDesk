@@ -183,11 +183,29 @@ function stopStatsMonitoring() {
   }
 }
 
+function toggleStatsOverlay() {
+  const statsOverlay = document.getElementById('statsOverlay')
+  if (!statsOverlay) return
+  const hidden = statsOverlay.classList.toggle('hidden-by-user')
+  try { localStorage.setItem('ycdesk_stats_hidden', hidden ? '1' : '0') } catch(e) {}
+}
+
+function initStatsVisibility() {
+  try {
+    if (localStorage.getItem('ycdesk_stats_hidden') === '1') {
+      const statsOverlay = document.getElementById('statsOverlay')
+      if (statsOverlay) statsOverlay.classList.add('hidden-by-user')
+    }
+  } catch(e) {}
+}
+
 export {
   updateScreenSize,
   showRemoteScreen,
   updateContainerSizeAfterVideoLoad,
   hideRemoteScreen,
   startStatsMonitoring,
-  stopStatsMonitoring
+  stopStatsMonitoring,
+  toggleStatsOverlay,
+  initStatsVisibility
 }

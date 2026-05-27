@@ -133,6 +133,22 @@ class UIManager {
       const statusIcons = { connected: '\u{1F7E2}', connecting: '\u{1F7E1}', disconnected: '\u{1F534}', error: '\u{1F534}', reconnecting: '\u{1F7E1}' }
       statusbarText.textContent = (statusIcons[status] || '\u{26AA}') + ' ' + text
     }
+
+    // 根据连接状态更新按钮启用/禁用
+    const isConnected = (status === 'connected')
+    const isConnecting = (status === 'connecting' || status === 'reconnecting')
+
+    // 被控端按钮
+    const controlledConnectBtn = document.getElementById('controlledConnectBtn')
+    const controlledDisconnectBtn = document.getElementById('controlledDisconnectBtn')
+    if (controlledConnectBtn) controlledConnectBtn.disabled = isConnected || isConnecting
+    if (controlledDisconnectBtn) controlledDisconnectBtn.disabled = !isConnected && !isConnecting
+
+    // 主控端按钮
+    const controllerConnectBtn = document.getElementById('controllerConnectBtn')
+    const controllerDisconnectBtn = document.getElementById('controllerDisconnectBtn')
+    if (controllerConnectBtn) controllerConnectBtn.disabled = isConnected || isConnecting
+    if (controllerDisconnectBtn) controllerDisconnectBtn.disabled = !isConnected && !isConnecting
   }
 
   setDeviceId(deviceId) {

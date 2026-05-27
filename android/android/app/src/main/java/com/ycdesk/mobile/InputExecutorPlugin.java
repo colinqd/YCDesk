@@ -500,6 +500,99 @@ public class InputExecutorPlugin extends Plugin {
         call.resolve(result);
     }
 
+    @PluginMethod
+    public void executeTextInput(PluginCall call) {
+        try {
+            String text = call.getString("text", "");
+            if (text == null || text.isEmpty()) {
+                JSObject result = new JSObject();
+                result.put("success", true);
+                result.put("message", "Empty text, skipped");
+                call.resolve(result);
+                return;
+            }
+
+            // Try AccessibilityService first - can set text directly on focused field
+            if (useAccessibilityService()) {
+                InputAccessibilityService service = InputAccessibilityService.getInstance();
+                boolean accessibilityResult = service.setTextToFocusedNode(text);
+                if (accessibilityResult) {
+                    JSObject result = new JSObject();
+                    result.put("success", true);
+                    result.put("message", "Text set via AccessibilityService");
+                    call.resolve(result);
+                    Log.d(TAG, "Text input via accessibility: length=" + text.length());
+                    return;
+                }
+                Log.d(TAG, "AccessibilityService couldn't set text, falling back to key events");
+            }
+
+            // Fallback: Send each character as a KeyEvent via Instrumentation
+            // Only works for ASCII characters; non-ASCII will be skipped
+            int typedCount = 0;
+            for (int i = 0; i < text.length(); i++) {
+                char c = text.charAt(i);
+                int keyCode = charToKeyCode(c);
+                int shiftKeyCode = charToShiftKeyCode(c);
+
+                if (keyCode != -1) {
+                    long downTime = SystemClock.uptimeMillis();
+                    long eventTime = SystemClock.uptimeMillis();
+
+                    if (shiftKeyCode != -1) {
+                        // Needs Shift modifier
+                        KeyEvent shiftDown = new KeyEvent(downTime, eventTime,
+                            KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_SHIFT_LEFT, 0,
+                            KeyEvent.META_SHIFT_ON);
+                        instrumentation.sendKeySync(shiftDown);
+                    }
+
+                    KeyEvent downEvent = new KeyEvent(downTime, eventTime,
+                        KeyEvent.ACTION_DOWN, keyCode, 0,
+                        shiftKeyCode != -1 ? KeyEvent.META_SHIFT_ON : 0);
+                    KeyEvent upEvent = new KeyEvent(downTime, eventTime,
+                        KeyEvent.ACTION_UP, keyCode, 0,
+                        shiftKeyCode != -1 ? KeyEvent.META_SHIFT_ON : 0);
+
+                    instrumentation.sendKeySync(downEvent);
+                    instrumentation.sendKeySync(upEvent);
+
+                    if (shiftKeyCode != -1) {
+                        KeyEvent shiftUp = new KeyEvent(downTime, eventTime,
+                            KeyEvent.ACTION_UP, KeyEvent.KEYCODE_SHIFT_LEFT, 0);
+                        instrumentation.sendKeySync(shiftUp);
+                    }
+
+                    typedCount++;
+                } else if (c == '\n' || c == '\r') {
+                    // Handle newline as Enter key
+                    long downTime = SystemClock.uptimeMillis();
+                    long eventTime = SystemClock.uptimeMillis();
+                    KeyEvent enterDown = new KeyEvent(downTime, eventTime,
+                        KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER, 0);
+                    KeyEvent enterUp = new KeyEvent(downTime, eventTime,
+                        KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER, 0);
+                    instrumentation.sendKeySync(enterDown);
+                    instrumentation.sendKeySync(enterUp);
+                    typedCount++;
+                }
+            }
+
+            JSObject result = new JSObject();
+            result.put("success", true);
+            result.put("typedCount", typedCount);
+            result.put("totalLength", text.length());
+            call.resolve(result);
+            Log.d(TAG, "Text input via key events: typed=" + typedCount + "/" + text.length());
+        } catch (Exception e) {
+            Log.e(TAG, "Error executing text input: " + e.getMessage());
+            JSObject result = new JSObject();
+            result.put("success", false);
+            result.put("error", e.getMessage());
+            call.resolve(result);
+        }
+    }
+
     /**
      * Handle keys that map to AccessibilityService global actions.
      * Returns true if the key was handled as a global action.
@@ -599,6 +692,78 @@ public class InputExecutorPlugin extends Plugin {
                     }
                 }
                 return -1;
+        }
+    }
+
+    /**
+     * Convert a character to its base Android KeyEvent keycode.
+     * Returns -1 for non-ASCII characters that cannot be typed via key events.
+     */
+    private int charToKeyCode(char c) {
+        if (c >= 'a' && c <= 'z') {
+            return KeyEvent.KEYCODE_A + (c - 'a');
+        } else if (c >= 'A' && c <= 'Z') {
+            return KeyEvent.KEYCODE_A + (c - 'A');
+        } else if (c >= '0' && c <= '9') {
+            return KeyEvent.KEYCODE_0 + (c - '0');
+        } else if (c == ' ') {
+            return KeyEvent.KEYCODE_SPACE;
+        } else if (c == '\t') {
+            return KeyEvent.KEYCODE_TAB;
+        } else if (c == ',') {
+            return KeyEvent.KEYCODE_COMMA;
+        } else if (c == '.') {
+            return KeyEvent.KEYCODE_PERIOD;
+        } else if (c == '-') {
+            return KeyEvent.KEYCODE_MINUS;
+        } else if (c == '=') {
+            return KeyEvent.KEYCODE_EQUALS;
+        } else if (c == '[') {
+            return KeyEvent.KEYCODE_LEFT_BRACKET;
+        } else if (c == ']') {
+            return KeyEvent.KEYCODE_RIGHT_BRACKET;
+        } else if (c == '\\') {
+            return KeyEvent.KEYCODE_BACKSLASH;
+        } else if (c == ';') {
+            return KeyEvent.KEYCODE_SEMICOLON;
+        } else if (c == '\'') {
+            return KeyEvent.KEYCODE_APOSTROPHE;
+        } else if (c == '/') {
+            return KeyEvent.KEYCODE_SLASH;
+        } else if (c == '`') {
+            return KeyEvent.KEYCODE_GRAVE;
+        }
+        return -1;
+    }
+
+    /**
+     * For characters that require Shift modifier (e.g., '@' -> '2' with Shift),
+     * returns the base keycode. Returns -1 if no shift is needed.
+     */
+    private int charToShiftKeyCode(char c) {
+        switch (c) {
+            case '@': return KeyEvent.KEYCODE_2;
+            case '#': return KeyEvent.KEYCODE_3;
+            case '$': return KeyEvent.KEYCODE_4;
+            case '%': return KeyEvent.KEYCODE_5;
+            case '^': return KeyEvent.KEYCODE_6;
+            case '&': return KeyEvent.KEYCODE_7;
+            case '*': return KeyEvent.KEYCODE_8;
+            case '(': return KeyEvent.KEYCODE_9;
+            case ')': return KeyEvent.KEYCODE_0;
+            case '_': return KeyEvent.KEYCODE_MINUS;
+            case '+': return KeyEvent.KEYCODE_EQUALS;
+            case '{': return KeyEvent.KEYCODE_LEFT_BRACKET;
+            case '}': return KeyEvent.KEYCODE_RIGHT_BRACKET;
+            case '|': return KeyEvent.KEYCODE_BACKSLASH;
+            case ':': return KeyEvent.KEYCODE_SEMICOLON;
+            case '"': return KeyEvent.KEYCODE_APOSTROPHE;
+            case '<': return KeyEvent.KEYCODE_COMMA;
+            case '>': return KeyEvent.KEYCODE_PERIOD;
+            case '?': return KeyEvent.KEYCODE_SLASH;
+            case '~': return KeyEvent.KEYCODE_GRAVE;
+            case '!': return KeyEvent.KEYCODE_1;
+            default: return -1;
         }
     }
 }

@@ -245,7 +245,7 @@ async function handleDirectOffer(offer) {
     return
   }
   
-  log('处理Offer')
+  log('处理直连Offer（被控端）')
   
   try {
     s.directPeerConnection = new RTCPeerConnection({ iceServers: [] })
@@ -264,19 +264,39 @@ async function handleDirectOffer(offer) {
     }
     
     s.directPeerConnection.onconnectionstatechange = () => {
-      log('WebRTC连接状态: ' + s.directPeerConnection.connectionState)
+      log('直连被控端 WebRTC连接状态: ' + s.directPeerConnection.connectionState)
+      if (s.directPeerConnection.connectionState === 'connected') {
+        s.isConnected = true
+        if (typeof window.showToast === 'function') window.showToast('远程控制已连接')
+      } else if (s.directPeerConnection.connectionState === 'disconnected' || s.directPeerConnection.connectionState === 'failed') {
+        s.isConnected = false
+        if (typeof window.showToast === 'function') window.showToast('连接已断开')
+        stopScreenCaptureStream()
+      }
     }
     
     setupOnDataChannelHandler(s.directPeerConnection)
 
+    // 被控端：启用InputExecutor被控模式
+    try {
+      const _InputExecutor = registerPlugin('InputExecutor')
+      await _InputExecutor.setControlledMode({ enabled: true })
+      log('直连被控端 InputExecutor被控模式已启用')
+    } catch (e) {
+      log('直连被控端 设置InputExecutor模式失败: ' + e.message)
+    }
     
     await s.directPeerConnection.setRemoteDescription(new RTCSessionDescription(offer))
-    log('远程描述设置成功')
+    log('直连被控端 远程描述设置成功')
     await addDirectPendingIceCandidates()
+    
+    // 被控端：启动屏幕捕获并添加到WebRTC
+    log('直连被控端 开始捕获屏幕...')
+    await startScreenCaptureForWebRTC(s.directPeerConnection)
     
     const answer = await s.directPeerConnection.createAnswer()
     await s.directPeerConnection.setLocalDescription(answer)
-    log('本地描述设置成功')
+    log('直连被控端 本地描述设置成功')
     
     sendDirectMessage(s.currentDirectClientId, {
       type: 'answer',
@@ -286,9 +306,9 @@ async function handleDirectOffer(offer) {
       }
     })
     
-    log('Answer已发送')
+    log('直连被控端 Answer已发送')
   } catch (error) {
-    log('处理Offer失败: ' + error.message)
+    log('直连被控端 处理Offer失败: ' + error.message)
   }
 }
 
@@ -530,26 +550,37 @@ async function createPeerConnection() {
     log('[SIGNALING] 连接状态: ' + s.peerConnection.connectionState)
     if (s.peerConnection.connectionState === 'connected') {
       s.isConnected = true
-      if (typeof window.showToast === 'function') window.showToast('连接成功')
-      if (typeof window.saveConnectedDevice === 'function' && s.incomingFromDeviceId) {
-        window.saveConnectedDevice(s.incomingFromDeviceId)
-      }
-      // 信令模式主控端：连接成功后显示远程屏幕
-      if (s.isController && typeof window.showRemoteScreen === 'function') {
-        setTimeout(() => {
-          window.showRemoteScreen()
-        }, 300)
+      if (s.isController) {
+        if (typeof window.showToast === 'function') window.showToast('连接成功')
+        if (typeof window.saveConnectedDevice === 'function' && s.incomingFromDeviceId) {
+          window.saveConnectedDevice(s.incomingFromDeviceId)
+        }
+        // 信令模式主控端：连接成功后显示远程屏幕
+        if (typeof window.showRemoteScreen === 'function') {
+          setTimeout(() => {
+            window.showRemoteScreen()
+          }, 300)
+        }
+      } else {
+        // 被控端连接成功
+        if (typeof window.showToast === 'function') window.showToast('远程控制已连接')
       }
     } else if (s.peerConnection.connectionState === 'disconnected' || s.peerConnection.connectionState === 'failed') {
       s.isConnected = false
-      if (typeof window.showToast === 'function') window.showToast('连接已断开')
-      if (typeof window.hideRemoteScreen === 'function') window.hideRemoteScreen()
+      if (s.isController) {
+        if (typeof window.showToast === 'function') window.showToast('连接已断开')
+        if (typeof window.hideRemoteScreen === 'function') window.hideRemoteScreen()
+      } else {
+        if (typeof window.showToast === 'function') window.showToast('连接已断开')
+        stopScreenCaptureStream()
+      }
     }
   }
 
   setupOnDataChannelHandler(s.peerConnection)
 
   if (s.isController) {
+    // 主控端：接收远程视频流，发送输入
     s.peerConnection.addTransceiver('video', { direction: 'recvonly' })
     s.peerConnection.addTransceiver('audio', { direction: 'recvonly' })
     log('已添加视频和音频接收器')
@@ -590,6 +621,11 @@ async function createPeerConnection() {
       s.inputChannelReady = false
       log('[SIGNALING] 输入数据通道错误: ' + error)
     }
+  } else {
+    // 被控端：发送屏幕视频流，接收输入
+    s.peerConnection.addTransceiver('video', { direction: 'sendonly' })
+    s.peerConnection.addTransceiver('audio', { direction: 'inactive' })
+    log('被控端已添加视频发送器和音频（非激活）')
   }
 }
 
@@ -650,8 +686,9 @@ async function handleOffer(data) {
     
     await addPendingIceCandidates()
     
+    // 被控端：启动屏幕捕获并添加到WebRTC
     log('[Android信令模式-被控端] 开始捕获屏幕...')
-    await startAndroidScreenCapture()
+    await startScreenCaptureForWebRTC(s.peerConnection)
     
     log('[Android信令模式-被控端] 创建Answer...')
     const answer = await s.peerConnection.createAnswer()
@@ -669,6 +706,154 @@ async function handleOffer(data) {
     log('[Android信令模式-被控端] 处理Offer失败: ' + error.message)
     console.error('[Android信令模式-被控端] 处理Offer详细错误:', error)
   }
+}
+
+// 屏幕捕获相关的 MediaStream 引用
+let screenCaptureStream = null
+let screenCaptureCanvas = null
+let screenCaptureInterval = null
+
+/**
+ * 启动屏幕捕获并通过Canvas生成MediaStream添加到WebRTC连接
+ * @param {RTCPeerConnection} pc - WebRTC连接
+ */
+async function startScreenCaptureForWebRTC(pc) {
+  const log = typeof window.log === 'function' ? window.log : console.log
+  try {
+    // 请求屏幕录制权限
+    const permResult = await ScreenCapture.requestPermission()
+    if (!permResult.success) {
+      log('[ScreenCapture] 屏幕录制权限被拒绝')
+      if (typeof window.showToast === 'function') window.showToast('请授予屏幕录制权限')
+      return
+    }
+    
+    // 获取屏幕尺寸
+    const sizeResult = await ScreenCapture.getDisplaySize()
+    const screenWidth = sizeResult.success ? sizeResult.width : 1920
+    const screenHeight = sizeResult.success ? sizeResult.height : 1080
+    log('[ScreenCapture] 屏幕尺寸: ' + screenWidth + 'x' + screenHeight)
+    
+    // 创建或重用隐藏的Canvas用于捕获屏幕帧
+    if (!screenCaptureCanvas) {
+      screenCaptureCanvas = document.createElement('canvas')
+      screenCaptureCanvas.width = screenWidth
+      screenCaptureCanvas.height = screenHeight
+      screenCaptureCanvas.style.display = 'none'
+      document.body.appendChild(screenCaptureCanvas)
+    }
+    
+    // 使用Canvas的captureStream生成MediaStream（10fps）
+    screenCaptureStream = screenCaptureCanvas.captureStream(10)
+    
+    // 将视频track添加到WebRTC
+    const videoTrack = screenCaptureStream.getVideoTracks()[0]
+    if (videoTrack) {
+      // 如果已有sendonly transceiver，替换track
+      const senders = pc.getSenders()
+      let videoSender = null
+      for (const sender of senders) {
+        if (sender.track && sender.track.kind === 'video') {
+          videoSender = sender
+          break
+        }
+      }
+      
+      if (videoSender) {
+        await videoSender.replaceTrack(videoTrack)
+        log('[ScreenCapture] 视频track已替换到现有sender')
+      } else {
+        pc.addTrack(videoTrack, screenCaptureStream)
+        log('[ScreenCapture] 视频track已添加到WebRTC')
+      }
+    }
+    
+    // 启动实际屏幕捕获
+    const captureResult = await ScreenCapture.startCapture()
+    if (captureResult.success) {
+      log('[ScreenCapture] 屏幕捕获已启动: ' + captureResult.width + 'x' + captureResult.height)
+      if (typeof window.showToast === 'function') window.showToast('屏幕捕获已启动')
+      
+      // 设置帧可用监听（用于在Canvas上绘制帧数据）
+      setupFrameCaptureListener()
+    } else {
+      log('[ScreenCapture] 屏幕捕获启动失败: ' + captureResult.error)
+      if (typeof window.showToast === 'function') window.showToast('屏幕捕获失败')
+    }
+  } catch (error) {
+    log('[ScreenCapture] 屏幕捕获异常: ' + error.message)
+    console.error('[ScreenCapture] 屏幕捕获详细错误:', error)
+  }
+}
+
+/**
+ * 设置屏幕帧捕获监听，将帧数据绘制到Canvas上
+ */
+function setupFrameCaptureListener() {
+  const log = typeof window.log === 'function' ? window.log : console.log
+  
+  // 监听来自原生插件的帧可用事件
+  // ScreenCapturePlugin 通过 notifyListeners('frameAvailable', event) 通知
+  ScreenCapture.addListener('frameAvailable', (event) => {
+    if (!screenCaptureCanvas || !screenCaptureStream) return
+    
+    const { width, height, frameData } = event
+    if (!frameData) return
+    
+    try {
+      // 从base64数据创建Image并绘制到Canvas
+      const img = new Image()
+      img.onload = () => {
+        if (screenCaptureCanvas) {
+          const ctx = screenCaptureCanvas.getContext('2d')
+          if (ctx) {
+            // 更新Canvas尺寸以匹配实际帧
+            if (screenCaptureCanvas.width !== width || screenCaptureCanvas.height !== height) {
+              screenCaptureCanvas.width = width
+              screenCaptureCanvas.height = height
+            }
+            ctx.drawImage(img, 0, 0, width, height)
+          }
+        }
+      }
+      img.src = 'data:image/jpeg;base64,' + frameData
+    } catch (e) {
+      // 忽略单帧错误，继续处理后续帧
+    }
+  }).catch(e => {
+    log('[ScreenCapture] 帧监听器注册失败: ' + e.message)
+  })
+  
+  log('[ScreenCapture] 帧捕获监听已设置')
+}
+
+/**
+ * 停止屏幕捕获流
+ */
+function stopScreenCaptureStream() {
+  const log = typeof window.log === 'function' ? window.log : console.log
+  
+  if (screenCaptureInterval) {
+    clearInterval(screenCaptureInterval)
+    screenCaptureInterval = null
+  }
+  
+  if (screenCaptureStream) {
+    screenCaptureStream.getTracks().forEach(track => track.stop())
+    screenCaptureStream = null
+  }
+  
+  if (screenCaptureCanvas) {
+    screenCaptureCanvas.remove()
+    screenCaptureCanvas = null
+  }
+  
+  // 停止原生屏幕捕获
+  ScreenCapture.stopCapture().catch(e => {
+    log('[ScreenCapture] 停止捕获失败: ' + e.message)
+  })
+  
+  log('[ScreenCapture] 屏幕捕获流已停止')
 }
 
 async function startAndroidScreenCapture() {
@@ -773,6 +958,8 @@ export {
   startControlledConnection,
   handleOffer,
   startAndroidScreenCapture,
+  startScreenCaptureForWebRTC,
+  stopScreenCaptureStream,
   handleAnswer,
   addPendingIceCandidates,
   handleIceCandidate,

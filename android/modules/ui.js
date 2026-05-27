@@ -5,6 +5,17 @@ import { registerPlugin } from '@capacitor/core'
 
 const FloatingMouse = registerPlugin('FloatingMouse')
 
+// 自动 dim 计时器
+let dimTimer = null
+const DIM_DELAY = 3000
+
+// 控制栏拖动状态
+let isDraggingControl = false
+let controlDragStartX = 0
+let controlDragStartY = 0
+let controlDragStartLeft = 0
+let controlDragStartTop = 0
+
 function updateVideoTransformGlobal() {
   const remoteVideo = document.getElementById('remoteVideo')
   if (remoteVideo) {
@@ -37,18 +48,45 @@ function toggleMouseMode() {
     if (s.isPointerMode) {
         showFloatingMouse().catch(e => { if (typeof window.log === 'function') window.log('显示悬浮鼠标失败: ' + e.message) })
         if (typeof window.showToast === 'function') window.showToast('指针模式已开启')
-        if (mouseModeBtn) {
-            mouseModeBtn.style.background = '#667eea'
-            mouseModeBtn.style.color = 'white'
-        }
+        if (mouseModeBtn) mouseModeBtn.classList.add('active')
     } else {
         hideFloatingMouse().catch(e => { if (typeof window.log === 'function') window.log('隐藏悬浮鼠标失败: ' + e.message) })
         if (typeof window.showToast === 'function') window.showToast('指针模式已关闭')
-        if (mouseModeBtn) {
-            mouseModeBtn.style.background = ''
-            mouseModeBtn.style.color = ''
-        }
+        if (mouseModeBtn) mouseModeBtn.classList.remove('active')
     }
+}
+
+function toggleControlsExpand() {
+  const controlOverlay = document.getElementById('controlOverlay')
+  const expandBtn = document.getElementById('controlExpandBtn')
+  
+  if (!controlOverlay) return
+  
+  const isExpanded = controlOverlay.classList.toggle('expanded')
+  
+  if (expandBtn) {
+    if (isExpanded) {
+      expandBtn.classList.add('expanded')
+      expandBtn.textContent = '╳'
+    } else {
+      expandBtn.classList.remove('expanded')
+      expandBtn.textContent = '⋮'
+    }
+  }
+}
+
+// 折叠展开区域（隐藏工具栏时先折叠）
+function collapseControls() {
+  const controlOverlay = document.getElementById('controlOverlay')
+  const expandBtn = document.getElementById('controlExpandBtn')
+  
+  if (controlOverlay) {
+    controlOverlay.classList.remove('expanded')
+  }
+  if (expandBtn) {
+    expandBtn.classList.remove('expanded')
+    expandBtn.textContent = '⋮'
+  }
 }
 
 function toggleControlsHide() {
@@ -58,12 +96,15 @@ function toggleControlsHide() {
   
   if (controlOverlay && controlToggle) {
     if (s.controlsHidden) {
+      collapseControls()
       controlOverlay.classList.add('hidden')
       controlToggle.classList.add('visible')
+      cancelDimTimer()
       if (typeof window.showToast === 'function') window.showToast('控制栏已隐藏')
     } else {
-      controlOverlay.classList.remove('hidden')
+      controlOverlay.classList.remove('hidden', 'dimmed')
       controlToggle.classList.remove('visible')
+      cancelDimTimer()
       if (typeof window.showToast === 'function') window.showToast('控制栏已显示')
     }
   }
@@ -75,8 +116,33 @@ function showControls() {
   const controlToggle = document.getElementById('controlToggle')
   
   if (controlOverlay && controlToggle) {
-    controlOverlay.classList.remove('hidden')
+    controlOverlay.classList.remove('hidden', 'dimmed')
     controlToggle.classList.remove('visible')
+    cancelDimTimer()
+  }
+}
+
+// 远程画面触摸时重置 dim 计时器
+function resetDimTimer() {
+  const controlOverlay = document.getElementById('controlOverlay')
+  if (!controlOverlay || s.controlsHidden) return
+  
+  // 清除 dim 状态
+  controlOverlay.classList.remove('dimmed')
+  
+  // 重置计时器
+  cancelDimTimer()
+  dimTimer = setTimeout(() => {
+    if (!s.controlsHidden) {
+      controlOverlay.classList.add('dimmed')
+    }
+  }, DIM_DELAY)
+}
+
+function cancelDimTimer() {
+  if (dimTimer) {
+    clearTimeout(dimTimer)
+    dimTimer = null
   }
 }
 
@@ -388,6 +454,67 @@ function handleLockScreenFrame(data) {
   img.src = 'data:image/jpeg;base64,' + data.jpeg
 }
 
+function saveControlPosition() {
+  const controlOverlay = document.getElementById('controlOverlay')
+  if (!controlOverlay) return
+  const rect = controlOverlay.getBoundingClientRect()
+  try {
+    localStorage.setItem('ycdesk_control_pos', JSON.stringify({ left: rect.left, top: rect.top }))
+  } catch(e) {}
+}
+
+function loadControlPosition() {
+  const controlOverlay = document.getElementById('controlOverlay')
+  if (!controlOverlay) return
+  try {
+    const pos = JSON.parse(localStorage.getItem('ycdesk_control_pos'))
+    if (pos && pos.left !== undefined && pos.top !== undefined) {
+      controlOverlay.style.left = pos.left + 'px'
+      controlOverlay.style.top = pos.top + 'px'
+      controlOverlay.style.bottom = 'auto'
+      controlOverlay.style.transform = 'none'
+    }
+  } catch(e) {}
+}
+
+function setupControlDrag() {
+  const controlOverlay = document.getElementById('controlOverlay')
+  const dragHandle = document.getElementById('controlDragHandle')
+  if (!controlOverlay || !dragHandle) return
+
+  dragHandle.addEventListener('touchstart', (e) => {
+    isDraggingControl = true
+    const touch = e.touches[0]
+    controlDragStartX = touch.clientX
+    controlDragStartY = touch.clientY
+    const rect = controlOverlay.getBoundingClientRect()
+    controlDragStartLeft = rect.left
+    controlDragStartTop = rect.top
+    controlOverlay.style.left = rect.left + 'px'
+    controlOverlay.style.top = rect.top + 'px'
+    controlOverlay.style.bottom = 'auto'
+    controlOverlay.style.transform = 'none'
+    e.preventDefault()
+  }, { passive: false })
+
+  document.addEventListener('touchmove', (e) => {
+    if (!isDraggingControl) return
+    const touch = e.touches[0]
+    const newLeft = controlDragStartLeft + (touch.clientX - controlDragStartX)
+    const newTop = controlDragStartTop + (touch.clientY - controlDragStartY)
+    controlOverlay.style.left = Math.max(0, Math.min(window.innerWidth - controlOverlay.offsetWidth, newLeft)) + 'px'
+    controlOverlay.style.top = Math.max(0, Math.min(window.innerHeight - controlOverlay.offsetHeight, newTop)) + 'px'
+    e.preventDefault()
+  }, { passive: false })
+
+  document.addEventListener('touchend', () => {
+    if (isDraggingControl) {
+      isDraggingControl = false
+      saveControlPosition()
+    }
+  })
+}
+
 window.handleRemoteLockStateChanged = handleRemoteLockStateChanged
 window.handleLockScreenFrame = handleLockScreenFrame
 
@@ -467,6 +594,7 @@ function setupRemoteScreenInteraction() {
                     return;
                 }
                 e.preventDefault();
+                resetDimTimer();
                 
                 if (e.button === 1) {
                     isMiddleButtonDown = true;
@@ -500,6 +628,7 @@ function setupRemoteScreenInteraction() {
                 if (isTouchOnUI(e.touches[0]?.clientX, e.touches[0]?.clientY)) {
                     return;
                 }
+                resetDimTimer();
                 s.gestureHandler.handleTouchStart(e);
             }, { passive: false });
             
@@ -563,6 +692,9 @@ function setupRemoteScreenInteraction() {
                 e.preventDefault();
                 return false;
             });
+            
+            setupControlDrag();
+            loadControlPosition();
         });
     });
 }
@@ -571,8 +703,12 @@ export {
   updateVideoTransformGlobal,
   resetZoomAndPan,
   toggleMouseMode,
+  toggleControlsExpand,
+  collapseControls,
   toggleControlsHide,
   showControls,
+  resetDimTimer,
+  cancelDimTimer,
   handleOrientationChange,
   showFloatingMouse,
   hideFloatingMouse,
@@ -580,5 +716,8 @@ export {
   toggleFullscreen,
   handleRemoteLockStateChanged,
   handleLockScreenFrame,
-  setupRemoteScreenInteraction
+  setupRemoteScreenInteraction,
+  setupControlDrag,
+  loadControlPosition,
+  saveControlPosition
 }

@@ -498,6 +498,11 @@ function convertToInputCommand(command) {
       if (command.altKey) inputCommand.altKey = true
       if (command.metaKey) inputCommand.metaKey = true
       break
+
+    case 'text':
+      inputCommand.inputType = 'text_input'
+      inputCommand.text = command.text || ''
+      break
       
     default:
       return command

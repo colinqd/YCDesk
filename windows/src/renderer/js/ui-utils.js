@@ -57,6 +57,20 @@ function updateServerStatus(text, status) {
     if (controllerBadge) controllerBadge.classList.add('error')
     if (controllerDot) controllerDot.classList.add('error')
   }
+
+  // 根据连接状态更新按钮启用/禁用
+  const isConnected = (status === 'connected')
+  const isConnecting = (status === 'connecting' || status === 'reconnecting')
+
+  const controlledConnectBtn = document.getElementById('controlledConnectBtn')
+  const controlledDisconnectBtn = document.getElementById('controlledDisconnectBtn')
+  if (controlledConnectBtn) controlledConnectBtn.disabled = isConnected || isConnecting
+  if (controlledDisconnectBtn) controlledDisconnectBtn.disabled = !isConnected && !isConnecting
+
+  const controllerConnectBtn = document.getElementById('controllerConnectBtn')
+  const controllerDisconnectBtn = document.getElementById('controllerDisconnectBtn')
+  if (controllerConnectBtn) controllerConnectBtn.disabled = isConnected || isConnecting
+  if (controllerDisconnectBtn) controllerDisconnectBtn.disabled = !isConnected && !isConnecting
 }
 
 function copyDeviceId(deviceId) {

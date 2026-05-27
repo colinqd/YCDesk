@@ -10,9 +10,9 @@ import { InputDispatcher, createGestureHandler, convertToInputCommand } from './
 import { handleReceivedInput, simulateMouseMove, simulateMouseDown, simulateMouseUp, simulateWheel, simulateKeyDown, simulateKeyUp } from './modules/input-executor.js';
 import { buildWsUrl, buildHttpUrl, setConnectionMode, startWsHeartbeat, stopWsHeartbeat, wsSend, isSocketConnected, handleWsMessage, connectToServer, disconnectFromServer, attemptReconnect, cancelReconnect, sendDirectMessage, extractHostname, isIpAddress, resolveHostname } from './modules/signaling.js';
 import { getIceConfig, startDirectControllerConnection, handleDirectOffer, handleDirectAnswer, handleRenegotiationAnswer, handleDirectIceCandidate, handleRenegotiationOffer, setupDataChannel, createPeerConnection, startControllerConnection, startControlledConnection, handleOffer, startAndroidScreenCapture, handleAnswer, addPendingIceCandidates, handleIceCandidate } from './modules/webrtc.js';
-import { updateVideoTransformGlobal, resetZoomAndPan, toggleMouseMode, toggleControlsHide, showControls, handleOrientationChange, showFloatingMouse, hideFloatingMouse, handleFloatingMouseEvent, toggleFullscreen, handleRemoteLockStateChanged, setupRemoteScreenInteraction } from './modules/ui.js';
-import { cycleKeyboardPosition, cycleKeyboardSize, cycleKeyboardOpacity, applyKeyboardPosition, ensureKeyboardInBounds, applyKeyboardSize, applyKeyboardOpacity, saveKeyboardSettings, loadKeyboardSettings, setupKeyboardDrag, toggleKeyboard, sendKey, toggleModifier, toggleSystemKeyboard, setupSystemKeyboardListener } from './modules/keyboard.js';
-import { updateScreenSize, showRemoteScreen, updateContainerSizeAfterVideoLoad, hideRemoteScreen, startStatsMonitoring, stopStatsMonitoring } from './modules/screen.js';
+import { updateVideoTransformGlobal, resetZoomAndPan, toggleMouseMode, toggleControlsExpand, toggleControlsHide, showControls, resetDimTimer, handleOrientationChange, showFloatingMouse, hideFloatingMouse, handleFloatingMouseEvent, toggleFullscreen, handleRemoteLockStateChanged, setupRemoteScreenInteraction } from './modules/ui.js';
+import { cycleKeyboardPosition, cycleKeyboardSize, cycleKeyboardOpacity, applyKeyboardPosition, ensureKeyboardInBounds, applyKeyboardSize, applyKeyboardOpacity, saveKeyboardSettings, loadKeyboardSettings, setupKeyboardDrag, toggleKeyboard, sendKey, toggleModifier, toggleSystemKeyboard, setupSystemKeyboardListener, toggleSpecialKeys, setupSystemKbBarDrag } from './modules/keyboard.js';
+import { updateScreenSize, showRemoteScreen, updateContainerSizeAfterVideoLoad, hideRemoteScreen, startStatsMonitoring, stopStatsMonitoring, toggleStatsOverlay, initStatsVisibility } from './modules/screen.js';
 
 const TCPSocket = registerPlugin('TCPSocket');
 const FloatingMouse = registerPlugin('FloatingMouse');
@@ -1267,6 +1267,8 @@ async function init() {
   setupKeyboardDrag()
   loadKeyboardSettings()
   setupSystemKeyboardListener()
+  setupSystemKbBarDrag()
+  initStatsVisibility()
   
   console.log('初始化完成，设备ID:', s.myDeviceId)
 }
@@ -1282,13 +1284,17 @@ window.connectDevice = connectDevice
 window.connectDirect = connectDirect
 window.toggleKeyboard = toggleKeyboard
 window.toggleSystemKeyboard = toggleSystemKeyboard
+window.toggleSpecialKeys = toggleSpecialKeys
 window.cycleKeyboardPosition = cycleKeyboardPosition
 window.cycleKeyboardSize = cycleKeyboardSize
 window.cycleKeyboardOpacity = cycleKeyboardOpacity
 window.toggleMouseMode = toggleMouseMode
 window.toggleFullscreen = toggleFullscreen
+window.toggleStatsOverlay = toggleStatsOverlay
+window.toggleControlsExpand = toggleControlsExpand
 window.toggleControlsHide = toggleControlsHide
 window.showControls = showControls
+window.resetDimTimer = resetDimTimer
 window.resetZoomAndPan = resetZoomAndPan
 window.sendKey = sendKey
 window.toggleModifier = toggleModifier

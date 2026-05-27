@@ -18,6 +18,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(TCPSocketPlugin.class);
         registerPlugin(InputExecutorPlugin.class);
         registerPlugin(FloatingMousePlugin.class);
+        registerPlugin(ScreenCapturePlugin.class);
         super.onCreate(savedInstanceState);
 
         // 配置 WebView 允许混合内容

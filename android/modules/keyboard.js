@@ -334,71 +334,262 @@ function toggleModifier(modifier) {
 }
 
 let lastSystemTextValue = ''
+let isComposing = false  // 跟踪IME组合输入状态
+
+function syncSystemKeyboardButtons() {
+  const controlBtn = document.getElementById('controlSysKbBtn')
+  const kbBtn = document.getElementById('systemKbBtn')
+  if (controlBtn) {
+    if (s.usingSystemKeyboard) controlBtn.classList.add('active')
+    else controlBtn.classList.remove('active')
+  }
+  if (kbBtn) {
+    if (s.usingSystemKeyboard) kbBtn.classList.add('active')
+    else kbBtn.classList.remove('active')
+  }
+}
 
 function toggleSystemKeyboard() {
+  const bar = document.getElementById('systemKbBar')
   const input = document.getElementById('hiddenTextInput')
   const keyboardOverlay = document.getElementById('keyboardOverlay')
-  const btn = document.getElementById('systemKbBtn')
-  
-  if (!input) return
-  
+
+  if (!input || !bar) return
+
   s.usingSystemKeyboard = !s.usingSystemKeyboard
-  
+
   if (s.usingSystemKeyboard) {
-    keyboardOverlay.style.display = 'none'
     keyboardOverlay.classList.remove('active')
-    input.classList.add('active')
+    bar.classList.add('active')
     input.value = ''
     lastSystemTextValue = ''
-    input.focus()
-    if (btn) btn.classList.add('active')
-    if (typeof window.showToast === 'function') window.showToast('已切换到系统输入法，支持中文输入')
+    isComposing = false
+    setTimeout(() => input.focus(), 200)
+    if (typeof window.showToast === 'function') window.showToast('输入后点击"发送"提交')
   } else {
-    input.classList.remove('active')
+    bar.classList.remove('active')
     input.value = ''
     lastSystemTextValue = ''
+    isComposing = false
     input.blur()
-    keyboardOverlay.style.display = ''
     if (s.keyboardVisible) {
       keyboardOverlay.classList.add('active')
     }
-    if (btn) btn.classList.remove('active')
     if (typeof window.showToast === 'function') window.showToast('已切换回虚拟键盘')
   }
 
-  var controlBtn = document.getElementById('controlSysKbBtn')
-  if (controlBtn) {
-    if (s.usingSystemKeyboard) {
-      controlBtn.classList.add('active')
-    } else {
-      controlBtn.classList.remove('active')
+  syncSystemKeyboardButtons()
+}
+
+function sendSystemText() {
+  const input = document.getElementById('hiddenTextInput')
+  if (!input) return
+
+  const text = input.value.trim()
+
+  const dataReady = s.dataChannel && s.dataChannel.readyState === 'open'
+  const inputReady = s.inputChannel && s.inputChannel.readyState === 'open'
+  if (!dataReady && !inputReady) {
+    if (typeof window.showToast === 'function') window.showToast('数据通道未连接')
+    return
+  }
+
+  input.value = ''
+  lastSystemTextValue = ''
+  isComposing = false
+
+  if (text) {
+    try {
+      const inputCommand = window.createInputCommand(
+        window.INPUT_TYPES.TEXT_INPUT,
+        { text: text }
+      )
+      const message = JSON.stringify(inputCommand)
+      if (dataReady) {
+        s.dataChannel.send(message)
+      } else if (inputReady) {
+        if (s.inputChannel.bufferedAmount < 65536) {
+          s.inputChannel.send(message)
+        }
+      }
+    } catch (e) {
+      console.error('sendSystemText error:', e)
     }
   }
+
+  sendEnterKey()
+
+  if (typeof window.showToast === 'function') window.showToast('已发送')
+}
+
+function setupSystemKeyboardSendHandler() {
+  const input = document.getElementById('hiddenTextInput')
+  const sendBtn = document.getElementById('kbSendBtn')
+  if (!input || !sendBtn) return
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !isComposing) {
+      e.preventDefault()
+      sendSystemText()
+    }
+  })
+
+  sendBtn.addEventListener('click', () => {
+    sendSystemText()
+    input.focus()
+  })
 }
 
 function setupSystemKeyboardListener() {
   const input = document.getElementById('hiddenTextInput')
   if (!input) return
-  
+
+  // ---- IME 事件 ----
+  input.addEventListener('compositionstart', () => {
+    isComposing = true
+  })
+
+  input.addEventListener('compositionupdate', () => {
+    // 组合输入过程中不处理
+  })
+
+  input.addEventListener('compositionend', () => {
+    isComposing = false
+    lastSystemTextValue = input.value
+    // 不再自动发送！文字保留在输入框，等待用户主动发送
+  })
+
+  // ---- input 事件：非 IME 时实时发送增量文本 ----
   input.addEventListener('input', () => {
     if (!s.usingSystemKeyboard) return
-    
+    if (isComposing) return
     const currentValue = input.value
     if (currentValue === lastSystemTextValue) return
-    
+
+    // 检测增量（新增字符），实时发送新字符
     if (currentValue.length > lastSystemTextValue.length) {
       const newText = currentValue.substring(lastSystemTextValue.length)
       sendTextInput(newText)
     }
-    
+    // 如果变短了（Backspace 已在 keydown 中处理过），只更新追踪值
     lastSystemTextValue = currentValue
   })
-  
-  input.addEventListener('blur', () => {
-    if (s.usingSystemKeyboard) {
-      toggleSystemKeyboard()
+
+  // ---- keydown 拦截：转发功能键到远程 ----
+  input.addEventListener('keydown', (e) => {
+    if (!s.usingSystemKeyboard) return
+    if (isComposing) return  // IME 组合中不拦截
+
+    const specialKeys = [
+      'Backspace', 'Delete', 'Tab', 'Escape',
+      'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+      'Home', 'End', 'PageUp', 'PageDown', 'Insert'
+    ]
+
+    if (specialKeys.includes(e.key)) {
+      e.preventDefault()  // 阻止浏览器本地处理
+      sendKey(e.code)     // 发送 keydown + keyup 到远程
+
+      // Backspace 特殊处理：同步删除 input 中的最后一个字符
+      if (e.key === 'Backspace' && input.value.length > 0) {
+        input.value = input.value.slice(0, -1)
+        lastSystemTextValue = input.value
+      }
     }
   })
+
+  setupSystemKeyboardSendHandler()
+}
+
+function toggleSpecialKeys() {
+  const row = document.getElementById('kbSpecialKeysRow')
+  const btn = document.getElementById('kbToggleSpecialKeys')
+  if (!row || !btn) return
+  row.classList.toggle('visible')
+  btn.classList.toggle('expanded')
+}
+
+function setupSystemKbBarDrag() {
+  const bar = document.getElementById('systemKbBar')
+  const dragHandle = document.getElementById('kbDragHandle')
+  if (!bar || !dragHandle) return
+
+  let isDragging = false, startX = 0, startY = 0, startLeft = 0, startTop = 0
+
+  dragHandle.addEventListener('touchstart', (e) => {
+    isDragging = true
+    const touch = e.touches[0]
+    startX = touch.clientX; startY = touch.clientY
+    const rect = bar.getBoundingClientRect()
+    startLeft = rect.left; startTop = rect.top
+    bar.style.left = rect.left + 'px'
+    bar.style.top = rect.top + 'px'
+    bar.style.bottom = 'auto'
+    bar.style.transform = 'none'
+    e.preventDefault()
+  }, { passive: false })
+
+  document.addEventListener('touchmove', (e) => {
+    if (!isDragging) return
+    const touch = e.touches[0]
+    const newLeft = startLeft + (touch.clientX - startX)
+    const newTop = startTop + (touch.clientY - startY)
+    bar.style.left = Math.max(0, Math.min(window.innerWidth - bar.offsetWidth, newLeft)) + 'px'
+    bar.style.top = Math.max(0, Math.min(window.innerHeight - bar.offsetHeight, newTop)) + 'px'
+    e.preventDefault()
+  }, { passive: false })
+
+  document.addEventListener('touchend', () => { isDragging = false })
+}
+
+function sendEnterKey() {
+  const dataReady = s.dataChannel && s.dataChannel.readyState === 'open'
+  const inputReady = s.inputChannel && s.inputChannel.readyState === 'open'
+
+  if (!dataReady && !inputReady) return
+
+  const downCommand = convertToInputCommand({
+    type: 'keydown',
+    code: 'Enter',
+    key: 'Enter',
+    ctrlKey: s.activeModifiers.Control,
+    shiftKey: s.activeModifiers.Shift,
+    altKey: s.activeModifiers.Alt,
+    metaKey: s.activeModifiers.Meta
+  })
+  const downMessage = JSON.stringify(downCommand)
+
+  if (dataReady) {
+    s.dataChannel.send(downMessage)
+  } else if (inputReady) {
+    if (s.inputChannel.bufferedAmount < 65536) {
+      s.inputChannel.send(downMessage)
+    }
+  }
+
+  setTimeout(() => {
+    const upCommand = convertToInputCommand({
+      type: 'keyup',
+      code: 'Enter',
+      key: 'Enter',
+      ctrlKey: s.activeModifiers.Control,
+      shiftKey: s.activeModifiers.Shift,
+      altKey: s.activeModifiers.Alt,
+      metaKey: s.activeModifiers.Meta
+    })
+    const upMessage = JSON.stringify(upCommand)
+
+    const dataReady2 = s.dataChannel && s.dataChannel.readyState === 'open'
+    const inputReady2 = s.inputChannel && s.inputChannel.readyState === 'open'
+
+    if (dataReady2) {
+      s.dataChannel.send(upMessage)
+    } else if (inputReady2) {
+      if (s.inputChannel.bufferedAmount < 65536) {
+        s.inputChannel.send(upMessage)
+      }
+    }
+  }, 50)
 }
 
 function sendTextInput(text) {
@@ -416,7 +607,6 @@ function sendTextInput(text) {
     )
     const message = JSON.stringify(inputCommand)
 
-    // 优先使用 control 通道
     if (dataReady) {
       s.dataChannel.send(message)
     } else if (inputReady) {
@@ -444,5 +634,7 @@ export {
   sendKey,
   toggleModifier,
   toggleSystemKeyboard,
-  setupSystemKeyboardListener
+  setupSystemKeyboardListener,
+  toggleSpecialKeys,
+  setupSystemKbBarDrag
 }

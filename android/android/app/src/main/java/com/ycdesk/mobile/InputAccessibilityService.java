@@ -3,8 +3,10 @@ package com.ycdesk.mobile;
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.GestureDescription;
 import android.graphics.Path;
+import android.os.Bundle;
 import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
+import android.view.accessibility.AccessibilityNodeInfo;
 
 public class InputAccessibilityService extends AccessibilityService {
     private static final String TAG = "InputAccessibilityService";
@@ -163,5 +165,113 @@ public class InputAccessibilityService extends AccessibilityService {
      */
     public boolean lockScreen() {
         return super.performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN);
+    }
+
+    /**
+     * Set text directly on the currently focused input field.
+     * Uses AccessibilityNodeInfo.ACTION_SET_TEXT to insert text.
+     * Supports all characters including CJK.
+     *
+     * @param text The text to insert
+     * @return true if text was successfully set
+     */
+    public boolean setTextToFocusedNode(String text) {
+        if (text == null || text.isEmpty()) {
+            return false;
+        }
+
+        try {
+            // Find the focused node (e.g., an EditText field)
+            AccessibilityNodeInfo focusedNode = findFocusedNode();
+            if (focusedNode == null) {
+                Log.d(TAG, "setTextToFocusedNode: no focused node found, trying root");
+                // Try to find any editable node
+                AccessibilityNodeInfo root = getRootInActiveWindow();
+                if (root != null) {
+                    focusedNode = findEditableNode(root);
+                    root.recycle();
+                }
+            }
+
+            if (focusedNode == null) {
+                Log.d(TAG, "setTextToFocusedNode: no editable node found");
+                return false;
+            }
+
+            // Set text using ACTION_SET_TEXT
+            Bundle arguments = new Bundle();
+            arguments.putCharSequence(
+                AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                text
+            );
+
+            boolean result = focusedNode.performAction(
+                AccessibilityNodeInfo.ACTION_SET_TEXT,
+                arguments
+            );
+
+            focusedNode.recycle();
+
+            if (result) {
+                Log.d(TAG, "setTextToFocusedNode: text set successfully, length=" + text.length());
+            } else {
+                Log.d(TAG, "setTextToFocusedNode: ACTION_SET_TEXT returned false");
+            }
+
+            return result;
+        } catch (Exception e) {
+            Log.e(TAG, "setTextToFocusedNode error: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Find the currently focused accessibility node.
+     */
+    private AccessibilityNodeInfo findFocusedNode() {
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null) {
+            return null;
+        }
+        try {
+            AccessibilityNodeInfo focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
+            if (focused == null) {
+                focused = root.findFocus(AccessibilityNodeInfo.FOCUS_ACCESSIBILITY);
+            }
+            return focused;
+        } finally {
+            root.recycle();
+        }
+    }
+
+    /**
+     * Recursively find an editable node in the accessibility tree.
+     */
+    private AccessibilityNodeInfo findEditableNode(AccessibilityNodeInfo node) {
+        if (node == null) {
+            return null;
+        }
+
+        if (node.isEditable() && node.isFocused()) {
+            return node;
+        }
+
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo child = node.getChild(i);
+            if (child != null) {
+                AccessibilityNodeInfo result = findEditableNode(child);
+                // Don't recycle child if it's the result we're returning
+                if (result == child) {
+                    return result;
+                }
+                if (result != null) {
+                    child.recycle();
+                    return result;
+                }
+                child.recycle();
+            }
+        }
+
+        return null;
     }
 }

@@ -98,6 +98,10 @@ async function handleReceivedInput(inputData) {
           metaKey: inputData.metaKey || false
         });
         break;
+      case 'text_input':
+        await InputExecutor.executeTextInput({ text: inputData.text || '' })
+        if (typeof window.log === 'function') window.log('文本输入已执行: ' + inputData.text)
+        break
       case 'lock_screen':
         await InputExecutor.executeLockScreen()
         if (typeof window.log === 'function') window.log('锁屏命令已执行')

@@ -663,6 +663,27 @@
       border: none;
     }
 
+    .stats-overlay .stats-close-btn {
+      position: absolute;
+      top: 2px;
+      right: 4px;
+      background: none;
+      border: none;
+      color: #94a3b8;
+      font-size: 12px;
+      cursor: pointer;
+      padding: 2px 6px;
+      line-height: 1;
+    }
+
+    .stats-overlay .stats-close-btn:active {
+      color: #ef4444;
+    }
+
+    .stats-overlay.hidden-by-user {
+      display: none;
+    }
+
     .stats-item {
       display: flex;
       justify-content: space-between;
@@ -682,109 +703,210 @@
       font-weight: 600;
     }
 
+    /* ============================================
+       胶囊栏控制栏 (Pill Bar Control Overlay)
+       设计: 半透明毛玻璃单行胶囊 + 展开区
+    ============================================ */
     .control-overlay {
       position: fixed;
-      bottom: 15px;
+      bottom: 20px;
       left: 50%;
       transform: translateX(-50%);
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 10px;
       z-index: 1000;
-      transition: all 0.3s ease;
-      background: transparent;
-      padding: 8px;
-      border-radius: 8px;
-      border: none;
+      transition: opacity 0.35s ease, transform 0.35s ease;
     }
-    
-    .control-row {
+
+    .control-pill {
       display: flex;
-      gap: 10px;
+      align-items: center;
+      gap: 2px;
+      padding: 6px 14px;
+      height: 48px;
+      border-radius: 24px;
+      background: rgba(28, 28, 30, 0.78);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35), 0 0 0 0.5px rgba(255, 255, 255, 0.12);
+      border: none;
+      transition: background 0.3s, box-shadow 0.3s;
+    }
+
+    .control-pill:hover {
+      background: rgba(28, 28, 30, 0.85);
+    }
+
+    .control-drag-handle {
+      display: flex;
+      align-items: center;
       justify-content: center;
-      flex-wrap: wrap;
+      width: 22px;
+      height: 22px;
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 11px;
+      cursor: grab;
+      user-select: none;
+      touch-action: none;
+      margin-right: 2px;
+      border-radius: 4px;
+      flex-shrink: 0;
     }
 
-    .control-overlay.minimized {
-      bottom: 5px;
-      gap: 5px;
+    .control-drag-handle:active {
+      cursor: grabbing;
+      background: rgba(255, 255, 255, 0.1);
     }
 
-    .control-overlay.minimized .control-btn {
+    /* 分隔线 */
+    .control-separator {
+      width: 1px;
+      height: 22px;
+      background: rgba(255, 255, 255, 0.18);
+      border-radius: 0.5px;
+      margin: 0 6px;
+      flex-shrink: 0;
+    }
+
+    /* 胶囊栏按钮 */
+    .control-btn {
       width: 36px;
       height: 36px;
-      font-size: 14px;
+      border-radius: 50%;
+      border: none;
+      background: transparent;
+      color: rgba(255, 255, 255, 0.85);
+      font-size: 16px;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      position: relative;
     }
 
+    .control-btn:active {
+      transform: scale(0.88);
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    /* 展开按钮 */
+    .control-expand-btn {
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 18px;
+      border-radius: 50%;
+    }
+
+    .control-expand-btn.expanded {
+      background: rgba(255, 255, 255, 0.18);
+      color: rgba(255, 255, 255, 0.9);
+    }
+
+    /* 活跃按钮高亮 */
+    .control-btn.active {
+      background: #667eea !important;
+      color: #ffffff !important;
+      box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4);
+    }
+
+    /* 退出按钮 */
+    .control-btn.danger {
+      color: #ff6b6b;
+    }
+
+    .control-btn.danger:active {
+      background: rgba(255, 107, 107, 0.25);
+    }
+
+    /* 展开区域 */
+    .control-expanded-area {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      max-height: 0;
+      opacity: 0;
+      overflow: hidden;
+      transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+                  opacity 0.25s ease,
+                  margin 0.3s ease;
+      margin-top: 0;
+    }
+
+    .control-overlay.expanded .control-expanded-area {
+      max-height: 120px;
+      opacity: 1;
+      margin-top: 8px;
+    }
+
+    .control-expanded-row {
+      display: flex;
+      gap: 2px;
+      padding: 6px 14px;
+      height: 44px;
+      border-radius: 22px;
+      background: rgba(28, 28, 30, 0.78);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35), 0 0 0 0.5px rgba(255, 255, 255, 0.12);
+      align-items: center;
+    }
+
+    /* 隐藏状态 */
     .control-overlay.hidden {
-      transform: translateX(-50%) translateY(100px);
+      transform: translateX(-50%) translateY(120px);
       opacity: 0;
       pointer-events: none;
     }
 
+    /* dimmed 半透明状态 */
+    .control-overlay.dimmed {
+      opacity: 0.35;
+      transition: opacity 0.8s ease;
+    }
+
+    .control-overlay.dimmed .control-pill {
+      pointer-events: auto;
+    }
+
+    .control-overlay.dimmed:hover {
+      opacity: 1;
+      transition: opacity 0.2s ease;
+    }
+
+    /* 显示/隐藏 Toggle 按钮 */
     .control-toggle {
       position: fixed;
-      bottom: 5px;
-      right: 10px;
-      width: 36px;
-      height: 36px;
+      bottom: 12px;
+      right: 12px;
+      width: 40px;
+      height: 40px;
       border-radius: 50%;
       border: none;
-      background: rgba(255, 255, 255, 0.9);
-      color: #2d3748;
-      font-size: 16px;
+      background: rgba(28, 28, 30, 0.78);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      color: rgba(255, 255, 255, 0.75);
+      font-size: 18px;
       cursor: pointer;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), 0 0 0 0.5px rgba(255, 255, 255, 0.1);
       z-index: 999;
       display: none;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.3s;
     }
 
     .control-toggle.visible {
       display: flex;
-      align-items: center;
-      justify-content: center;
     }
 
-    .control-btn {
-      width: 34px;
-      height: 34px;
-      border-radius: 50%;
-      border: none;
-      background: rgba(255, 255, 255, 0.95);
-      color: #2d3748;
-      font-size: 14px;
-      cursor: pointer;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-      transition: all 0.25s;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .control-btn:active {
-      transform: scale(0.92);
-    }
-
-    .control-btn.danger {
-      background: #e74c3c;
-      color: white;
-    }
-    
-    .control-overlay.opacity-100 {
-      opacity: 1.0;
-    }
-    
-    .control-overlay.opacity-80 {
-      opacity: 0.8;
-    }
-    
-    .control-overlay.opacity-60 {
-      opacity: 0.6;
-    }
-    
-    .control-overlay.opacity-40 {
-      opacity: 0.4;
+    .control-toggle:active {
+      transform: scale(0.9);
+      background: rgba(28, 28, 30, 0.9);
     }
 
     .keyboard-header {
@@ -1047,30 +1169,12 @@
       background: #667eea;
     }
 
-    .remote-screen.fullscreen-mode {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      z-index: 9999;
-    }
-
-    .remote-screen.fullscreen-mode {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      z-index: 9998;
-    }
-
-    .remote-screen.fullscreen-mode .stats-overlay {
-      display: none;
-    }
-
     .remote-screen.fullscreen-mode .control-overlay {
-      bottom: 70px;
+      bottom: 80px;
+    }
+
+    .remote-screen.fullscreen-mode .control-toggle {
+      bottom: 80px;
     }
 
     .remote-screen.landscape-mode {
@@ -1087,7 +1191,11 @@
     }
 
     .remote-screen.keyboard-visible .control-overlay {
-      bottom: calc(25vh + 60px);
+      bottom: calc(25vh + 80px);
+    }
+
+    .remote-screen.keyboard-visible .control-toggle {
+      bottom: calc(25vh + 80px);
     }
 
     .remote-screen.keyboard-visible .stats-overlay {
@@ -1112,11 +1220,30 @@
       .remote-screen.active .control-overlay {
         bottom: 10px;
       }
+
+      .remote-screen.active .control-toggle {
+        bottom: 10px;
+      }
       
       .control-btn {
         width: 40px;
         height: 40px;
-        font-size: 16px;
+        font-size: 18px;
+      }
+
+      .control-pill {
+        height: 52px;
+        border-radius: 26px;
+        padding: 6px 16px;
+      }
+
+      .control-expanded-row {
+        height: 48px;
+        border-radius: 24px;
+      }
+
+      .control-separator {
+        height: 26px;
       }
     }
 
@@ -1157,31 +1284,170 @@
       to { transform: rotate(360deg); }
     }
 
-    .hidden-text-input {
+    .system-kb-bar {
       position: fixed;
-      left: 0;
-      top: 0;
-      width: 100%;
-      height: 48px;
-      opacity: 0;
-      z-index: 999;
+      left: 50%;
+      bottom: 80px;
+      transform: translateX(-50%);
+      z-index: 10000;
+      display: none;
+      flex-direction: column;
       pointer-events: none;
-      font-size: 16px;
-      background: transparent;
-      border: none;
-      resize: none;
+      min-width: 280px;
+      max-width: 95vw;
     }
 
-    .hidden-text-input.active {
-      opacity: 1;
+    .system-kb-bar.active {
+      display: flex;
       pointer-events: auto;
-      z-index: 10000;
-      background: rgba(255, 255, 255, 0.95);
-      color: #000;
-      border: 1px solid #ccc;
+    }
+
+    .kb-input-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: rgba(255, 255, 255, 0.97);
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      padding: 4px 6px;
+      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .kb-drag-handle {
+      width: 18px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #aaa;
+      font-size: 10px;
+      cursor: grab;
+      touch-action: none;
+      user-select: none;
+      flex-shrink: 0;
       border-radius: 4px;
-      padding: 12px;
-      font-size: 16px;
+    }
+
+    .kb-drag-handle:active {
+      cursor: grabbing;
+      background: rgba(0,0,0,0.03);
+    }
+
+    .kb-toggle-btn {
+      flex-shrink: 0;
+      width: 28px;
+      height: 32px;
+      border: none;
+      border-radius: 6px;
+      background: rgba(0,0,0,0.05);
+      color: #666;
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.2s;
+    }
+
+    .kb-toggle-btn.expanded {
+      transform: rotate(180deg);
+    }
+
+    .kb-input {
+      flex: 1;
+      height: 36px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      padding: 0 10px;
+      font-size: 15px;
+      background: #fff;
+      color: #000;
+      outline: none;
+      min-width: 0;
+    }
+
+    .kb-input:focus {
+      border-color: #4a90d9;
+      box-shadow: 0 0 0 2px rgba(74, 144, 217, 0.2);
+    }
+
+    .kb-send-btn {
+      flex-shrink: 0;
+      height: 36px;
+      padding: 0 16px;
+      border: none;
+      border-radius: 6px;
+      background: #4a90d9;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    .kb-send-btn:active {
+      background: #357abd;
+      transform: scale(0.96);
+    }
+
+    .kb-close-btn {
+      flex-shrink: 0;
+      width: 28px;
+      height: 28px;
+      border: none;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.05);
+      color: #888;
+      font-size: 13px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    .kb-close-btn:active {
+      background: rgba(239, 68, 68, 0.15);
+      color: #ef4444;
+    }
+
+    .kb-special-row {
+      display: none;
+      margin-top: 4px;
+      padding: 4px 6px;
+      background: rgba(30, 30, 30, 0.85);
+      border-radius: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 3px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+
+    .kb-special-row.visible {
+      display: flex;
+    }
+
+    .kb-special-key {
+      height: 30px;
+      padding: 0 7px;
+      border: none;
+      border-radius: 5px;
+      background: rgba(255, 255, 255, 0.1);
+      color: #ddd;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      min-width: 26px;
+      white-space: nowrap;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    .kb-special-key:active {
+      background: rgba(255, 255, 255, 0.25);
     }
   </style>
 </head>
@@ -1405,6 +1671,7 @@
 
   <div class="remote-screen" id="remoteScreen">
     <div class="stats-overlay" id="statsOverlay">
+      <button class="stats-close-btn" onclick="toggleStatsOverlay()" title="关闭状态栏">✕</button>
       <div class="stats-item">
         <span class="stats-label">分辨率:</span>
         <span class="stats-value" id="statsResolution">-</span>
@@ -1428,21 +1695,30 @@
       </div>
     </div>
     <div class="control-overlay" id="controlOverlay">
-      <div class="control-row">
-        <button class="control-btn" onclick="requestUnlock()">🔓</button>
-        <button class="control-btn" onclick="requestLock()">🔒</button>
-        <button class="control-btn" onclick="toggleControlsHide()">👁️</button>
+      <!-- 主胶囊栏 -->
+      <div class="control-pill" id="controlPill">
+        <div class="control-drag-handle" id="controlDragHandle" title="拖动移动">⋮⋮</div>
+        <button class="control-btn control-expand-btn" id="controlExpandBtn" onclick="toggleControlsExpand()" title="展开更多">⋮</button>
+        <div class="control-separator"></div>
+        <button class="control-btn" id="mouseModeBtn" onclick="toggleMouseMode()" title="鼠标模式">🖱️</button>
         <button class="control-btn" onclick="toggleKeyboard()" title="虚拟键盘">⌨️</button>
-        <button class="control-btn" id="controlSysKbBtn" onclick="toggleSystemKeyboard()" title="系统输入法(支持中文)">🔤</button>
+        <button class="control-btn" id="controlSysKbBtn" onclick="toggleSystemKeyboard()" title="系统输入法">🔤</button>
+        <div class="control-separator"></div>
+        <button class="control-btn" onclick="requestLock()" title="锁屏">🔒</button>
+        <button class="control-btn" onclick="toggleFullscreen()" title="全屏">⛶</button>
+        <div class="control-separator"></div>
+        <button class="control-btn danger" id="exitBtn" onclick="handleExit()" oncontextmenu="toggleExitMode(); return false;" title="退出">✕</button>
       </div>
-      <div class="control-row">
-        <button class="control-btn" id="mouseModeBtn" onclick="toggleMouseMode()">🖱️</button>
-        <button class="control-btn" onclick="resetZoomAndPan()">↺</button>
-        <button class="control-btn" onclick="toggleFullscreen()">⛶</button>
-        <button class="control-btn danger" id="exitBtn" onclick="handleExit()" oncontextmenu="toggleExitMode(); return false;">✕</button>
+      <!-- 展开区域 -->
+      <div class="control-expanded-area">
+        <div class="control-expanded-row">
+          <button class="control-btn" onclick="requestUnlock()" title="解锁">🔓</button>
+          <button class="control-btn" onclick="resetZoomAndPan()" title="重置视图">↺</button>
+          <button class="control-btn" onclick="toggleControlsHide()" title="隐藏工具栏">👁️</button>
+        </div>
       </div>
     </div>
-    <button class="control-toggle" id="controlToggle" onclick="showControls()">⚙️</button>
+    <button class="control-toggle" id="controlToggle" onclick="showControls()">☰</button>
   </div>
 
   <div class="keyboard-overlay" id="keyboardOverlay">
@@ -1547,7 +1823,27 @@
     </div>
   </div>
 
-  <textarea id="hiddenTextInput" class="hidden-text-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+  <div id="systemKbBar" class="system-kb-bar">
+    <div class="kb-input-row">
+      <div class="kb-drag-handle" id="kbDragHandle" title="拖动移动">⋮⋮</div>
+      <button class="kb-toggle-btn" id="kbToggleSpecialKeys" onclick="toggleSpecialKeys()" title="展开功能键">▾</button>
+      <input id="hiddenTextInput" class="kb-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="send" placeholder="在此输入文字...">
+      <button id="kbSendBtn" class="kb-send-btn">发送</button>
+      <button id="kbCloseBtn" class="kb-close-btn" onclick="toggleSystemKeyboard()" title="关闭系统键盘">✕</button>
+    </div>
+    <div class="kb-special-row" id="kbSpecialKeysRow">
+      <button class="kb-special-key" onclick="sendKey('Escape')">ESC</button>
+      <button class="kb-special-key" onclick="sendKey('Tab')">TAB</button>
+      <button class="kb-special-key" onclick="sendKey('ArrowUp')">↑</button>
+      <button class="kb-special-key" onclick="sendKey('ArrowDown')">↓</button>
+      <button class="kb-special-key" onclick="sendKey('ArrowLeft')">←</button>
+      <button class="kb-special-key" onclick="sendKey('ArrowRight')">→</button>
+      <button class="kb-special-key" onclick="sendKey('Backspace')">⌫</button>
+      <button class="kb-special-key" onclick="sendKey('Delete')">DEL</button>
+      <button class="kb-special-key" onclick="sendKey('Home')">Hm</button>
+      <button class="kb-special-key" onclick="sendKey('End')">End</button>
+    </div>
+  </div>
 
   <div class="toast" id="toast"></div>
 
