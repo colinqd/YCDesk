@@ -130,19 +130,20 @@ function updateServerStatusDisplay(text, type) {
 }
 
 function updateConnectButtons(type) {
-  const controlledBtn = document.getElementById('controlledConnectBtn')
-  const controllerBtn = document.getElementById('controllerConnectBtn')
+  const isConnected = (type === 'connected')
+  const isConnecting = (type === 'connecting' || type === 'reconnecting')
 
-  if (type === 'connected') {
-    if (controlledBtn) { controlledBtn.disabled = true; controlledBtn.textContent = '已连接' }
-    if (controllerBtn) { controllerBtn.disabled = true; controllerBtn.textContent = '已连接' }
-  } else if (type === 'connecting' || type === 'reconnecting') {
-    if (controlledBtn) { controlledBtn.disabled = true; controlledBtn.textContent = '连接中...' }
-    if (controllerBtn) { controllerBtn.disabled = true; controllerBtn.textContent = '连接中...' }
-  } else {
-    if (controlledBtn) { controlledBtn.disabled = false; controlledBtn.textContent = '连接' }
-    if (controllerBtn) { controllerBtn.disabled = false; controllerBtn.textContent = '连接' }
-  }
+  // 被控端连接按钮
+  const controlledConnectBtn = document.getElementById('controlledConnectBtn')
+  const controlledDisconnectBtn = document.getElementById('controlledDisconnectBtn')
+  if (controlledConnectBtn) controlledConnectBtn.disabled = isConnected || isConnecting
+  if (controlledDisconnectBtn) controlledDisconnectBtn.disabled = !isConnected && !isConnecting
+
+  // 主控端连接按钮
+  const controllerConnectBtn = document.getElementById('controllerConnectBtn')
+  const controllerDisconnectBtn = document.getElementById('controllerDisconnectBtn')
+  if (controllerConnectBtn) controllerConnectBtn.disabled = isConnected || isConnecting
+  if (controllerDisconnectBtn) controllerDisconnectBtn.disabled = !isConnected && !isConnecting
 }
 
 function showMessage(msg) {

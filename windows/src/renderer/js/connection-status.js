@@ -533,6 +533,10 @@ async function connectDirect() {
 // ==================== 信令连接 ====================
 
 async function controlledConnectToServer() {
+  // 如果按钮已禁用，不执行
+  const btn = document.getElementById('controlledConnectBtn')
+  if (btn && btn.disabled) return
+
   const serverUrl = uiManager.getControlledServerUrl()
   connectionManager.saveRoleAndServer('controlled', serverUrl)
   connectionManager.cancelReconnect()
@@ -541,10 +545,18 @@ async function controlledConnectToServer() {
 }
 
 function controlledDisconnectFromServer() {
+  // 如果按钮已禁用，不执行
+  const btn = document.getElementById('controlledDisconnectBtn')
+  if (btn && btn.disabled) return
+
   signalingManager.disconnect()
 }
 
 async function controllerConnectToServer() {
+  // 如果按钮已禁用，不执行
+  const btn = document.getElementById('controllerConnectBtn')
+  if (btn && btn.disabled) return
+
   const serverUrl = uiManager.getControllerServerUrl()
   connectionManager.saveRoleAndServer('controller', serverUrl)
   connectionManager.cancelReconnect()
@@ -553,6 +565,10 @@ async function controllerConnectToServer() {
 }
 
 function controllerDisconnectFromServer() {
+  // 如果按钮已禁用，不执行
+  const btn = document.getElementById('controllerDisconnectBtn')
+  if (btn && btn.disabled) return
+
   signalingManager.disconnect()
 }
 

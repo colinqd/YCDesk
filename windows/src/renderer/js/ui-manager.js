@@ -141,14 +141,26 @@ class UIManager {
     // 被控端按钮
     const controlledConnectBtn = document.getElementById('controlledConnectBtn')
     const controlledDisconnectBtn = document.getElementById('controlledDisconnectBtn')
-    if (controlledConnectBtn) controlledConnectBtn.disabled = isConnected || isConnecting
-    if (controlledDisconnectBtn) controlledDisconnectBtn.disabled = !isConnected && !isConnecting
+    if (controlledConnectBtn) {
+      controlledConnectBtn.disabled = isConnected || isConnecting
+      controlledConnectBtn.textContent = (isConnected || isConnecting) ? '已连接' : '连接'
+    }
+    if (controlledDisconnectBtn) {
+      controlledDisconnectBtn.disabled = !isConnected && !isConnecting
+      controlledDisconnectBtn.textContent = '断开'
+    }
 
     // 主控端按钮
     const controllerConnectBtn = document.getElementById('controllerConnectBtn')
     const controllerDisconnectBtn = document.getElementById('controllerDisconnectBtn')
-    if (controllerConnectBtn) controllerConnectBtn.disabled = isConnected || isConnecting
-    if (controllerDisconnectBtn) controllerDisconnectBtn.disabled = !isConnected && !isConnecting
+    if (controllerConnectBtn) {
+      controllerConnectBtn.disabled = isConnected || isConnecting
+      controllerConnectBtn.textContent = (isConnected || isConnecting) ? '已连接' : '连接'
+    }
+    if (controllerDisconnectBtn) {
+      controllerDisconnectBtn.disabled = !isConnected && !isConnecting
+      controllerDisconnectBtn.textContent = '断开'
+    }
   }
 
   setDeviceId(deviceId) {
