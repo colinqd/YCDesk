@@ -289,6 +289,8 @@ function isBatchInputType(inputType) {
   return inputType === INPUT_TYPES.MOUSE_WHEEL_BATCH
 }
 
+/* ESM exports removed for CommonJS compatibility */
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     INPUT_TYPES,

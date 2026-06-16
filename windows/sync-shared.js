@@ -132,6 +132,9 @@ function syncShared() {
 
         // 非 Android 平台（Windows/Linux）移除 ESM export 语法，兼容 <script> 加载
         if (target.name !== 'android/shared' && (relPath.endsWith('.js'))) {
+          // 先移除完整的 export { ... } 块（多行）
+          content = content.replace(/^export\s*\{[\s\S]*?^\}/gm, '/* ESM exports removed for CommonJS compatibility */')
+          // 再处理单行 export 语句（如 export default function, export class 等）
           content = content.replace(/^export\s+(default\s+)?\S+/gm, '// $& (removed for non-module script)')
         }
 
