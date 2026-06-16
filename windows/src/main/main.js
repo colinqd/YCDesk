@@ -1,8 +1,9 @@
 const { app } = require('electron')
 const path = require('path')
 const os = require('os')
+const { Worker } = require('worker_threads')
 const { createMainWindow, createRemoteWindow, createTray } = require('./window-manager')
-const { init: initIpcHandlers, generateDeviceId, loadDeviceId } = require('./ipc-handlers')
+const { init: initIpcHandlers, generateDeviceId, loadDeviceId, notifyAllWindows } = require('./ipc-handlers')
 const { createLogger } = require('./logger')
 const { getServiceIntegration } = require('./service-integration')
 
@@ -71,6 +72,120 @@ app.on('child-process-gone', (event, details) => {
   logger.error('子进程异常退出', { type: details.type, reason: details.reason, exitCode: details.exitCode })
 })
 
+let watchdogWorker = null
+
+function initWatchdog() {
+  try {
+    const watchdogPath = path.join(__dirname, 'watchdog.js')
+    watchdogWorker = new Worker(watchdogPath)
+    
+    watchdogWorker.on('message', (msg) => {
+      switch (msg.type) {
+        case 'watchdog-log':
+          logger.info('[Watchdog] ' + msg.message)
+          break
+        case 'watchdog-ping':
+          watchdogWorker.postMessage({ type: 'watchdog-pong' })
+          break
+        case 'watchdog-force-reconnect':
+          logger.warn('[Watchdog] 自动强制重连: ' + JSON.stringify(msg))
+          // 直接执行恢复，不通知用户
+          handleWatchdogRecovery({ action: 'force-reconnect', reason: msg.reason, level: msg.level })
+          break
+        case 'watchdog-recover':
+          logger.warn('[Watchdog] 自动恢复: ' + JSON.stringify(msg))
+          handleWatchdogRecovery(msg)
+          break
+      }
+    })
+    
+    watchdogWorker.on('error', (error) => {
+      logger.error('[Watchdog] Worker 错误:', error.message)
+    })
+    
+    watchdogWorker.on('exit', (code) => {
+      logger.warn('[Watchdog] Worker 线程退出, code:', code)
+      watchdogWorker = null
+    })
+    
+    // 启动监控
+    watchdogWorker.postMessage({ type: 'watchdog-start' })
+    
+    // 定期发送状态到 watchdog
+    setInterval(() => {
+      if (watchdogWorker) {
+        const status = getConnectionHealthStatus()
+        watchdogWorker.postMessage({
+          type: 'watchdog-status',
+          webrtcStatus: status,
+          memoryUsage: process.memoryUsage().heapUsed
+        })
+      }
+    }, 5000)
+    
+    logger.info('Watchdog 监控已启动')
+  } catch (e) {
+    logger.error('Watchdog 启动失败:', e.message)
+  }
+}
+
+// 连接健康状态缓存（渲染进程通过 watchdog-status-response 更新）
+global.connectionHealthCache = { connected: false, dataChannelOpen: false, connectionState: 'unknown', disconnected: false, lastUpdated: 0 }
+
+function getConnectionHealthStatus() {
+  // 从所有渲染进程收集连接健康状态
+  const { BrowserWindow } = require('electron')
+
+  const allWindows = BrowserWindow.getAllWindows()
+  if (allWindows.length === 0) return global.connectionHealthCache
+
+  // 异步请求窗口的连接状态，结果通过 watchdog-status-response 异步更新缓存
+  for (const win of allWindows) {
+    if (!win.isDestroyed() && win.webContents) {
+      try {
+        win.webContents.send('watchdog-query-status')
+      } catch (e) { /* ignore */ }
+    }
+  }
+
+  return global.connectionHealthCache
+}
+
+function handleWatchdogRecovery(msg) {
+  switch (msg.action) {
+    case 'data-channel-recovery':
+      // 自动触发数据通道恢复（渲染进程内自动执行，无弹窗）
+      notifyAllWindows('watchdog-recover', { action: 'data-channel-recovery' })
+      break
+    case 'ice-restart':
+      // 自动触发 ICE restart（渲染进程内自动执行，无弹窗）
+      notifyAllWindows('watchdog-recover', { action: 'ice-restart' })
+      break
+    case 'force-reconnect':
+      // 完全重连：通知渲染进程断开并重新通过信令服务器建立连接
+      notifyAllWindows('watchdog-recover', { action: 'force-reconnect', level: msg.level })
+      break
+    case 'memory-warning':
+      logger.warn('[Watchdog] 内存警告: ' + msg.level)
+      // 自动触发 GC（不打扰用户）
+      if (global.gc) { global.gc() }
+      break
+  }
+}
+
+function stopWatchdog() {
+  if (watchdogWorker) {
+    watchdogWorker.postMessage({ type: 'watchdog-stop' })
+    setTimeout(() => {
+      if (watchdogWorker) {
+        try { watchdogWorker.terminate() } catch (e) {}
+        watchdogWorker = null
+      }
+    }, 1000)
+    logger.info('Watchdog 已停止')
+  }
+}
+
 app.whenReady().then(() => {
   logger.info('YCDesk 启动中...')
   logger.info('Electron 版本:', { version: process.versions.electron })
@@ -89,6 +204,8 @@ app.whenReady().then(() => {
   createMainWindow()
   createTray()
 
+  initWatchdog()
+
   app.on('activate', () => {
     if (require('electron').BrowserWindow.getAllWindows().length === 0) {
       createMainWindow()
@@ -104,6 +221,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   logger.info('YCDesk 正在退出...')
+  stopWatchdog()
   try { getServiceIntegration().disconnect() } catch (e) { logger.debug('断开服务连接时出错（正常退出）:', e.message) }
 })
 

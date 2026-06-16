@@ -6,8 +6,12 @@ const SEND_CHANNELS = Object.freeze([
   'send-signaling-offer',
   'send-signaling-answer',
   'send-signaling-ice-candidate',
+  'send-signaling-renegotiate',
   'webrtc-renegotiate',
-  'webrtc-signaling'
+  'webrtc-signaling',
+  'file-transfer:status',
+  'file-transfer:requestFile',
+  'watchdog-status-response'
 ])
 
 const RECEIVE_CHANNELS = Object.freeze([
@@ -27,6 +31,14 @@ const RECEIVE_CHANNELS = Object.freeze([
   'send-signaling-offer',
   'send-signaling-answer',
   'send-signaling-ice-candidate',
+  'send-signaling-renegotiate',
+  'signaling-renegotiate',
+  'watchdog-recover',
+  'clipboard-changed',
+  'file-transfer:status',
+  'file-transfer:requestFile',
+  'watchdog-query-status',
+  'watchdog-status-response',
   'credProvider:progress',
   'test-unlock-log',
   'service:stateChange',
@@ -184,5 +196,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveSignalingServers: (servers) => ipcRenderer.invoke('signaling-server:save', servers),
   addSignalingServer: (name, url) => ipcRenderer.invoke('signaling-server:add', { name, url }),
   editSignalingServer: (index, name, url) => ipcRenderer.invoke('signaling-server:edit', { index, name, url }),
-  deleteSignalingServer: (index) => ipcRenderer.invoke('signaling-server:delete', { index })
+  deleteSignalingServer: (index) => ipcRenderer.invoke('signaling-server:delete', { index }),
+
+  // ========== 剪贴板 API ==========
+  clipboardRead: () => ipcRenderer.invoke('clipboard:read'),
+  clipboardWrite: (data) => ipcRenderer.invoke('clipboard:write', data),
+  clipboardStartMonitor: (interval) => ipcRenderer.invoke('clipboard:startMonitor', interval),
+  clipboardStopMonitor: () => ipcRenderer.invoke('clipboard:stopMonitor'),
+
+  // ========== 文件传输 API ==========
+  fileTransferSelectFiles: () => ipcRenderer.invoke('file-transfer:selectFiles'),
+  fileTransferReadChunk: (filePath, offset, size) => ipcRenderer.invoke('file-transfer:readChunk', { filePath, offset, size }),
+  fileTransferSaveFile: (options) => ipcRenderer.invoke('file-transfer:saveFile', options),
+  fileTransferCreateWriter: (fileId, savePath) => ipcRenderer.invoke('file-transfer:createWriter', { fileId, savePath }),
+  fileTransferWriteChunk: (fileId, data, offset) => ipcRenderer.invoke('file-transfer:writeChunk', { fileId, data, offset }),
+  fileTransferCloseWriter: (fileId, expectedSize) => ipcRenderer.invoke('file-transfer:closeWriter', { fileId, expectedSize }),
+  fileTransferVerifyFile: (filePath, expectedSize) => ipcRenderer.invoke('file-transfer:verifyFile', { filePath, expectedSize }),
+  fileTransferGetSaveDir: () => ipcRenderer.invoke('file-transfer:getSaveDir'),
+  fileTransferShowInFolder: (filePath) => ipcRenderer.invoke('file-transfer:showInFolder', filePath)
 })

@@ -1,3 +1,16 @@
+const fs = require('fs')
+
+const DIAG_WEBRTC_FILE = 'C:\\ProgramData\\YCDesk\\diag_webrtc.log'
+
+function webrtcDiagLog(message) {
+  try {
+    if (!fs.existsSync('C:\\ProgramData\\YCDesk')) {
+      fs.mkdirSync('C:\\ProgramData\\YCDesk', { recursive: true })
+    }
+    fs.appendFileSync(DIAG_WEBRTC_FILE, '[' + new Date().toISOString() + '] ' + message + '\n', 'utf8')
+  } catch (e) {}
+}
+
 function getIceConfig() {
   return {
     iceServers: [
@@ -16,10 +29,12 @@ function setupDataChannel(channel, log) {
     log('收到数据通道消息:', event.data)
     try {
       const data = JSON.parse(event.data)
+      webrtcDiagLog('WebRTC收到: type=' + data.type + ' inputType=' + data.inputType + (data.inputType === 'text_input' ? ' text=' + (data.text || '').substring(0, 30) : ''))
       if (data.type === 'input' || data.inputType) {
         window.electronAPI.send('remote-input', data)
       }
     } catch (e) {
+      webrtcDiagLog('WebRTC解析失败: ' + e.message)
       console.error('解析数据失败:', e)
     }
   }

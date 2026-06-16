@@ -12,6 +12,7 @@ class SignalingClient {
     this.onOffer = options.onOffer || null
     this.onAnswer = options.onAnswer || null
     this.onIceCandidate = options.onIceCandidate || null
+    this.onRequestRenegotiate = options.onRequestRenegotiate || null
     this.onConnected = options.onConnected || null
     this.onDisconnected = options.onDisconnected || null
     this.onReconnecting = options.onReconnecting || null
@@ -89,10 +90,12 @@ class SignalingClient {
     this.logFn('自动检测服务器协议...')
     this._autoSettled = false
     this._autoServerUrl = serverUrl
+    this._autoDetecting = true
 
     this._autoTimer = setTimeout(() => {
       if (!this._autoSettled) {
         this._autoSettled = true
+        this._autoDetecting = false
         this._cleanupSocketIO()
         this.logFn('Socket.IO 超时，切换到原始 WebSocket')
         this.connectionMode = 'websocket'
@@ -101,7 +104,6 @@ class SignalingClient {
       }
     }, 2500)
 
-    this.connectionMode = 'socketio'
     this._connectSocketIO(serverUrl)
   }
 
@@ -144,7 +146,9 @@ class SignalingClient {
 
         if (typeof this.onDisconnected === 'function') this.onDisconnected('close', event.code)
 
-        if (!this._manualDisconnect && this.autoReconnect) {
+        const wasManual = this._manualDisconnect
+        this._manualDisconnect = false
+        if (!wasManual && this.autoReconnect) {
           this._scheduleReconnect()
         }
       }
@@ -170,6 +174,7 @@ class SignalingClient {
 
   _connectSocketIO(serverUrl) {
     const httpUrl = this.buildHttpUrl(serverUrl)
+    this._reconnectServerUrl = serverUrl
     this.logFn('连接信令服务器 [Socket.IO]: ' + httpUrl)
 
     try {
@@ -189,10 +194,12 @@ class SignalingClient {
       })
 
       this.socket.on('connect', () => {
-        if (this._autoTimer && !this._autoSettled) {
+        if (this._autoDetecting && !this._autoSettled) {
           this._autoSettled = true
+          this._autoDetecting = false
           clearTimeout(this._autoTimer)
           this._autoTimer = null
+          this.connectionMode = 'socketio'
           this.negotiatedMode = 'socketio'
           this.logFn('✓ 协议协商成功: Socket.IO')
         }
@@ -204,9 +211,15 @@ class SignalingClient {
       })
 
       this.socket.on('disconnect', (reason) => {
-        if (this._autoTimer && !this._autoSettled) return
+        if (this._autoDetecting && !this._autoSettled) return
         this.logFn('与信令服务器断开连接，原因: ' + reason)
+
+        const wasManual = this._manualDisconnect
+        this._manualDisconnect = false
         if (typeof this.onDisconnected === 'function') this.onDisconnected('socketio', reason)
+        if (!wasManual && this.autoReconnect) {
+          this._scheduleReconnect()
+        }
       })
 
       this.socket.on('connect_error', (error) => {
@@ -304,7 +317,12 @@ class SignalingClient {
     }
 
     this._reconnectTimer = setTimeout(() => {
-      this._connectWebSocket(this._reconnectServerUrl)
+      const mode = this.negotiatedMode || this.connectionMode
+      if (mode === 'socketio') {
+        this._connectSocketIO(this._reconnectServerUrl)
+      } else {
+        this._connectWebSocket(this._reconnectServerUrl)
+      }
     }, delay)
   }
 
@@ -369,6 +387,11 @@ class SignalingClient {
         if (typeof this.onIceCandidate === 'function') this.onIceCandidate(data)
         break
 
+      case 'request-renegotiate':
+        this.logFn('收到重协商请求: ' + JSON.stringify(data))
+        if (typeof this.onRequestRenegotiate === 'function') this.onRequestRenegotiate(data)
+        break
+
       case 'pong':
         break
     }
@@ -400,6 +423,7 @@ class SignalingClient {
     this._stopHeartbeat()
     this._cancelReconnect()
     this._autoSettled = true
+    this._autoDetecting = false
     if (this._autoTimer) {
       clearTimeout(this._autoTimer)
       this._autoTimer = null
@@ -411,9 +435,11 @@ class SignalingClient {
         this.socket.disconnect()
       }
       this.socket = null
+      this._manualDisconnect = false
       this.logFn('已断开服务器连接')
+    } else {
+      this._manualDisconnect = false
     }
-    this._manualDisconnect = false
   }
 }
 

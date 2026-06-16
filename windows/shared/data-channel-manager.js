@@ -124,6 +124,10 @@ class DataChannelManager {
       id: requireAck ? ++this.messageIdCounter : undefined,
       timestamp: Date.now()
     }
+
+    if (this.messageIdCounter > 9007199254740990) {
+      this.messageIdCounter = 0
+    }
     
     if (!this.isOpen()) {
       this.enqueue(message, requireAck)
@@ -268,7 +272,6 @@ class DataChannelManager {
 
   close() {
     this.messageQueue = []
-    // 清理所有 pending 消息的定时器
     this.pendingMessages.forEach(({ timer }) => {
       clearTimeout(timer)
     })
@@ -278,6 +281,10 @@ class DataChannelManager {
       this.removeEventListeners()
       this.dataChannel.close()
       this.dataChannel = null
+    }
+
+    if (this.callbacks.onClose) {
+      this.callbacks.onClose()
     }
   }
 

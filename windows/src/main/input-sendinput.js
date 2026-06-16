@@ -46,6 +46,7 @@ function setLogger(logInstance) {
 // 使用 SendInput API 实现鼠标/键盘操作
 // 采用 IntPtr 手动内存布局，避免 struct 布局兼容问题
 const CS_SCRIPT = `
+try {
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
@@ -228,16 +229,15 @@ public class InputHelper {
         foreach (char c in text) {
             // char down
             IntPtr ptr = AllocInput(INPUT_KEYBOARD);
-            Marshal.WriteInt16(ptr, OFF_DX, (short)c);  // wVk as Unicode char
-            Marshal.WriteInt16(ptr, OFF_DX + 2, 0);
+            Marshal.WriteInt16(ptr, OFF_DX, 0);
+            Marshal.WriteInt16(ptr, OFF_DX + 2, (short)c);
             Marshal.WriteInt32(ptr, OFF_DY, (int)KEYEVENTF_UNICODE);
             Marshal.WriteIntPtr(ptr, OFF_EXTRAINFO_KEYBD, GetMessageExtraInfo());
             FreeAndSend(ptr);
-            // char up
             Thread.Sleep(20);
             ptr = AllocInput(INPUT_KEYBOARD);
-            Marshal.WriteInt16(ptr, OFF_DX, (short)c);
-            Marshal.WriteInt16(ptr, OFF_DX + 2, 0);
+            Marshal.WriteInt16(ptr, OFF_DX, 0);
+            Marshal.WriteInt16(ptr, OFF_DX + 2, (short)c);
             Marshal.WriteInt32(ptr, OFF_DY, (int)(KEYEVENTF_UNICODE | KEYEVENTF_KEYUP));
             Marshal.WriteIntPtr(ptr, OFF_EXTRAINFO_KEYBD, GetMessageExtraInfo());
             FreeAndSend(ptr);
@@ -245,7 +245,11 @@ public class InputHelper {
         }
     }
 }
-"@
+"@ -ErrorAction Stop
+} catch {
+    [Console]::Error.WriteLine("COMPILE_ERR:" + $_.Exception.Message)
+    exit 1
+}
 
 function Invoke-InputCommand {
     param([string]$Command, [string]$Arg1, [string]$Arg2)
@@ -292,13 +296,23 @@ function Invoke-InputCommand {
             [InputHelper]::KeyTap([uint16][int]$Arg1)
         }
         "text" {
-            [InputHelper]::TypeString($Arg1)
+            try {
+                $bytes = [System.Convert]::FromBase64String($Arg1)
+                $text = [System.Text.Encoding]::UTF8.GetString($bytes)
+                [Console]::Error.WriteLine("TEXT_DIAG len=" + $text.Length + " bytes=" + [System.BitConverter]::ToString($bytes))
+                [InputHelper]::TypeString($text)
+            } catch {
+                [Console]::Error.WriteLine("TEXT_ERR:" + $_.Exception.Message)
+                [Console]::Error.WriteLine("TEXT_DIAG_FB len=" + $Arg1.Length + " bytes=" + [System.BitConverter]::ToString([System.Text.Encoding]::UTF8.GetBytes($Arg1)))
+                [InputHelper]::TypeString($Arg1)
+            }
         }
     }
 }
 
 # Main loop: read commands from stdin, execute, write "OK" to stdout
-$reader = [System.IO.StreamReader]::new([System.Console]::OpenStandardInput())
+[Console]::InputEncoding = [System.Text.Encoding]::UTF8
+$reader = [System.IO.StreamReader]::new([System.Console]::OpenStandardInput(), [System.Text.Encoding]::UTF8)
 [Console]::Out.WriteLine("READY")
 [Console]::Out.Flush()
 while (($line = $reader.ReadLine()) -ne "EXIT") {
@@ -385,8 +399,8 @@ function ensureProcess() {
         if (!startupDone) reject(err)
       })
 
-      psProcess.on('exit', (code) => {
-        diagLog('[SendInput] process exited: ' + code)
+      psProcess.on('exit', (code, signal) => {
+        diagLog('[SendInput] process exited: code=' + code + ' signal=' + signal + ' hex=0x' + ((code >>> 0) || 0).toString(16))
         isInitialized = false
         psProcess = null
         initPromise = null
@@ -570,7 +584,7 @@ function keyTap(vk) {
 }
 
 function typeString(text) {
-  return sendCommand('text', text)
+  return sendCommand('text', Buffer.from(text, 'utf8').toString('base64'))
 }
 
 module.exports = {

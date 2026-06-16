@@ -35,6 +35,15 @@ class ResolutionNegotiator {
     }
 
     async negotiate(wrapperElement = null) {
+        if (this.pendingResolve) {
+            this.pendingResolve.reject(new Error('新的协商请求已取代'))
+            this.pendingResolve = null
+        }
+        if (this.timeoutTimer) {
+            clearTimeout(this.timeoutTimer)
+            this.timeoutTimer = null
+        }
+
         this.localWindowSize = wrapperElement 
             ? this.getLocalWindowSizeFromElement(wrapperElement)
             : this.getLocalWindowSize()
@@ -45,6 +54,7 @@ class ResolutionNegotiator {
             this.pendingResolve = { resolve, reject }
             
             if (!this.dataChannelManager || !this.dataChannelManager.isOpen()) {
+                this.pendingResolve = null
                 reject(new Error('数据通道未打开'))
                 return
             }
@@ -60,8 +70,8 @@ class ResolutionNegotiator {
             this.timeoutTimer = setTimeout(() => {
                 this.logger.log('[ResolutionNegotiator] 协商超时, 使用默认值')
                 this.negotiatedSize = this.calculateDefaultSize()
-                resolve(this.negotiatedSize)
                 this.pendingResolve = null
+                resolve(this.negotiatedSize)
             }, this.timeout)
         })
     }
@@ -142,10 +152,13 @@ class ResolutionNegotiator {
     }
 
     reset() {
+        if (this.pendingResolve) {
+            this.pendingResolve.reject(new Error('协商已重置'))
+            this.pendingResolve = null
+        }
         this.localWindowSize = null
         this.remoteScreenSize = null
         this.negotiatedSize = null
-        this.pendingResolve = null
         if (this.timeoutTimer) {
             clearTimeout(this.timeoutTimer)
             this.timeoutTimer = null

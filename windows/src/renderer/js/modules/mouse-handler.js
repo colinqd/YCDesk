@@ -8,17 +8,54 @@
   var WHEEL_BATCH_INTERVAL_MS = 16
 
   window.MouseHandler = {
+    _handlers: null,
+    _timers: null,
+    _videoWrapper: null,
+    _videoContainer: null,
+
+    destroy: function () {
+      // 清除定时器
+      if (this._timers) {
+        if (this._timers.moveSendTimer) { clearInterval(this._timers.moveSendTimer); this._timers.moveSendTimer = null }
+        if (this._timers.idleTimer) { clearTimeout(this._timers.idleTimer); this._timers.idleTimer = null }
+        if (this._timers.wheelSendTimer) { clearTimeout(this._timers.wheelSendTimer); this._timers.wheelSendTimer = null }
+      }
+      // 移除事件监听器
+      if (this._handlers && this._videoWrapper) {
+        this._videoWrapper.removeEventListener('mousedown', this._handlers.mousedown)
+        this._videoWrapper.removeEventListener('mousemove', this._handlers.mousemove)
+        this._videoWrapper.removeEventListener('mouseup', this._handlers.mouseup)
+        this._videoWrapper.removeEventListener('wheel', this._handlers.wheel)
+        this._videoWrapper.removeEventListener('mouseleave', this._handlers.mouseleave)
+        this._videoWrapper.removeEventListener('contextmenu', this._handlers.contextmenu)
+      }
+      if (this._handlers && this._handlers.visibility) {
+        document.removeEventListener('visibilitychange', this._handlers.visibility)
+      }
+      this._handlers = null
+      this._timers = null
+      this._videoWrapper = null
+      this._videoContainer = null
+    },
+
     setup: function (videoWrapper, videoContainer, getMatrixTransformer, getConnectionManager) {
+      // 先清理旧的
+      this.destroy()
+
       if (!videoWrapper || !videoContainer) return
+
+      this._videoWrapper = videoWrapper
+      this._videoContainer = videoContainer
 
       var lastMoveTime = 0, lastMoveX = 0, lastMoveY = 0
       var accumulatedDeltaX = 0, accumulatedDeltaY = 0
-      var moveSendTimer = null, idleTimer = null
       var sequenceId = 0
       var accumulatedWheelDeltaY = 0, accumulatedWheelDeltaX = 0
       var lastWheelRatioX = 0.5, lastWheelRatioY = 0.5
-      var wheelSendTimer = null
       var isMouseDownOnVideo = false
+
+      this._timers = { moveSendTimer: null, idleTimer: null, wheelSendTimer: null }
+      var timers = this._timers
 
       function getMt() { return typeof getMatrixTransformer === 'function' ? getMatrixTransformer() : getMatrixTransformer }
       function getCm() { return typeof getConnectionManager === 'function' ? getConnectionManager() : getConnectionManager }
@@ -32,7 +69,11 @@
           dy: Math.round(accumulatedDeltaY),
           sequenceId: sequenceId++
         })
-        cm.sendInput(inputCommand)
+        var result = cm.sendInput(inputCommand)
+        if (!result || !result.sent) {
+          // 输入命令无法发送，保留累积值等待下次尝试
+          return
+        }
         accumulatedDeltaX = 0
         accumulatedDeltaY = 0
         lastMoveTime = Date.now()
@@ -47,145 +88,166 @@
           accumulatedDeltaX: accumulatedWheelDeltaX,
           x: lastWheelRatioX, y: lastWheelRatioY
         })
-        cm.sendInput(inputCommand)
+        var result = cm.sendInput(inputCommand)
+        if (!result || !result.sent) return
         accumulatedWheelDeltaY = 0
         accumulatedWheelDeltaX = 0
       }
 
-      videoWrapper.addEventListener('mousedown', function (e) {
-        if (e.button === 1) return
-        window.UIState && window.UIState.showClickIndicator(e.clientX, e.clientY)
-        flushMouseDelta()
-        flushWheelAccumulated()
+      this._handlers = {
+        mousedown: function (e) {
+          if (e.button === 1) return
+          window.UIState && window.UIState.showClickIndicator(e.clientX, e.clientY)
+          flushMouseDelta()
+          flushWheelAccumulated()
 
-        var mt = getMt()
-        if (!mt) return
+          var mt = getMt()
+          if (!mt) return
 
-        var containerRect = videoContainer.getBoundingClientRect()
-        var localX = e.clientX - containerRect.left
-        var localY = e.clientY - containerRect.top
+          var containerRect = videoContainer.getBoundingClientRect()
+          var localX = e.clientX - containerRect.left
+          var localY = e.clientY - containerRect.top
 
-        if (localX >= 0 && localX <= containerRect.width &&
-            localY >= 0 && localY <= containerRect.height) {
-          var ratioX = localX / containerRect.width
-          var ratioY = localY / containerRect.height
-          isMouseDownOnVideo = true
+          if (localX >= 0 && localX <= containerRect.width &&
+              localY >= 0 && localY <= containerRect.height) {
+            var ratioX = localX / containerRect.width
+            var ratioY = localY / containerRect.height
+            isMouseDownOnVideo = true
+            lastMoveX = ratioX
+            lastMoveY = ratioY
+
+            var cm = getCm()
+            if (!cm) return
+            var inputCommand = window.createInputCommand(window.INPUT_TYPES.MOUSE_DOWN, {
+              button: e.button,
+              x: Math.max(0, Math.min(1, ratioX)),
+              y: Math.max(0, Math.min(1, ratioY))
+            })
+            cm.sendInput(inputCommand)
+          }
+        },
+
+        mousemove: function (e) {
+          if (window.isDragging) return
+          var mt = getMt()
+          if (!mt) return
+
+          if (timers.idleTimer) { clearTimeout(timers.idleTimer); timers.idleTimer = null }
+
+          var containerRect = videoContainer.getBoundingClientRect()
+          var ratioX = (e.clientX - containerRect.left) / containerRect.width
+          var ratioY = (e.clientY - containerRect.top) / containerRect.height
+
+          var remoteDeltaX = (ratioX - lastMoveX) * mt.remoteScreenWidth
+          var remoteDeltaY = (ratioY - lastMoveY) * mt.remoteScreenHeight
+
+          accumulatedDeltaX += remoteDeltaX
+          accumulatedDeltaY += remoteDeltaY
+
+          var now = Date.now()
+          var timeSinceLastMove = now - lastMoveTime
+          var distance = Math.sqrt(remoteDeltaX * remoteDeltaX + remoteDeltaY * remoteDeltaY)
+
           lastMoveX = ratioX
           lastMoveY = ratioY
 
+          if (timeSinceLastMove >= MOUSE_MOVE_CONFIG.MIN_INTERVAL_MS &&
+              distance >= MOUSE_MOVE_CONFIG.MIN_DISTANCE_PX) {
+            flushMouseDelta()
+          }
+
+          if (!timers.moveSendTimer) {
+            timers.moveSendTimer = setInterval(function () {
+              if (accumulatedDeltaX !== 0 || accumulatedDeltaY !== 0) flushMouseDelta()
+            }, MOUSE_MOVE_CONFIG.MIN_INTERVAL_MS)
+          }
+
+          timers.idleTimer = setTimeout(function () {
+            if (accumulatedDeltaX !== 0 || accumulatedDeltaY !== 0) flushMouseDelta()
+            if (timers.moveSendTimer) { clearInterval(timers.moveSendTimer); timers.moveSendTimer = null }
+            timers.idleTimer = null
+          }, MOUSE_MOVE_CONFIG.IDLE_TIMEOUT_MS)
+        },
+
+        mouseup: function (e) {
+          if (e.button === 1) return
+          flushMouseDelta()
+          flushWheelAccumulated()
+          if (!isMouseDownOnVideo || !getMt()) return
+          isMouseDownOnVideo = false
+
+          var containerRect = videoContainer.getBoundingClientRect()
+          var localX = Math.max(0, Math.min(containerRect.width, e.clientX - containerRect.left))
+          var localY = Math.max(0, Math.min(containerRect.height, e.clientY - containerRect.top))
+          var ratioX = localX / containerRect.width
+          var ratioY = localY / containerRect.height
+
           var cm = getCm()
           if (!cm) return
-          var inputCommand = window.createInputCommand(window.INPUT_TYPES.MOUSE_DOWN, {
-            button: e.button,
-            x: Math.max(0, Math.min(1, ratioX)),
-            y: Math.max(0, Math.min(1, ratioY))
+          var inputCommand = window.createInputCommand(window.INPUT_TYPES.MOUSE_UP, {
+            button: e.button, x: ratioX, y: ratioY
           })
           cm.sendInput(inputCommand)
-        }
-      })
+        },
 
-      videoWrapper.addEventListener('mousemove', function (e) {
-        if (window.isDragging) return
-        var mt = getMt()
-        if (!mt) return
+        wheel: function (e) {
+          if (e.ctrlKey || e.metaKey) { e.preventDefault(); return }
+          e.preventDefault()
+          var mt = getMt()
+          if (!mt) return
 
-        if (idleTimer) { clearTimeout(idleTimer); idleTimer = null }
+          var containerRect = videoContainer.getBoundingClientRect()
+          var ratioX = (e.clientX - containerRect.left) / containerRect.width
+          var ratioY = (e.clientY - containerRect.top) / containerRect.height
 
-        var containerRect = videoContainer.getBoundingClientRect()
-        var ratioX = (e.clientX - containerRect.left) / containerRect.width
-        var ratioY = (e.clientY - containerRect.top) / containerRect.height
+          accumulatedWheelDeltaY += e.deltaY
+          accumulatedWheelDeltaX += e.deltaX || 0
+          lastWheelRatioX = ratioX
+          lastWheelRatioY = ratioY
 
-        var remoteDeltaX = (ratioX - lastMoveX) * mt.remoteScreenWidth
-        var remoteDeltaY = (ratioY - lastMoveY) * mt.remoteScreenHeight
+          if (timers.wheelSendTimer) clearTimeout(timers.wheelSendTimer)
+          timers.wheelSendTimer = setTimeout(function () {
+            if (accumulatedWheelDeltaY !== 0 || accumulatedWheelDeltaX !== 0) {
+              var cm = getCm()
+              if (!cm) return
+              var inputCommand = window.createInputCommand(window.INPUT_TYPES.MOUSE_WHEEL_BATCH, {
+                accumulatedDeltaY: accumulatedWheelDeltaY,
+                accumulatedDeltaX: accumulatedWheelDeltaX,
+                x: ratioX, y: ratioY
+              })
+              cm.sendInput(inputCommand)
+              accumulatedWheelDeltaY = 0
+              accumulatedWheelDeltaX = 0
+            }
+            timers.wheelSendTimer = null
+          }, WHEEL_BATCH_INTERVAL_MS)
+        },
 
-        accumulatedDeltaX += remoteDeltaX
-        accumulatedDeltaY += remoteDeltaY
-
-        var now = Date.now()
-        var timeSinceLastMove = now - lastMoveTime
-        var distance = Math.sqrt(remoteDeltaX * remoteDeltaX + remoteDeltaY * remoteDeltaY)
-
-        lastMoveX = ratioX
-        lastMoveY = ratioY
-
-        if (timeSinceLastMove >= MOUSE_MOVE_CONFIG.MIN_INTERVAL_MS &&
-            distance >= MOUSE_MOVE_CONFIG.MIN_DISTANCE_PX) {
+        mouseleave: function () {
+          isMouseDownOnVideo = false
+          if (timers.moveSendTimer) { clearInterval(timers.moveSendTimer); timers.moveSendTimer = null }
+          if (timers.idleTimer) { clearTimeout(timers.idleTimer); timers.idleTimer = null }
           flushMouseDelta()
-        }
+        },
 
-        if (!moveSendTimer) {
-          moveSendTimer = setInterval(function () {
-            if (accumulatedDeltaX !== 0 || accumulatedDeltaY !== 0) flushMouseDelta()
-          }, MOUSE_MOVE_CONFIG.MIN_INTERVAL_MS)
-        }
+        contextmenu: function (e) { e.preventDefault() },
 
-        idleTimer = setTimeout(function () {
-          if (accumulatedDeltaX !== 0 || accumulatedDeltaY !== 0) flushMouseDelta()
-          if (moveSendTimer) { clearInterval(moveSendTimer); moveSendTimer = null }
-          idleTimer = null
-        }, MOUSE_MOVE_CONFIG.IDLE_TIMEOUT_MS)
-      })
-
-      videoWrapper.addEventListener('mouseup', function (e) {
-        if (e.button === 1) return
-        flushMouseDelta()
-        flushWheelAccumulated()
-        if (!isMouseDownOnVideo || !getMt()) return
-        isMouseDownOnVideo = false
-
-        var containerRect = videoContainer.getBoundingClientRect()
-        var localX = Math.max(0, Math.min(containerRect.width, e.clientX - containerRect.left))
-        var localY = Math.max(0, Math.min(containerRect.height, e.clientY - containerRect.top))
-        var ratioX = localX / containerRect.width
-        var ratioY = localY / containerRect.height
-
-        var cm = getCm()
-        if (!cm) return
-        var inputCommand = window.createInputCommand(window.INPUT_TYPES.MOUSE_UP, {
-          button: e.button, x: ratioX, y: ratioY
-        })
-        cm.sendInput(inputCommand)
-      })
-
-      videoWrapper.addEventListener('wheel', function (e) {
-        if (e.ctrlKey || e.metaKey) { e.preventDefault(); return }
-        e.preventDefault()
-        var mt = getMt()
-        if (!mt) return
-
-        var containerRect = videoContainer.getBoundingClientRect()
-        var ratioX = (e.clientX - containerRect.left) / containerRect.width
-        var ratioY = (e.clientY - containerRect.top) / containerRect.height
-
-        accumulatedWheelDeltaY += e.deltaY
-        accumulatedWheelDeltaX += e.deltaX || 0
-        lastWheelRatioX = ratioX
-        lastWheelRatioY = ratioY
-
-        if (wheelSendTimer) clearTimeout(wheelSendTimer)
-        wheelSendTimer = setTimeout(function () {
-          if (accumulatedWheelDeltaY !== 0 || accumulatedWheelDeltaX !== 0) {
-            var cm = getCm()
-            if (!cm) return
-            var inputCommand = window.createInputCommand(window.INPUT_TYPES.MOUSE_WHEEL_BATCH, {
-              accumulatedDeltaY: accumulatedWheelDeltaY,
-              accumulatedDeltaX: accumulatedWheelDeltaX,
-              x: ratioX, y: ratioY
-            })
-            cm.sendInput(inputCommand)
-            accumulatedWheelDeltaY = 0
-            accumulatedWheelDeltaX = 0
+        visibility: function () {
+          if (document.hidden) {
+            if (timers.moveSendTimer) { clearInterval(timers.moveSendTimer); timers.moveSendTimer = null }
+            if (timers.idleTimer) { clearTimeout(timers.idleTimer); timers.idleTimer = null }
           }
-          wheelSendTimer = null
-        }, WHEEL_BATCH_INTERVAL_MS)
-      }, { passive: false })
+        }
+      }
 
-      videoWrapper.addEventListener('mouseleave', function () {
-        isMouseDownOnVideo = false
-        if (moveSendTimer) { clearInterval(moveSendTimer); moveSendTimer = null }
-        flushMouseDelta()
-      })
-      videoWrapper.addEventListener('contextmenu', function (e) { e.preventDefault() })
+      // 注册事件监听器
+      videoWrapper.addEventListener('mousedown', this._handlers.mousedown)
+      videoWrapper.addEventListener('mousemove', this._handlers.mousemove)
+      videoWrapper.addEventListener('mouseup', this._handlers.mouseup)
+      videoWrapper.addEventListener('wheel', this._handlers.wheel, { passive: false })
+      videoWrapper.addEventListener('mouseleave', this._handlers.mouseleave)
+      videoWrapper.addEventListener('contextmenu', this._handlers.contextmenu)
+      document.addEventListener('visibilitychange', this._handlers.visibility)
     }
   }
 })()

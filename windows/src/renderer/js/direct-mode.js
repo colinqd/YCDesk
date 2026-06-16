@@ -18,6 +18,17 @@ class DirectModeManager {
     this.useOptimizedTransfer = options.useOptimizedTransfer !== false
     this.OPTIMIZED_VIDEO_CHANNEL = 'optimized-video'
     this.optimizedVideoChannel = null
+    this._fileTransferChunkSize = 16 * 1024
+    this._activeFileTransfer = null
+  }
+
+  _diagLog(message) {
+    try {
+      const fs = require('fs')
+      const dir = 'C:\\ProgramData\\YCDesk'
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+      fs.appendFileSync(dir + '\\diag_webrtc.log', '[' + new Date().toISOString() + '] ' + message + '\n', 'utf8')
+    } catch (e) {}
   }
 
   setDeviceId(deviceId) {
@@ -222,6 +233,7 @@ class DirectModeManager {
 
     this.dataChannelManager.setOnMessage((data) => {
       if (data.type === 'input' || data.inputType) {
+        this._diagLog('DataChannelManager收到: type=' + data.type + ' inputType=' + data.inputType + (data.inputType === 'text_input' ? ' text=' + (data.text || '').substring(0, 30) : ''))
         this.logFn('收到输入，转发到主进程: ' + JSON.stringify(data))
         window.electronAPI.send('remote-input', data)
       } else if (data.type === 'ping') {
@@ -293,10 +305,12 @@ class DirectModeManager {
           try {
             const data = JSON.parse(e.data)
             if (data.type === 'input' || data.inputType) {
+              this._diagLog('input通道收到: type=' + data.type + ' inputType=' + data.inputType + (data.inputType === 'text_input' ? ' text=' + (data.text || '').substring(0, 30) : ''))
               this.logFn('input通道收到输入: type=' + data.inputType + ' inputType=' + data.inputType)
               window.electronAPI.send('remote-input', data)
             }
           } catch (err) {
+            this._diagLog('input通道解析失败: ' + err.message)
             this.logFn('input通道消息解析失败: ' + err.message)
           }
         }
@@ -784,7 +798,112 @@ class DirectModeManager {
           this.logFn('读取剪贴板失败: ' + err.message)
         })
       }
+    } else if (channelType === 'file-transfer') {
+      this._handleFileTransferMessage(data)
     }
+  }
+
+  _handleFileTransferMessage(data) {
+    if (!data || !data.action) return
+
+    switch (data.action) {
+      case 'file-request':
+        this._handleFileRequest()
+        break
+      case 'file-accept':
+        this._handleFileAccept(data)
+        break
+      case 'file-reject':
+        this._activeFileTransfer = null
+        break
+    }
+  }
+
+  async _handleFileRequest() {
+    try {
+      const result = await window.electronAPI.fileTransferSelectFiles()
+      if (result.canceled || !result.files || result.files.length === 0) return
+
+      const file = result.files[0]
+      const fileInfo = {
+        id: 'ft_' + Date.now(),
+        name: file.name,
+        path: file.path,
+        size: file.size,
+        totalChunks: Math.ceil(file.size / this._fileTransferChunkSize)
+      }
+      this._activeFileTransfer = fileInfo
+
+      const channel = this.auxiliaryChannels.get('file-transfer')
+      if (!channel || channel.readyState !== 'open') {
+        this.logFn('文件传输通道不可用')
+        return
+      }
+
+      channel.send(JSON.stringify({
+        action: 'file-offer',
+        fileId: fileInfo.id,
+        fileName: fileInfo.name,
+        fileSize: fileInfo.size,
+        totalChunks: fileInfo.totalChunks,
+        chunkSize: this._fileTransferChunkSize
+      }))
+
+      this.logFn('已发送文件传输请求: ' + fileInfo.name)
+    } catch (e) {
+      this.logFn('文件选择失败: ' + e.message)
+    }
+  }
+
+  _handleFileAccept(data) {
+    if (!this._activeFileTransfer || this._activeFileTransfer.id !== data.fileId) return
+    this._sendFileChunks(this._activeFileTransfer, 0)
+  }
+
+  async _sendFileChunks(file, startChunk) {
+    var self = this
+    var chunkIndex = startChunk || 0
+    var totalChunks = file.totalChunks
+    var CHUNK_SIZE = this._fileTransferChunkSize
+
+    const channel = this.auxiliaryChannels.get('file-transfer')
+
+    async function sendNext() {
+      if (chunkIndex >= totalChunks) {
+        if (channel && channel.readyState === 'open') {
+          channel.send(JSON.stringify({
+            action: 'file-complete',
+            fileId: file.id,
+            totalChunks: totalChunks
+          }))
+        }
+        self._activeFileTransfer = null
+        return
+      }
+
+      var offset = chunkIndex * CHUNK_SIZE
+      var size = Math.min(CHUNK_SIZE, file.size - offset)
+
+      try {
+        var result = await window.electronAPI.fileTransferReadChunk(file.path, offset, size)
+        if (channel && channel.readyState === 'open') {
+          channel.send(JSON.stringify({
+            action: 'file-chunk',
+            fileId: file.id,
+            chunkIndex: chunkIndex,
+            data: result.data,
+            bytesRead: result.bytesRead
+          }))
+        }
+        chunkIndex++
+        setTimeout(sendNext, 0)
+      } catch (e) {
+        self.logFn('文件读取失败: ' + e.message)
+        self._activeFileTransfer = null
+      }
+    }
+
+    sendNext()
   }
   
   setupInputEventListeners() {

@@ -26,6 +26,9 @@ class BaseConnectionManager {
         this.connectionTimeout = 30000
         this.resolutionTimeout = 15000
         this.firstFrameTimeout = 15000
+        this._channelHealthTimer = null
+        this._lastPongTime = 0
+        this.turnServers = options.turnServers || []
     }
 
     log(message) {
@@ -145,7 +148,7 @@ class BaseConnectionManager {
         this.log('创建 PeerConnection')
         
         this.peerConnection = new RTCPeerConnection({
-            iceServers: this.iceServers
+            iceServers: [...this.iceServers, ...this.turnServers]
         })
         
         this.peerConnection.onicecandidate = (event) => {
@@ -164,6 +167,10 @@ class BaseConnectionManager {
         this.peerConnection.oniceconnectionstatechange = () => {
             this.log('ICE连接状态: ' + this.peerConnection.iceConnectionState)
             this.emit('ice-state-change', this.peerConnection.iceConnectionState)
+        }
+        
+        this.peerConnection.onicecandidateerror = (event) => {
+            this.log('ICE candidate 收集失败: ' + (event.errorText || 'unknown') + ' (url=' + event.url + ', port=' + event.port + ')')
         }
         
         this.peerConnection.onconnectionstatechange = () => {
@@ -220,7 +227,7 @@ class BaseConnectionManager {
         
         const controlChannel = this.peerConnection.createDataChannel('control', {
             ordered: true,
-            maxRetransmits: 3
+            maxPacketLifeTime: 5000
         })
         
         this.dataChannelManager.setDataChannel(controlChannel)
@@ -316,8 +323,10 @@ class BaseConnectionManager {
                 reject(new Error('数据通道打开超时'))
             }, this.connectionTimeout)
             
+            const prevOnOpen = this.dataChannelManager.callbacks.onOpen
             this.dataChannelManager.setOnOpen(() => {
                 clearTimeout(timeout)
+                if (prevOnOpen) prevOnOpen()
                 resolve()
             })
         })
@@ -479,7 +488,6 @@ class BaseConnectionManager {
             // 确保视频元素可见（除 display:none 外，还受 placeholder 影响）
             this.videoElement.style.display = 'block'
 
-            // 隐藏 placeholder
             var placeholder = document.getElementById('placeholder')
             if (placeholder) placeholder.style.display = 'none'
 
@@ -638,26 +646,28 @@ class BaseConnectionManager {
     }
 
     sendInput(inputCommand) {
-        const message = JSON.stringify(inputCommand)
-        
-        if (this.inputChannel && this.inputChannelReady && this.inputChannel.readyState === 'open') {
-            if (this.inputChannel.bufferedAmount < 65536) {
-                this.inputChannel.send(message)
-                this.log('DIAG sendInput: 通过inputChannel发送, inputType=' + inputCommand.inputType + ', size=' + message.length)
-                return
-            } else {
-                this.log('DIAG sendInput: inputChannel缓冲已满(' + this.inputChannel.bufferedAmount + '), 回退到dataChannelManager')
+        try {
+            if (this.inputChannel && this.inputChannelReady && this.inputChannel.readyState === 'open') {
+                if (this.inputChannel.bufferedAmount < 65536) {
+                    const message = JSON.stringify(inputCommand)
+                    this.inputChannel.send(message)
+                    return { sent: true, via: 'inputChannel' }
+                }
             }
-        } else {
-            this.log('DIAG sendInput: inputChannel未就绪(inputChannel=' + !!this.inputChannel + ', ready=' + this.inputChannelReady + ', readyState=' + (this.inputChannel ? this.inputChannel.readyState : 'null') + '), 尝试dataChannelManager')
+        } catch (e) {
+            this.log('sendInput via inputChannel failed: ' + e.message)
         }
         
         if (this.dataChannelManager && this.dataChannelManager.isOpen()) {
-            this.dataChannelManager.send(inputCommand, false)
-            this.log('DIAG sendInput: 通过dataChannelManager发送, inputType=' + inputCommand.inputType)
-        } else {
-            this.log('DIAG sendInput: dataChannelManager也未就绪, 输入丢失!')
+            try {
+                this.dataChannelManager.send(inputCommand, false)
+                return { sent: true, via: 'controlChannel' }
+            } catch (e) {
+                this.log('sendInput via dataChannel failed: ' + e.message)
+            }
         }
+        
+        return { sent: false, via: null }
     }
     
     handleInputChannelMessage(data) {
@@ -688,10 +698,46 @@ class BaseConnectionManager {
         }
     }
 
+    startChannelHealthCheck() {
+        this.stopChannelHealthCheck()
+        this._lastPongTime = Date.now()
+        const PING_INTERVAL = 5000
+        const PONG_TIMEOUT = 15000
+
+        this._channelHealthTimer = setInterval(() => {
+            if (!this.dataChannelManager || !this.dataChannelManager.isOpen()) {
+                return
+            }
+
+            const elapsed = Date.now() - (this._lastPongTime || 0)
+            if (elapsed > PONG_TIMEOUT) {
+                this.log('数据通道心跳超时（' + elapsed + 'ms），可能需要恢复...')
+                this.emit('channel-health-timeout', { elapsed: elapsed })
+                return
+            }
+
+            try {
+                this.dataChannelManager.send({ type: 'ping', timestamp: Date.now() })
+            } catch (e) {
+                this.log('心跳ping发送失败: ' + e.message)
+            }
+        }, PING_INTERVAL)
+
+        this.log('数据通道心跳监测已启动')
+    }
+
+    stopChannelHealthCheck() {
+        if (this._channelHealthTimer) {
+            clearInterval(this._channelHealthTimer)
+            this._channelHealthTimer = null
+        }
+    }
+
     async disconnect() {
         this.stateMachine.transition(ConnectionState.DISCONNECTING)
         
         this.stopLatencyCheck()
+        this.stopChannelHealthCheck()
         
         this.auxiliaryChannels.forEach((channel, name) => {
             try {
@@ -714,10 +760,16 @@ class BaseConnectionManager {
 
         if (this.dataChannelManager) {
             this.dataChannelManager.close()
+            this.dataChannelManager = null
         }
         
         if (this.peerConnection) {
             this.peerConnection.close()
+            this.peerConnection = null
+        }
+
+        if (this.videoElement) {
+            this.videoElement.srcObject = null
         }
         
         this.stateMachine.transition(ConnectionState.IDLE)

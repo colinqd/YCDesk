@@ -18,6 +18,7 @@ const s = {
   dataChannel: null,
   inputChannel: null,
   inputChannelReady: false,
+  fileTransferChannel: null,
   connectionLogDiv: null,
   currentRole: null,
   isConnected: false,

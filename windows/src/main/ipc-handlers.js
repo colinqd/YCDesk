@@ -42,6 +42,8 @@ const ipcElevation = require('./ipc/ipc-elevation')
 const ipcDeviceList = require('./ipc/ipc-device-list')
 const ipcAutoUnlock = require('./ipc/ipc-auto-unlock')
 const ipcController = require('./ipc/ipc-controller')
+const ipcClipboard = require('./ipc/ipc-clipboard')
+const ipcFileTransfer = require('./ipc/ipc-file-transfer')
 
 let deviceId = null
 let logger = null
@@ -106,6 +108,27 @@ function init(deviceIdParam, loggerParam) {
 
   ipcController.register(safeIpcHandler, log, logger)
 
+  ipcClipboard.register(safeIpcHandler, log)
+
+  ipcFileTransfer.register(safeIpcHandler, log)
+
+  // Watchdog 状态更新（渲染进程汇报连接状态）
+  const { ipcMain } = require('electron')
+  safeIpcHandler(ipcMain, 'watchdog-status-response', (event, status) => {
+    if (status && typeof status === 'object') {
+      const cache = global.connectionHealthCache
+      if (cache) {
+        // OR 合并：任一窗口连接健康即视为健康
+        cache.connected = cache.connected || !!status.connected
+        cache.dataChannelOpen = cache.dataChannelOpen || !!status.dataChannelOpen
+        cache.disconnected = cache.disconnected && !!status.disconnected
+        cache.connectionState = status.connectionState || cache.connectionState
+        cache.lastUpdated = Date.now()
+        log('debug', 'Watchdog 状态缓存已更新', status)
+      }
+    }
+  })
+
   const deviceListManager = getDeviceListManager({ log })
   ipcDeviceList.register(safeIpcHandler, deviceListManager)
 }
@@ -137,5 +160,6 @@ module.exports = {
   init,
   generateDeviceId: ipcDevice.generateDeviceId,
   loadDeviceId: ipcDevice.loadDeviceId,
+  notifyAllWindows,
   cleanup
 }

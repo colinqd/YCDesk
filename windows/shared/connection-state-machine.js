@@ -23,7 +23,7 @@ const StateTransitions = {
     'resolution-negotiating': ['waiting-video', 'error'],
     'waiting-video': ['displaying-first-frame', 'error'],
     'displaying-first-frame': ['loading-auxiliary', 'connected'],
-    'loading-auxiliary': ['connected'],
+    'loading-auxiliary': ['connected', 'error'],
     'connected': ['reconnecting', 'disconnecting', 'error'],
     'reconnecting': ['connecting', 'error'],
     'disconnecting': ['idle'],
@@ -138,8 +138,8 @@ class ConnectionStateMachine {
     }
 
     reset() {
-        this.forceTransition(ConnectionState.IDLE)
         this.stateData = {}
+        this.forceTransition(ConnectionState.IDLE)
     }
 
     toJSON() {

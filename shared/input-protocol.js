@@ -120,7 +120,7 @@ function normalizeCoordinate(value, maxValue = 65535) {
     return value
   }
   if (maxValue > 0) {
-    return value / maxValue
+    return Math.max(0, Math.min(1, value / maxValue))
   }
   return value
 }
@@ -287,6 +287,22 @@ function isDeltaInputType(inputType) {
 
 function isBatchInputType(inputType) {
   return inputType === INPUT_TYPES.MOUSE_WHEEL_BATCH
+}
+
+export {
+  INPUT_TYPES,
+  MOUSE_BUTTONS,
+  THROTTLE_CONFIG,
+  createInputCommand,
+  parseInputCommand,
+  validateInputCommand,
+  normalizeCoordinate,
+  normalizeButton,
+  getKeyFromCode,
+  isModifierKey,
+  isDeltaInputType,
+  isBatchInputType,
+  KEY_CODE_MAP
 }
 
 if (typeof module !== 'undefined' && module.exports) {

@@ -32,10 +32,33 @@
   }
 
   window.KeyboardHandler = {
+    _keydownHandler: null,
+    _keyupHandler: null,
+    _element: null,
+
+    /** 销毁旧的键盘监听 */
+    destroy: function () {
+      if (this._element) {
+        if (this._keydownHandler) {
+          this._element.removeEventListener('keydown', this._keydownHandler)
+          this._keydownHandler = null
+        }
+        if (this._keyupHandler) {
+          this._element.removeEventListener('keyup', this._keyupHandler)
+          this._keyupHandler = null
+        }
+        this._element = null
+      }
+    },
+
     setup: function (element, getConnectionManager) {
       if (!element) return
 
-      element.addEventListener('keydown', function (e) {
+      // 先清理旧的监听器，防止重复绑定
+      this.destroy()
+      this._element = element
+
+      this._keydownHandler = function (e) {
         if (isBlocked(e)) { e.preventDefault(); return }
         if (isLocalOnly(e)) { e.preventDefault(); return }
 
@@ -54,9 +77,11 @@
           metaKey: e.metaKey
         })
         cm.sendInput(inputCommand)
-      })
+      }
 
-      element.addEventListener('keyup', function (e) {
+      element.addEventListener('keydown', this._keydownHandler)
+
+      this._keyupHandler = function (e) {
         if (isBlocked(e)) { e.preventDefault(); return }
         if (isLocalOnly(e)) { e.preventDefault(); return }
 
@@ -75,7 +100,9 @@
           metaKey: e.metaKey
         })
         cm.sendInput(inputCommand)
-      })
+      }
+
+      element.addEventListener('keyup', this._keyupHandler)
     }
   }
 })()

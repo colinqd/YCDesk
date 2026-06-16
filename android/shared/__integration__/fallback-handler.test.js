@@ -73,9 +73,9 @@ describe('FallbackHandler 降级处理', () => {
 
   // ---------- 4. 自动重试调度 ----------
   it('可重试的通道故障应调度自动重试', async () => {
-    // 模拟辅助通道管理器
     const mockManager = {
       on: vi.fn(),
+      off: vi.fn(),
       loadChannel: vi.fn().mockRejectedValue(new Error('重试失败'))
     }
     handler.setAuxiliaryChannelManager(mockManager)
@@ -91,6 +91,7 @@ describe('FallbackHandler 降级处理', () => {
   it('重试成功后应清除降级状态和通知', async () => {
     const mockManager = {
       on: vi.fn(),
+      off: vi.fn(),
       loadChannel: vi.fn().mockResolvedValue()
     }
     handler.setAuxiliaryChannelManager(mockManager)

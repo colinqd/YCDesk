@@ -1371,27 +1371,6 @@
       box-shadow: 0 0 0 2px rgba(74, 144, 217, 0.2);
     }
 
-    .kb-send-btn {
-      flex-shrink: 0;
-      height: 36px;
-      padding: 0 16px;
-      border: none;
-      border-radius: 6px;
-      background: #4a90d9;
-      color: #fff;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      white-space: nowrap;
-      -webkit-tap-highlight-color: transparent;
-      touch-action: manipulation;
-    }
-
-    .kb-send-btn:active {
-      background: #357abd;
-      transform: scale(0.96);
-    }
-
     .kb-close-btn {
       flex-shrink: 0;
       width: 28px;
@@ -1665,7 +1644,7 @@
     </div>
 
     <div class="footer">
-      YCDesk v1.0.0 Android | 仅作为控制端使用
+      YCDesk v0.1.0 Android | 仅作为控制端使用
     </div>
   </div>
 
@@ -1703,6 +1682,7 @@
         <button class="control-btn" id="mouseModeBtn" onclick="toggleMouseMode()" title="鼠标模式">🖱️</button>
         <button class="control-btn" onclick="toggleKeyboard()" title="虚拟键盘">⌨️</button>
         <button class="control-btn" id="controlSysKbBtn" onclick="toggleSystemKeyboard()" title="系统输入法">🔤</button>
+        <button class="control-btn" id="fileTransferBtn" title="文件传输">📁</button>
         <div class="control-separator"></div>
         <button class="control-btn" onclick="requestLock()" title="锁屏">🔒</button>
         <button class="control-btn" onclick="toggleFullscreen()" title="全屏">⛶</button>
@@ -1827,8 +1807,7 @@
     <div class="kb-input-row">
       <div class="kb-drag-handle" id="kbDragHandle" title="拖动移动">⋮⋮</div>
       <button class="kb-toggle-btn" id="kbToggleSpecialKeys" onclick="toggleSpecialKeys()" title="展开功能键">▾</button>
-      <input id="hiddenTextInput" class="kb-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="send" placeholder="在此输入文字...">
-      <button id="kbSendBtn" class="kb-send-btn">发送</button>
+      <input id="hiddenTextInput" class="kb-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="enter" placeholder="在此输入文字...">
       <button id="kbCloseBtn" class="kb-close-btn" onclick="toggleSystemKeyboard()" title="关闭系统键盘">✕</button>
     </div>
     <div class="kb-special-row" id="kbSpecialKeysRow">
@@ -1842,6 +1821,8 @@
       <button class="kb-special-key" onclick="sendKey('Delete')">DEL</button>
       <button class="kb-special-key" onclick="sendKey('Home')">Hm</button>
       <button class="kb-special-key" onclick="sendKey('End')">End</button>
+      <button class="kb-special-key" onclick="sendKey('Enter')">↵</button>
+      <button class="kb-special-key" onclick="window.sendSystemNewline()">⇧↵</button>
     </div>
   </div>
 

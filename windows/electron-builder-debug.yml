@@ -1,10 +1,13 @@
 appId: com.ycdesk.desktop.debug
 productName: YCDesk (Debug)
 asar: false
-compression: store
+compression: maximum
 npmRebuild: false
 directories:
   output: dist-debug
+electronLanguages:
+  - zh-CN
+  - en-US
 files:
   - "**/*"
   - "!**/*.md"
@@ -18,10 +21,19 @@ files:
   - "!nodemon.json"
   - "!watch-build.js"
   - "!sync-shared.js"
+  - "!convert-icon.js"
+  - "!LICENSES.chromium.html"
   - "!node_modules/*/{test,__tests__,tests,powered-test,example,examples}"
   - "!node_modules/.bin"
   - "!service/build/**"
+extraResources:
+  - from: "assets/"
+    to: "assets/"
+    filter:
+      - "icon.png"
+      - "icon.ico"
 win:
+  icon: assets/icon.ico
   target:
     - target: dir
       arch:

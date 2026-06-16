@@ -24,7 +24,10 @@ function onAddServerClick() {
   }
 }
 
+let _addingServer = false
+
 async function addSignalingServer() {
+  if (_addingServer) return
   if (!historyManager) { console.error('historyManager 未初始化'); return }
   const nameInput = document.getElementById('newServerName')
   const urlInput = document.getElementById('newServerUrl')
@@ -36,11 +39,16 @@ async function addSignalingServer() {
   if (!name) { alert('请输入服务器名称'); return }
   if (!url) { alert('请输入服务器地址'); return }
 
-  await historyManager.addServer(name, url)
-  nameInput.value = ''
-  urlInput.value = ''
-  renderServerList()
-  log('信令服务器已添加: ' + name)
+  _addingServer = true
+  try {
+    await historyManager.addServer(name, url)
+    nameInput.value = ''
+    urlInput.value = ''
+    renderServerList()
+    log('信令服务器已添加: ' + name)
+  } finally {
+    _addingServer = false
+  }
 }
 
 async function updateSignalingServer(index) {
@@ -166,7 +174,10 @@ function onAddServerClickControlled() {
   }
 }
 
+let _addingServerControlled = false
+
 async function addSignalingServerControlled() {
+  if (_addingServerControlled) return
   if (!historyManager) { console.error('historyManager 未初始化'); return }
   const nameInput = document.getElementById('controlledNewServerName')
   const urlInput = document.getElementById('controlledNewServerUrl')
@@ -178,11 +189,16 @@ async function addSignalingServerControlled() {
   if (!name) { alert('请输入服务器名称'); return }
   if (!url) { alert('请输入服务器地址'); return }
 
-  await historyManager.addServer(name, url)
-  nameInput.value = ''
-  urlInput.value = ''
-  renderServerListControlled()
-  log('信令服务器已添加: ' + name)
+  _addingServerControlled = true
+  try {
+    await historyManager.addServer(name, url)
+    nameInput.value = ''
+    urlInput.value = ''
+    renderServerListControlled()
+    log('信令服务器已添加: ' + name)
+  } finally {
+    _addingServerControlled = false
+  }
 }
 
 async function updateSignalingServerControlled(index) {

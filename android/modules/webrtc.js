@@ -126,6 +126,9 @@ function setupOnDataChannelHandler(peerConnection) {
     } else if (event.channel.label === 'input') {
       s.inputChannel = event.channel
       setupInputChannelHandler(s.inputChannel)
+    } else if (event.channel.label === 'aux-file-transfer') {
+      s.fileTransferChannel = event.channel
+      setupFileTransferChannel(event.channel)
     }
   }
 }
@@ -944,6 +947,31 @@ async function handleIceCandidate(data) {
   }
 }
 
+function setupFileTransferChannel(channel) {
+  const log = typeof window.log === 'function' ? window.log : console.log
+  channel.onopen = () => {
+    log('文件传输通道已打开')
+    s.fileTransferChannel = channel
+    if (typeof window.FileTransferManager !== 'undefined' && window.FileTransferManager) {
+      window.FileTransferManager.onChannelReady(channel)
+    }
+  }
+  channel.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data)
+      if (typeof window.FileTransferManager !== 'undefined' && window.FileTransferManager) {
+        window.FileTransferManager.handleIncoming(data)
+      }
+    } catch (e) {
+      log('文件传输消息解析失败: ' + e.message)
+    }
+  }
+  channel.onclose = () => {
+    log('文件传输通道已关闭')
+    s.fileTransferChannel = null
+  }
+}
+
 export {
   getIceConfig,
   startDirectControllerConnection,
@@ -963,5 +991,6 @@ export {
   handleAnswer,
   addPendingIceCandidates,
   handleIceCandidate,
-  addDirectPendingIceCandidates
+  addDirectPendingIceCandidates,
+  setupFileTransferChannel
 }

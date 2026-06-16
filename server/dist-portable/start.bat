@@ -1,9 +1,9 @@
 @echo off
 chcp 65001 >nul
-title YCDesk 信令服务器 v3.3.0
+title YCDesk 信令服务器 v0.1.0
 
 echo ============================================
-echo   YCDesk 信令服务器 v3.3.0
+echo   YCDesk 信令服务器 v0.1.0
 echo   YCDesk Signaling Server
 echo ============================================
 echo.

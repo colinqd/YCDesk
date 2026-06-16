@@ -93,6 +93,17 @@ class SignalingModeManager {
         if (this.uiManager) {
           this.uiManager.updateServerStatus('重连中 (' + info.attempt + '/' + info.maxAttempts + ')', 'reconnecting')
         }
+      },
+      onRequestRenegotiate: (data) => {
+        this.logFn('[信令模式] 收到重协商请求: ' + JSON.stringify(data))
+        // 主控端收到被控端的重协商请求，通过远程窗口重新发起offer
+        if (this.isController && window.electronAPI) {
+          window.electronAPI.sendToRemoteWindow('signaling-renegotiate', {
+            sessionId: this.currentSessionId,
+            targetDeviceId: this.incomingFromDeviceId,
+            deviceId: this.myDeviceId
+          })
+        }
       }
     })
 
@@ -116,6 +127,8 @@ class SignalingModeManager {
     this.pendingStartSignal = null
     this.serverUrl = ''
     this.role = ''
+    this._fileTransferChunkSize = 16 * 1024
+    this._activeFileTransfer = null
     this.selfConnection = false
     this.remoteWindowIceCandidateKeys = new Set()
     this.videoFrameTransmitter = null
@@ -125,8 +138,22 @@ class SignalingModeManager {
     this.currentStream = null
     
     this._controlledIpcListenersSetup = false
+    this._isDisconnecting = false
+    this._iceRestartInProgress = false
+    this._recoveryInProgress = false
+    this._channelHealthTimer = null
+    this._lastPongTime = 0
 
     this._setupRemoteWindowListeners()
+  }
+
+  _diagLog(message) {
+    try {
+      const fs = require('fs')
+      const dir = 'C:\\ProgramData\\YCDesk'
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+      fs.appendFileSync(dir + '\\diag_webrtc.log', '[' + new Date().toISOString() + '] ' + message + '\n', 'utf8')
+    } catch (e) {}
   }
 
   setDeviceId(deviceId) {
@@ -159,6 +186,8 @@ class SignalingModeManager {
   }
 
   disconnect() {
+    this._isDisconnecting = true
+    this._stopChannelHealthCheck()
     this.signalingClient.disconnect()
     if (this.uiManager) {
       this.uiManager.updateServerStatus('已断开', 'disconnected')
@@ -321,9 +350,12 @@ class SignalingModeManager {
         } else {
           this.logFn('[信令模式] DIAG dataChannelManager收到输入命令: ' + data.inputType + ', x=' + data.x + ', y=' + data.y + ', button=' + data.button)
         }
+        this._diagLog('信令DataChannelManager收到: type=' + data.type + ' inputType=' + data.inputType + (data.inputType === 'text_input' ? ' text=' + (data.text || '').substring(0, 30) : ''))
         window.electronAPI.send('remote-input', data)
       } else if (data.type === 'ping') {
         this.dataChannelManager.send({ type: 'pong', timestamp: data.timestamp })
+      } else if (data.type === 'pong') {
+        this._lastPongTime = Date.now()
       } else if (data.type === 'screen-size') {
         this.logFn('[信令模式] 收到屏幕尺寸: ' + data.width + 'x' + data.height)
       } else if (data.type === 'resolution-request') {
@@ -345,6 +377,13 @@ class SignalingModeManager {
 
     this.dataChannelManager.setOnClose(() => {
       this.logFn('[信令模式] 数据通道已关闭')
+      // 如果不是主动断开，且 PeerConnection 仍存在，尝试数据通道恢复
+      if (!this._isDisconnecting && this.peerConnection &&
+          this.peerConnection.connectionState === 'connected' &&
+          !this._recoveryInProgress) {
+        this.logFn('[信令模式] 检测到数据通道意外关闭（PeerConnection仍连接），尝试恢复...')
+        this._attemptDataChannelRecovery()
+      }
     })
 
     this.dataChannelManager.setOnError((error) => {
@@ -367,17 +406,25 @@ class SignalingModeManager {
     }
 
     this.peerConnection.oniceconnectionstatechange = () => {
-      this.logFn('[信令模式] ICE连接状态: ' + this.peerConnection.iceConnectionState)
+      const state = this.peerConnection.iceConnectionState
+      this.logFn('[信令模式] ICE连接状态: ' + state)
+      this._handleIceStateChange(state)
     }
 
     this.peerConnection.onconnectionstatechange = () => {
-      this.logFn('[信令模式] 连接状态: ' + this.peerConnection.connectionState)
-      if (this.peerConnection.connectionState === 'connected') {
+      const state = this.peerConnection.connectionState
+      this.logFn('[信令模式] 连接状态: ' + state)
+      this._handleConnectionStateChange(state)
+      if (state === 'connected') {
         this.logFn('[信令模式] WebRTC连接已建立')
+        // 连接成功后重置数据通道恢复计数
+        this._dcRecoveryAttempts = 0
         if (typeof this.onWebRTCConnected === 'function') {
           this.onWebRTCConnected(this.incomingFromDeviceId, this.serverUrl)
         }
-      } else if (this.peerConnection.connectionState === 'failed') {
+        // 连接建立后启动通道健康检查
+        this._startChannelHealthCheck()
+      } else if (state === 'failed') {
         this.logFn('[信令模式] WebRTC连接失败')
       }
     }
@@ -405,6 +452,7 @@ class SignalingModeManager {
             }
             
             if (data.type === 'input' || data.inputType) {
+              this._diagLog('信令input通道收到: type=' + data.type + ' inputType=' + data.inputType + (data.inputType === 'text_input' ? ' text=' + (data.text || '').substring(0, 30) : ''))
               window.electronAPI.send('remote-input', data)
             }
           } catch (e) {
@@ -424,6 +472,7 @@ class SignalingModeManager {
         const channelName = label.replace('aux-', '')
         this.auxiliaryChannels.set(channelName, event.channel)
         this.logFn('[信令模式] 辅助通道 ' + channelName + ' 已打开')
+        this._setupAuxChannel(channelName, event.channel)
       } else if (label === this.OPTIMIZED_VIDEO_CHANNEL) {
         this.logFn('[信令模式] 收到优化视频通道')
         this.optimizedVideoChannel = event.channel
@@ -790,13 +839,351 @@ class SignalingModeManager {
     })
   }
 
+  // ========== 连接恢复机制 ==========
+
+  _handleIceStateChange(state) {
+    if (state === 'failed' && !this._iceRestartInProgress && !this._isDisconnecting) {
+      this.logFn('[信令模式] ICE连接失败，尝试 ICE restart...')
+      this._attemptIceRestart()
+    }
+  }
+
+  _handleConnectionStateChange(state) {
+    if (state === 'failed' && !this._iceRestartInProgress && !this._isDisconnecting) {
+      this.logFn('[信令模式] WebRTC连接失败，尝试 ICE restart...')
+      this._attemptIceRestart()
+    } else if (state === 'disconnected') {
+      this.logFn('[信令模式] WebRTC连接断开，等待自动恢复...')
+    }
+  }
+
+  async _attemptIceRestart() {
+    if (this._iceRestartInProgress) return
+    this._iceRestartInProgress = true
+
+    try {
+      this.logFn('[信令模式] 开始 ICE restart...')
+
+      // 仅主控端发起 ICE restart（被控端不主动发起）
+      if (!this.isController) {
+        this.logFn('[信令模式] 被控端不主动发起 ICE restart，等待主控端')
+        this._iceRestartInProgress = false
+        return
+      }
+
+      const offer = await this.peerConnection.createOffer({ iceRestart: true })
+      await this.peerConnection.setLocalDescription(offer)
+
+      this.signalingClient.send('offer', {
+        sessionId: this.currentSessionId,
+        offer: {
+          type: offer.type,
+          sdp: offer.sdp
+        },
+        toDeviceId: this.incomingFromDeviceId
+      })
+
+      this.logFn('[信令模式] ICE restart offer 已发送')
+
+      // 等待 ICE restart 完成（最多10秒）
+      await new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          this.logFn('[信令模式] ICE restart 超时')
+          resolve()
+        }, 10000)
+
+        const originalHandler = this.peerConnection.oniceconnectionstatechange
+        this.peerConnection.oniceconnectionstatechange = () => {
+          const iceState = this.peerConnection.iceConnectionState
+          this.logFn('[信令模式] ICE restart 中 ICE 状态: ' + iceState)
+          if (iceState === 'connected' || iceState === 'completed') {
+            clearTimeout(timeout)
+            this.logFn('[信令模式] ICE restart 成功')
+            // 恢复ICE状态处理
+            this.peerConnection.oniceconnectionstatechange = () => {
+              this._handleIceStateChange(this.peerConnection.iceConnectionState)
+            }
+            resolve()
+          } else if (iceState === 'failed') {
+            clearTimeout(timeout)
+            this.peerConnection.oniceconnectionstatechange = () => {
+              this._handleIceStateChange(this.peerConnection.iceConnectionState)
+            }
+            resolve()
+          }
+        }
+      })
+    } catch (error) {
+      this.logFn('[信令模式] ICE restart 失败: ' + error.message)
+    } finally {
+      this._iceRestartInProgress = false
+    }
+  }
+
+  async _attemptDataChannelRecovery() {
+    const MAX_DC_RECOVERY_ATTEMPTS = 3
+    if (this._recoveryInProgress || this._isDisconnecting) return
+
+    // 初始化或检查次数限制
+    if (!this._dcRecoveryAttempts) this._dcRecoveryAttempts = 0
+    if (this._dcRecoveryAttempts >= MAX_DC_RECOVERY_ATTEMPTS) {
+      this.logFn('[信令模式] 数据通道恢复次数已达上限(' + MAX_DC_RECOVERY_ATTEMPTS + ')，停止尝试')
+      return
+    }
+
+    this._recoveryInProgress = true
+    this._dcRecoveryAttempts++
+    this.logFn('[信令模式] 开始数据通道恢复... (第' + this._dcRecoveryAttempts + '/' + MAX_DC_RECOVERY_ATTEMPTS + '次)')
+
+    try {
+      // 清理旧的数据通道状态
+      if (this.inputChannel) {
+        try { this.inputChannel.close() } catch (e) {}
+        this.inputChannel = null
+        this.inputChannelReady = false
+      }
+
+      // 通过信令服务器通知主控端重新发起重协商
+      this.signalingClient.send('request-renegotiate', {
+        sessionId: this.currentSessionId,
+        fromDeviceId: this.myDeviceId,
+        toDeviceId: this.incomingFromDeviceId
+      })
+      this.logFn('[信令模式] 已发送重协商请求到主控端')
+
+      // 等待主控端重新发送 offer（最多30秒）
+      await new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          this.logFn('[信令模式] 等待重协商offer超时')
+          resolve()
+        }, 30000)
+
+        const originalOnOffer = this.signalingClient.config.onOffer || this.signalingClient._callbacks?.onOffer
+        const checkOffer = (data) => {
+          if (this._recoveryInProgress && data && data.fromDeviceId === this.incomingFromDeviceId) {
+            clearTimeout(timeout)
+            this.logFn('[信令模式] 收到重协商offer，数据通道恢复中...')
+            resolve()
+          }
+        }
+        // 临时监听
+        this._recoveryOfferHandler = checkOffer
+
+        // 30秒后清理
+        setTimeout(() => {
+          this._recoveryOfferHandler = null
+        }, 31000)
+      })
+
+      this.logFn('[信令模式] 数据通道恢复完成')
+    } catch (error) {
+      this.logFn('[信令模式] 数据通道恢复失败: ' + error.message)
+    } finally {
+      this._recoveryInProgress = false
+    }
+  }
+
+  _startChannelHealthCheck() {
+    this._stopChannelHealthCheck()
+    this._lastPongTime = Date.now()
+    const PING_INTERVAL = 5000   // 每5秒ping一次
+    const PONG_TIMEOUT = 15000   // 15秒没收到pong认为异常
+
+    this._channelHealthTimer = setInterval(() => {
+      if (!this.dataChannelManager || !this.dataChannelManager.isOpen()) {
+        return
+      }
+      if (this._isDisconnecting || this._recoveryInProgress) {
+        return
+      }
+
+      // 直接检查底层 DataChannel 的 readyState，避免 isOpen() 假正常
+      if (this.dataChannelManager.dataChannel && this.dataChannelManager.dataChannel.readyState !== 'open') {
+        this.logFn('[信令模式] 数据通道 readyState 异常: ' + this.dataChannelManager.dataChannel.readyState + '，触发恢复')
+        this._attemptDataChannelRecovery()
+        return
+      }
+
+      // 检查上次pong的时间
+      const elapsed = Date.now() - this._lastPongTime
+      if (elapsed > PONG_TIMEOUT) {
+        this.logFn('[信令模式] 数据通道心跳超时（' + elapsed + 'ms），开始恢复...')
+        this._attemptDataChannelRecovery()
+        return
+      }
+
+      // 发送ping
+      try {
+        this.dataChannelManager.send({ type: 'ping', timestamp: Date.now() })
+      } catch (e) {
+        this.logFn('[信令模式] 心跳ping发送失败: ' + e.message)
+      }
+    }, PING_INTERVAL)
+
+    this.logFn('[信令模式] 数据通道心跳监测已启动（间隔=' + PING_INTERVAL + 'ms, 超时=' + PONG_TIMEOUT + 'ms）')
+  }
+
+  _stopChannelHealthCheck() {
+    if (this._channelHealthTimer) {
+      clearInterval(this._channelHealthTimer)
+      this._channelHealthTimer = null
+      this.logFn('[信令模式] 数据通道心跳监测已停止')
+    }
+  }
+
+  _setupAuxChannel(channelType, channel) {
+    var self = this
+    channel.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        self._handleAuxMessage(channelType, data)
+      } catch (e) {
+        self.logFn('[信令模式] 辅助通道消息解析错误: ' + e.message)
+      }
+    }
+
+    channel.onclose = () => {
+      self.logFn('[信令模式] 辅助通道关闭: ' + channelType)
+      self.auxiliaryChannels.delete(channelType)
+    }
+  }
+
+  _handleAuxMessage(channelType, data) {
+    if (channelType === 'clipboard') {
+      if (data.action === 'sync' && data.content) {
+        navigator.clipboard.writeText(data.content).then(() => {
+          this.logFn('[信令模式] 剪贴板已同步')
+        }).catch(err => {
+          this.logFn('[信令模式] 剪贴板同步失败: ' + err.message)
+        })
+      }
+    } else if (channelType === 'file-transfer') {
+      this._handleFileTransferMessage(data)
+    }
+  }
+
+  _handleFileTransferMessage(data) {
+    if (!data || !data.action) return
+
+    switch (data.action) {
+      case 'file-request':
+        this._handleFileRequest()
+        break
+      case 'file-accept':
+        this._handleFileAccept(data)
+        break
+      case 'file-reject':
+        this._activeFileTransfer = null
+        break
+    }
+  }
+
+  async _handleFileRequest() {
+    try {
+      const result = await window.electronAPI.fileTransferSelectFiles()
+      if (result.canceled || !result.files || result.files.length === 0) return
+
+      const file = result.files[0]
+      const fileInfo = {
+        id: 'ft_' + Date.now(),
+        name: file.name,
+        path: file.path,
+        size: file.size,
+        totalChunks: Math.ceil(file.size / this._fileTransferChunkSize)
+      }
+      this._activeFileTransfer = fileInfo
+
+      const channel = this.auxiliaryChannels.get('file-transfer')
+      if (!channel || channel.readyState !== 'open') {
+        this.logFn('[信令模式] 文件传输通道不可用')
+        return
+      }
+
+      channel.send(JSON.stringify({
+        action: 'file-offer',
+        fileId: fileInfo.id,
+        fileName: fileInfo.name,
+        fileSize: fileInfo.size,
+        totalChunks: fileInfo.totalChunks,
+        chunkSize: this._fileTransferChunkSize
+      }))
+
+      this.logFn('[信令模式] 已发送文件传输请求: ' + fileInfo.name)
+    } catch (e) {
+      this.logFn('[信令模式] 文件选择失败: ' + e.message)
+    }
+  }
+
+  _handleFileAccept(data) {
+    if (!this._activeFileTransfer || this._activeFileTransfer.id !== data.fileId) return
+    this._sendFileChunks(this._activeFileTransfer, 0)
+  }
+
+  async _sendFileChunks(file, startChunk) {
+    var self = this
+    var chunkIndex = startChunk || 0
+    var totalChunks = file.totalChunks
+    var CHUNK_SIZE = this._fileTransferChunkSize
+
+    const channel = this.auxiliaryChannels.get('file-transfer')
+
+    async function sendNext() {
+      if (chunkIndex >= totalChunks) {
+        if (channel && channel.readyState === 'open') {
+          channel.send(JSON.stringify({
+            action: 'file-complete',
+            fileId: file.id,
+            totalChunks: totalChunks
+          }))
+        }
+        self._activeFileTransfer = null
+        return
+      }
+
+      var offset = chunkIndex * CHUNK_SIZE
+      var size = Math.min(CHUNK_SIZE, file.size - offset)
+
+      try {
+        var result = await window.electronAPI.fileTransferReadChunk(file.path, offset, size)
+        if (channel && channel.readyState === 'open') {
+          channel.send(JSON.stringify({
+            action: 'file-chunk',
+            fileId: file.id,
+            chunkIndex: chunkIndex,
+            data: result.data,
+            bytesRead: result.bytesRead
+          }))
+        }
+        chunkIndex++
+        setTimeout(sendNext, 0)
+      } catch (e) {
+        self.logFn('[信令模式] 文件读取失败: ' + e.message)
+        self._activeFileTransfer = null
+      }
+    }
+
+    sendNext()
+  }
+
   reset() {
+    this._isDisconnecting = true
+    this._stopChannelHealthCheck()
+    this._iceRestartInProgress = false
+    this._recoveryInProgress = false
+    this._recoveryOfferHandler = null
+
     this.currentSessionId = null
     this.incomingFromDeviceId = null
     this.isController = false
     this.pendingIceCandidates = []
 
     this.stopScreenCapture()
+
+    this.auxiliaryChannels.forEach((channel) => {
+      try { channel.close() } catch (e) {}
+    })
+    this.auxiliaryChannels.clear()
+    this._activeFileTransfer = null
 
     if (this.videoFrameTransmitter) {
       this.videoFrameTransmitter.reset()

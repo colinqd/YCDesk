@@ -1,6 +1,6 @@
 {
   "name": "ycdesk-linux",
-  "version": "3.3.0",
+  "version": "0.1.0",
   "description": "YCDesk Remote Desktop - Linux Version",
   "main": "src/main/main.js",
   "author": "YCDesk Team",

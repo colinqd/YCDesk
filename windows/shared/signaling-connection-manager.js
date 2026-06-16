@@ -5,6 +5,10 @@ class SignalingConnectionManager extends BaseConnectionManager {
         this.deviceId = null
         this.targetDeviceId = null
         this.isController = false
+        this._remoteOfferReceived = false
+        this._remoteOfferResolve = null
+        this._resolutionRequestReceived = false
+        this._resolutionRequestResolve = null
     }
 
     async establishSignaling(config) {
@@ -157,15 +161,21 @@ class SignalingConnectionManager extends BaseConnectionManager {
     }
 
     waitForRemoteOffer() {
+        if (this._remoteOfferReceived) {
+            this._remoteOfferReceived = false
+            return Promise.resolve()
+        }
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
+                this._remoteOfferResolve = null
                 reject(new Error('等待远程offer超时'))
             }, this.connectionTimeout)
             
-            this.on('signaling-offer-received', () => {
+            this._remoteOfferResolve = () => {
                 clearTimeout(timeout)
+                this._remoteOfferResolve = null
                 resolve()
-            })
+            }
         })
     }
 
@@ -187,6 +197,11 @@ class SignalingConnectionManager extends BaseConnectionManager {
             })
             
             this.log('信令模式: answer已发送')
+            
+            this._remoteOfferReceived = true
+            if (this._remoteOfferResolve) {
+                this._remoteOfferResolve()
+            }
             this.emit('signaling-offer-received')
             
         } catch (error) {
@@ -204,24 +219,32 @@ class SignalingConnectionManager extends BaseConnectionManager {
         } else if (data.type === 'ping') {
             this.dataChannelManager.send({ type: 'pong', timestamp: data.timestamp })
         } else if (data.type === 'hide-cursor') {
-            if (data.hide) {
-                window.electronAPI.hideCursor()
-            } else {
-                window.electronAPI.showCursor()
+            if (window.electronAPI) {
+                if (data.hide) {
+                    window.electronAPI.hideCursor()
+                } else {
+                    window.electronAPI.showCursor()
+                }
             }
         }
     }
 
     async waitForResolutionRequest() {
+        if (this._resolutionRequestReceived) {
+            this._resolutionRequestReceived = false
+            return Promise.resolve()
+        }
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
+                this._resolutionRequestResolve = null
                 reject(new Error('等待分辨率请求超时'))
             }, this.resolutionTimeout)
             
-            this.on('resolution-request-received', () => {
+            this._resolutionRequestResolve = () => {
                 clearTimeout(timeout)
+                this._resolutionRequestResolve = null
                 resolve()
-            })
+            }
         })
     }
 
@@ -233,6 +256,10 @@ class SignalingConnectionManager extends BaseConnectionManager {
             height: data.height
         }
         
+        this._resolutionRequestReceived = true
+        if (this._resolutionRequestResolve) {
+            this._resolutionRequestResolve()
+        }
         this.emit('resolution-request-received')
     }
 

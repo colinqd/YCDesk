@@ -16,10 +16,6 @@ function register(safeHandler, credentialsManager, logFn) {
     return await credentialsManager.clearUnlockPassword()
   }, 'auto-unlock-clear-password'))
 
-  ipcMain.handle('auto-unlock-get-password', safeHandler(async () => {
-    return await credentialsManager.getUnlockPassword()
-  }, 'auto-unlock-get-password'))
-
   ipcMain.on('set-log-role', (event, role) => {
     if (logFn && logFn.setRole) {
       logFn.setRole(role)

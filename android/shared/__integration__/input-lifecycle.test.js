@@ -158,8 +158,8 @@ describe('输入指令生命周期', () => {
     expect(normalizeCoordinate(0, 1920)).toBe(0)
     expect(normalizeCoordinate(1920, 1920)).toBe(1)
     expect(normalizeCoordinate(960, 1920)).toBeCloseTo(0.5, 2)
-    expect(normalizeCoordinate(-100, 1920)).toBeCloseTo(-0.052, 2) // 负值不钳制
-    expect(normalizeCoordinate(5000, 1920)).toBeCloseTo(2.604, 2) // 大于1不钳制
+    expect(normalizeCoordinate(-100, 1920)).toBe(0)
+    expect(normalizeCoordinate(5000, 1920)).toBe(1)
   })
 
   // ---------- 8. 输入校验 ----------

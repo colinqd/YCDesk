@@ -11,6 +11,7 @@ class DirectConnectionManager extends BaseConnectionManager {
         this.renegotiateResolve = null
         this.iceServers = []
         this._iceRestartInProgress = false
+        this._ipcListeners = []
     }
 
     setModeData(data) {
@@ -24,27 +25,35 @@ class DirectConnectionManager extends BaseConnectionManager {
     async establishSignaling(config) {
         this.log('直连模式: 使用IPC作为信令通道')
         
-        window.electronAPI.on('webrtc-answer', async (data) => {
-            this.handleAnswer(data.answer)
-        })
+        this._removeIpcListeners()
 
-        window.electronAPI.on('webrtc-ice-candidate', async (data) => {
+        const answerHandler = async (data) => {
+            this.handleAnswer(data.answer)
+        }
+        window.electronAPI.on('webrtc-answer', answerHandler)
+        this._ipcListeners.push({ event: 'webrtc-answer', handler: answerHandler })
+
+        const iceHandler = async (data) => {
             this.handleIceCandidate(data.candidate)
-        })
+        }
+        window.electronAPI.on('webrtc-ice-candidate', iceHandler)
+        this._ipcListeners.push({ event: 'webrtc-ice-candidate', handler: iceHandler })
         
-        window.electronAPI.on('webrtc-offer', async (data) => {
+        const offerHandler = async (data) => {
             this.log('收到 webrtc-offer 事件')
             if (this.isController) {
                 await this.handleSignalingOffer(data)
             }
-        })
+        }
+        window.electronAPI.on('webrtc-offer', offerHandler)
+        this._ipcListeners.push({ event: 'webrtc-offer', handler: offerHandler })
         
         if (this.modeData) {
             this.log(`直连模式: 使用预设的模式数据 mode=${this.modeData.mode}`)
             return
         }
         
-        window.electronAPI.on('direct-mode-start', async (data) => {
+        const modeStartHandler = async (data) => {
             if (this.isConnectionStarted) return
             
             this.isConnectionStarted = true
@@ -54,7 +63,9 @@ class DirectConnectionManager extends BaseConnectionManager {
             this.log(`直连模式启动: mode=${data.mode}, targetWindowId=${data.targetWindowId}`)
             
             this.emit('direct-mode-start', data)
-        })
+        }
+        window.electronAPI.on('direct-mode-start', modeStartHandler)
+        this._ipcListeners.push({ event: 'direct-mode-start', handler: modeStartHandler })
         
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
@@ -464,7 +475,20 @@ class DirectConnectionManager extends BaseConnectionManager {
         }
     }
 
+    _removeIpcListeners() {
+        if (!window.electronAPI) return
+        for (const { event, handler } of this._ipcListeners) {
+            try {
+                window.electronAPI.removeListener(event, handler)
+            } catch (e) {
+                this.log('移除IPC监听器失败: ' + e.message)
+            }
+        }
+        this._ipcListeners = []
+    }
+
     disconnect() {
+        this._removeIpcListeners()
         this.isConnectionStarted = false
         this.offerReceived = false
         this.offerResolve = null

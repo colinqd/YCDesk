@@ -1,6 +1,6 @@
 {
   "name": "ycdesk-monorepo",
-  "version": "3.3.0",
+  "version": "0.1.0",
   "private": true,
   "description": "YCDesk 远程桌面控制 - 单仓库",
   "workspaces": [

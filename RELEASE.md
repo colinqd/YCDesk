@@ -1,33 +1,46 @@
-# YCDesk v0.0.1 发布说明
+# YCDesk v0.1.0 发布说明
 
-## 🎉 欢迎使用 YCDesk v0.0.1
+## 🎉 YCDesk v0.1.0
 
-这是 YCDesk 的首次发布！本次发布包含了核心远程桌面控制功能，并修复了直连模式的关键问题。
+本次发布带来了多项重要功能增强和稳定性修复，是 YCDesk 走向正式版本的关键里程碑。
 
 ## 🚀 主要更新
 
-### ✨ 初始发布功能
-- **WebRTC P2P 实时视频流传输**
-- **鼠标和键盘远程控制**
-- **信令服务器模式**
-- **直连模式**（局域网无需服务器）
-- **多平台支持**（Windows / Linux / Android）
+### ✨ 新功能
+- **Android 客户端** - 完整支持 Android 平台，包含屏幕捕获与 YUV → RGB 转换
+- **Linux 客户端** - 支持 DEB、AppImage、tar.gz 等多种分发格式
+- **信令服务器 GUI 版** - 跨平台图形界面版本（server-gui）
+- **文件传输** - 新增文件传输模块与 UI
+- **剪贴板同步** - 跨设备剪贴板内容同步
+- **多显示器支持** - 多显示器场景完整支持
+- **性能监控 / 崩溃报告** - 性能监控与崩溃上报
+- **数据通道自动恢复** - 数据通道断开自动重连
+
+### 🔧 改进
+- **SendInput 迁移** - Windows 输入从 robotjs 全面迁移至 SendInput
+- **共享代码统一** - 跨平台共享代码抽取到 `shared/`
+- **直连 / 信令双模式** - 完善两种连接模式
+- **连接生命周期管理** - 优化连接建立 / 关闭流程
 
 ### 🐛 修复
-- **修复 Windows 直连模式无法建立连接的问题** - 现在可以正常连接和打开远程桌面了
-- **添加优化视频传输通道** - 新增 optimized-video 通道，提升视频传输性能
-- **统一 ICE 配置** - 直连模式统一使用空 ICE 配置，连接更稳定
-- **完善连接生命周期管理** - 优化连接建立和关闭流程
+- 修复 Windows 直连模式连接问题
+- 修复 socket.io-client 打包缺失
+- 修复信令服务器持久化问题
+- 修复按钮状态管理
+- 修复数据通道恢复
+- 增强断开保护
 
 ## 📦 下载
 
 | 平台 | 文件 | 说明 |
 |------|------|------|
-| Windows | YCDesk-Setup-0.0.1.exe | Windows 安装版 |
-| Windows | YCDesk-Portable-0.0.1.exe | Windows 便携版 |
-| Linux | YCDesk-0.0.1.AppImage | Linux AppImage |
-| Linux | ycdesk_0.0.1_amd64.deb | Ubuntu/Debian DEB 包 |
-| Android | YCDesk-0.0.1.apk | Android APK |
+| Windows | YCDesk-Setup-0.1.0.exe | Windows 安装版 |
+| Windows | YCDesk-Portable-0.1.0.exe | Windows 便携版 |
+| Linux | YCDesk-0.1.0.AppImage | Linux AppImage |
+| Linux | ycdesk_0.1.0_amd64.deb | Ubuntu/Debian DEB 包 |
+| Android | YCDesk-0.1.0.apk | Android APK |
+| 信令服务器 | YCDesk-Server-Setup-0.1.0.exe | Windows GUI 信令服务器 |
+| 信令服务器 | ycdesk-server-gui_0.1.0_amd64.deb | Linux GUI 信令服务器 |
 
 ## 📝 详细变更
 
@@ -46,3 +59,4 @@
 ---
 
 **感谢使用 YCDesk！** 如有任何问题或建议，欢迎反馈。
+

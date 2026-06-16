@@ -55,6 +55,7 @@ class AuxiliaryChannelManager {
         this.eventListeners = new Map()
         this.loadStatus = new Map()
         this.retryCount = new Map()
+        this._loadingChannels = new Set()
     }
 
     setPeerConnection(pc) {
@@ -95,16 +96,35 @@ class AuxiliaryChannelManager {
             AuxiliaryChannelType.CLIPBOARD
         ]
         
-        this.logger.log(`[AuxiliaryChannel] 开始并行加载 ${channelsToLoad.length} 个通道`)
+        // 去重：跳过已就绪或正在加载中的通道
+        const uniqueChannels = channelsToLoad.filter(channelType => {
+            const status = this.loadStatus.get(channelType)
+            if (status === 'ready') {
+                this.logger.log(`[AuxiliaryChannel] ${channelType} 已就绪，跳过加载`)
+                return false
+            }
+            if (this._loadingChannels.has(channelType)) {
+                this.logger.log(`[AuxiliaryChannel] ${channelType} 正在加载中，跳过重复请求`)
+                return false
+            }
+            return true
+        })
         
-        const loadPromises = channelsToLoad.map(channelType => 
+        if (uniqueChannels.length === 0) {
+            this.logger.log('[AuxiliaryChannel] 所有通道已就绪或正在加载，无需重复加载')
+            return { success: channelsToLoad.length, failed: 0 }
+        }
+        
+        this.logger.log(`[AuxiliaryChannel] 开始并行加载 ${uniqueChannels.length} 个通道`)
+        
+        const loadPromises = uniqueChannels.map(channelType => 
             this.loadChannel(channelType)
         )
         
         const results = await Promise.allSettled(loadPromises)
         
         results.forEach((result, index) => {
-            const channelType = channelsToLoad[index]
+            const channelType = uniqueChannels[index]
             
             if (result.status === 'fulfilled') {
                 this.logger.log(`[AuxiliaryChannel] ${channelType} 加载成功`)
@@ -134,11 +154,13 @@ class AuxiliaryChannelManager {
         }
         
         this.loadStatus.set(channelType, 'loading')
+        this._loadingChannels.add(channelType)
         
         const channelName = `aux-${channelType}`
         
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
+                this._loadingChannels.delete(channelType)
                 reject(new Error(`通道 ${channelType} 建立超时`))
             }, config.timeout)
             
@@ -149,6 +171,7 @@ class AuxiliaryChannelManager {
                 
                 channel.onopen = () => {
                     clearTimeout(timeout)
+                    this._loadingChannels.delete(channelType)
                     this.channels.set(channelType, {
                         channel,
                         config,
@@ -162,6 +185,7 @@ class AuxiliaryChannelManager {
                 
                 channel.onerror = (error) => {
                     clearTimeout(timeout)
+                    this._loadingChannels.delete(channelType)
                     this.loadStatus.set(channelType, 'error')
                     reject(error)
                 }
@@ -300,8 +324,8 @@ class AuxiliaryChannelManager {
     send(channelType, data) {
         const channelInfo = this.channels.get(channelType)
         
-        if (!channelInfo || channelInfo.status !== 'open') {
-            this.logger.log(`[AuxiliaryChannel] ${channelType} 通道不可用`)
+        if (!channelInfo || !channelInfo.channel || channelInfo.channel.readyState !== 'open') {
+            this.logger.log(`[AuxiliaryChannel] ${channelType} 通道不可用 (readyState=${channelInfo?.channel?.readyState || 'none'})`)
             return false
         }
         

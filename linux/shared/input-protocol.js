@@ -120,7 +120,7 @@ function normalizeCoordinate(value, maxValue = 65535) {
     return value
   }
   if (maxValue > 0) {
-    return value / maxValue
+    return Math.max(0, Math.min(1, value / maxValue))
   }
   return value
 }

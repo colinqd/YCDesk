@@ -45,18 +45,37 @@ class FallbackHandler {
         this.fallbackStatus = new Map()
         this.autoRetryTimers = new Map()
         this.userNotifications = new Map()
+        this._channelFallbackHandler = null
+        this._channelClosedHandler = null
     }
 
     setAuxiliaryChannelManager(manager) {
+        this._removeChannelListeners()
+
         this.auxiliaryChannelManager = manager
         
-        manager.on('channel-fallback', (data) => {
+        this._channelFallbackHandler = (data) => {
             this.handleFallback(data.type, data.error)
-        })
-        
-        manager.on('channel-closed', (data) => {
+        }
+        this._channelClosedHandler = (data) => {
             this.handleChannelClosed(data.type)
-        })
+        }
+
+        manager.on('channel-fallback', this._channelFallbackHandler)
+        manager.on('channel-closed', this._channelClosedHandler)
+    }
+
+    _removeChannelListeners() {
+        if (this.auxiliaryChannelManager) {
+            if (this._channelFallbackHandler) {
+                this.auxiliaryChannelManager.off('channel-fallback', this._channelFallbackHandler)
+            }
+            if (this._channelClosedHandler) {
+                this.auxiliaryChannelManager.off('channel-closed', this._channelClosedHandler)
+            }
+        }
+        this._channelFallbackHandler = null
+        this._channelClosedHandler = null
     }
 
     on(event, callback) {
@@ -278,6 +297,7 @@ class FallbackHandler {
 
     destroy() {
         this.reset()
+        this._removeChannelListeners()
         this.eventListeners.clear()
         this.auxiliaryChannelManager = null
     }

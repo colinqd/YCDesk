@@ -45,11 +45,11 @@ YCDesk 是一个高性能跨平台远程桌面控制应用，使用 Electron + W
 
 ```bash
 # Ubuntu/Debian
-sudo dpkg -i ycdesk_0.0.1_amd64.deb
+sudo dpkg -i ycdesk_0.1.0_amd64.deb
 
 # 或运行 AppImage
-chmod +x YCDesk-0.0.1.AppImage
-./YCDesk-0.0.1.AppImage
+chmod +x YCDesk-0.1.0.AppImage
+./YCDesk-0.1.0.AppImage
 ```
 
 #### Android

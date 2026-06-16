@@ -1,6 +1,6 @@
 {
   "name": "ycdesk-android",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "YCDesk - Android版本（包含信令服务器）",
   "main": "index.js",
   "scripts": {

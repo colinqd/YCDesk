@@ -119,9 +119,9 @@ describe('normalizeCoordinate', () => {
     expect(result).toBeCloseTo(0.5, 4)
   })
 
-  it('负数值按原值返回（已在 0~1 范围外）', () => {
+  it('负数值被钳制为 0', () => {
     const result = normalizeCoordinate(-1, 1920)
-    expect(result).toBe(-1 / 1920)
+    expect(result).toBe(0)
   })
 })
 

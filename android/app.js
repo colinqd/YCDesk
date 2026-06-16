@@ -13,6 +13,7 @@ import { getIceConfig, startDirectControllerConnection, handleDirectOffer, handl
 import { updateVideoTransformGlobal, resetZoomAndPan, toggleMouseMode, toggleControlsExpand, toggleControlsHide, showControls, resetDimTimer, handleOrientationChange, showFloatingMouse, hideFloatingMouse, handleFloatingMouseEvent, toggleFullscreen, handleRemoteLockStateChanged, setupRemoteScreenInteraction } from './modules/ui.js';
 import { cycleKeyboardPosition, cycleKeyboardSize, cycleKeyboardOpacity, applyKeyboardPosition, ensureKeyboardInBounds, applyKeyboardSize, applyKeyboardOpacity, saveKeyboardSettings, loadKeyboardSettings, setupKeyboardDrag, toggleKeyboard, sendKey, toggleModifier, toggleSystemKeyboard, setupSystemKeyboardListener, toggleSpecialKeys, setupSystemKbBarDrag } from './modules/keyboard.js';
 import { updateScreenSize, showRemoteScreen, updateContainerSizeAfterVideoLoad, hideRemoteScreen, startStatsMonitoring, stopStatsMonitoring, toggleStatsOverlay, initStatsVisibility } from './modules/screen.js';
+import FileTransferManager from './modules/file-transfer.js';
 
 const TCPSocket = registerPlugin('TCPSocket');
 const FloatingMouse = registerPlugin('FloatingMouse');
@@ -1269,6 +1270,7 @@ async function init() {
   setupSystemKeyboardListener()
   setupSystemKbBarDrag()
   initStatsVisibility()
+  FileTransferManager.init()
   
   console.log('初始化完成，设备ID:', s.myDeviceId)
 }
@@ -1312,6 +1314,7 @@ window.controlledConnectToServer = controlledConnectToServer
 window.controlledDisconnectFromServer = controlledDisconnectFromServer
 window.startListening = startListening
 window.stopListening = stopListening
+window.FileTransferManager = FileTransferManager
 window.acceptConnection = acceptConnection
 window.rejectConnection = rejectConnection
 window.deleteFromHistory = deleteFromHistory

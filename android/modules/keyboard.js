@@ -1,5 +1,6 @@
 import s from './state.js'
 import { getKeyFromCode, convertToInputCommand } from './input.js'
+import { createInputCommand, INPUT_TYPES } from '../shared/input-protocol.js'
 
 function cycleKeyboardPosition() {
   if (typeof window.showToast === 'function') window.showToast('键盘位置: 底部')
@@ -365,7 +366,7 @@ function toggleSystemKeyboard() {
     lastSystemTextValue = ''
     isComposing = false
     setTimeout(() => input.focus(), 200)
-    if (typeof window.showToast === 'function') window.showToast('输入后点击"发送"提交')
+    if (typeof window.showToast === 'function') window.showToast('文字实时发送，按回车键确认')
   } else {
     bar.classList.remove('active')
     input.value = ''
@@ -379,65 +380,6 @@ function toggleSystemKeyboard() {
   }
 
   syncSystemKeyboardButtons()
-}
-
-function sendSystemText() {
-  const input = document.getElementById('hiddenTextInput')
-  if (!input) return
-
-  const text = input.value.trim()
-
-  const dataReady = s.dataChannel && s.dataChannel.readyState === 'open'
-  const inputReady = s.inputChannel && s.inputChannel.readyState === 'open'
-  if (!dataReady && !inputReady) {
-    if (typeof window.showToast === 'function') window.showToast('数据通道未连接')
-    return
-  }
-
-  input.value = ''
-  lastSystemTextValue = ''
-  isComposing = false
-
-  if (text) {
-    try {
-      const inputCommand = window.createInputCommand(
-        window.INPUT_TYPES.TEXT_INPUT,
-        { text: text }
-      )
-      const message = JSON.stringify(inputCommand)
-      if (dataReady) {
-        s.dataChannel.send(message)
-      } else if (inputReady) {
-        if (s.inputChannel.bufferedAmount < 65536) {
-          s.inputChannel.send(message)
-        }
-      }
-    } catch (e) {
-      console.error('sendSystemText error:', e)
-    }
-  }
-
-  sendEnterKey()
-
-  if (typeof window.showToast === 'function') window.showToast('已发送')
-}
-
-function setupSystemKeyboardSendHandler() {
-  const input = document.getElementById('hiddenTextInput')
-  const sendBtn = document.getElementById('kbSendBtn')
-  if (!input || !sendBtn) return
-
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !isComposing) {
-      e.preventDefault()
-      sendSystemText()
-    }
-  })
-
-  sendBtn.addEventListener('click', () => {
-    sendSystemText()
-    input.focus()
-  })
 }
 
 function setupSystemKeyboardListener() {
@@ -481,14 +423,18 @@ function setupSystemKeyboardListener() {
     if (isComposing) return  // IME 组合中不拦截
 
     const specialKeys = [
-      'Backspace', 'Delete', 'Tab', 'Escape',
+      'Backspace', 'Delete', 'Tab', 'Escape', 'Enter',
       'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
       'Home', 'End', 'PageUp', 'PageDown', 'Insert'
     ]
 
     if (specialKeys.includes(e.key)) {
-      e.preventDefault()  // 阻止浏览器本地处理
-      sendKey(e.code)     // 发送 keydown + keyup 到远程
+      e.preventDefault()
+      if (e.key === 'Enter' && e.shiftKey) {
+        sendKeyWithMod('Enter', { shiftKey: true })
+      } else {
+        sendKey(e.code)
+      }
 
       // Backspace 特殊处理：同步删除 input 中的最后一个字符
       if (e.key === 'Backspace' && input.value.length > 0) {
@@ -497,8 +443,6 @@ function setupSystemKeyboardListener() {
       }
     }
   })
-
-  setupSystemKeyboardSendHandler()
 }
 
 function toggleSpecialKeys() {
@@ -601,22 +545,59 @@ function sendTextInput(text) {
   if (!dataReady && !inputReady) return
 
   try {
-    const inputCommand = window.createInputCommand(
-      window.INPUT_TYPES.TEXT_INPUT,
+    console.log('[DIAG] sendTextInput: text="' + text + '" len=' + text.length)
+    const inputCommand = createInputCommand(
+      INPUT_TYPES.TEXT_INPUT,
       { text: text }
     )
     const message = JSON.stringify(inputCommand)
+    console.log('[DIAG] sendTextInput: command=', message.substring(0, 100))
 
     if (dataReady) {
       s.dataChannel.send(message)
+      console.log('[DIAG] sendTextInput: 已通过 dataChannel 发送')
     } else if (inputReady) {
       if (s.inputChannel.bufferedAmount < 65536) {
         s.inputChannel.send(message)
+        console.log('[DIAG] sendTextInput: 已通过 inputChannel 发送')
       }
     }
   } catch (e) {
-    console.error('sendTextInput error:', e)
+    console.error('[DIAG] sendTextInput error:', e.message, e.stack)
   }
+}
+
+function sendKeyWithMod(keyCode, modifiers = {}) {
+  if (!s.dataChannel || s.dataChannel.readyState !== 'open') {
+    console.error('数据通道未打开，无法发送按键')
+    return
+  }
+
+  const event = {
+    type: 'keydown',
+    code: keyCode,
+    key: getKeyFromCode(keyCode),
+    ctrlKey: modifiers.ctrlKey || false,
+    shiftKey: modifiers.shiftKey || false,
+    altKey: modifiers.altKey || false,
+    metaKey: modifiers.metaKey || false
+  }
+  const inputCommand = convertToInputCommand(event)
+  s.dataChannel.send(JSON.stringify(inputCommand))
+
+  setTimeout(() => {
+    const upEvent = { ...event, type: 'keyup' }
+    const dataReady2 = s.dataChannel && s.dataChannel.readyState === 'open'
+    if (dataReady2) {
+      s.dataChannel.send(JSON.stringify(convertToInputCommand(upEvent)))
+    }
+  }, 50)
+}
+
+window.sendKey = sendKey
+window.sendKeyWithMod = sendKeyWithMod
+window.sendSystemNewline = function() {
+  sendKeyWithMod('Enter', { shiftKey: true })
 }
 
 export {
@@ -632,6 +613,7 @@ export {
   setupKeyboardDrag,
   toggleKeyboard,
   sendKey,
+  sendKeyWithMod,
   toggleModifier,
   toggleSystemKeyboard,
   setupSystemKeyboardListener,

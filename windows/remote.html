@@ -442,6 +442,9 @@
       </select>
       <button class="toolbar-btn" onclick="window.ToolbarManager.unlockPanel()">🔓 解锁</button>
       <button class="toolbar-btn" onclick="window.ToolbarManager.lockRemoteScreen(window.connectionManager)">🔒 锁屏</button>
+      <button class="toolbar-btn" id="clipboardSyncBtn" onclick="window.ConnectionEvents && window.ConnectionEvents._sendLocalClipboard()" title="发送本地剪贴板到远端">📋 同步剪贴板</button>
+      <button class="toolbar-btn" id="fileTransferBtn" title="选择文件发送到远端">📁 发送文件</button>
+      <button class="toolbar-btn" id="fileDownloadBtn" title="从远程设备下载文件">📥 从远程下载</button>
       <button class="toolbar-btn" onclick="window.ToolbarManager.toggleStatsBar()" id="statsBtn">📊 状态</button>
       <span class="toolbar-stats" id="toolbarStats">
         <span class="stats-item">
@@ -520,6 +523,7 @@
   <script src="src/renderer/js/modules/toolbar-manager.js"></script>
   <script src="src/renderer/js/modules/connection-events.js"></script>
   <script src="src/renderer/js/modules/unlock-ui.js"></script>
+  <script src="src/renderer/js/modules/file-transfer-ui.js"></script>
 
   <!-- 解锁面板 HTML -->
   <div id="unlockOverlay" class="hidden">
@@ -921,6 +925,16 @@
       window.electronAPI.on('direct-mode-start', _dirStart)
       window._cleanupFunctions.push(function() { window.electronAPI.removeAllListeners('direct-mode-start') })
 
+      // 信令重协商监听
+      var _sigRenegotiate = function(data) {
+        UIState.log('收到信令重协商请求，触发数据通道恢复...')
+        if (connectionManager && connectionManager._attemptDataChannelRecovery) {
+          connectionManager._attemptDataChannelRecovery()
+        }
+      }
+      window.electronAPI.on('signaling-renegotiate', _sigRenegotiate)
+      window._cleanupFunctions.push(function() { window.electronAPI.removeAllListeners('signaling-renegotiate') })
+
       // 信令服务器断开通知处理
       var reconnectTimer = null
       var _sigDisconnected = function(data) {
@@ -1011,6 +1025,60 @@
       
       UIState.updateStatus('正在连接...');
       UIState.showPlaceholder('正在建立连接...', '请稍候');
+
+      // 初始化文件传输管理器
+      if (window.FileTransferManager) {
+        window.FileTransferManager.init()
+      }
+
+      // 监听 Watchdog 恢复请求（全自动，无弹窗）
+      var _wdRecover = function(data) {
+        UIState.log('Watchdog 自动恢复: ' + JSON.stringify(data))
+        switch (data.action) {
+          case 'data-channel-recovery':
+            if (window.connectionManager && window.connectionManager._attemptDataChannelRecovery) {
+              window.connectionManager._attemptDataChannelRecovery()
+            }
+            break
+          case 'ice-restart':
+            if (window.connectionManager && window.connectionManager._attemptIceRestart) {
+              window.connectionManager._attemptIceRestart()
+            }
+            break
+          case 'force-reconnect':
+            // 完全重连：断开当前连接，信令客户端会自动重连
+            UIState.log('Watchdog 触发完全重连 (level=' + (data.level || 'N/A') + ')')
+            if (window.connectionManager) {
+              try {
+                window.connectionManager.disconnect()
+              } catch (e) {
+                UIState.log('断开连接时出错: ' + e.message)
+              }
+              // 清理后信令客户端的自动重连会重新建立连接
+            }
+            break
+        }
+      }
+      window.electronAPI.on('watchdog-recover', _wdRecover)
+      window._cleanupFunctions.push(function() { window.electronAPI.removeAllListeners('watchdog-recover') })
+
+      // 响应 Watchdog 状态查询
+      var _wdQueryStatus = function() {
+        var status = { connected: false, dataChannelOpen: false, connectionState: 'unknown', disconnected: false }
+        if (window.connectionManager && window.connectionManager.peerConnection) {
+          status.connected = window.connectionManager.peerConnection.connectionState === 'connected'
+          status.connectionState = window.connectionManager.peerConnection.connectionState || 'unknown'
+          status.disconnected = window.connectionManager.peerConnection.connectionState === 'disconnected'
+          if (window.connectionManager.dataChannelManager) {
+            status.dataChannelOpen = window.connectionManager.dataChannelManager.isOpen()
+          }
+        }
+        if (window.electronAPI && window.electronAPI.send) {
+          window.electronAPI.send('watchdog-status-response', status)
+        }
+      }
+      window.electronAPI.on('watchdog-query-status', _wdQueryStatus)
+      window._cleanupFunctions.push(function() { window.electronAPI.removeAllListeners('watchdog-query-status') })
     }
 
     // 启动
