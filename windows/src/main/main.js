@@ -271,7 +271,48 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   logger.info('YCDesk 正在退出...')
   stopWatchdog()
-  try { getServiceIntegration().disconnect() } catch (e) { logger.debug('断开服务连接时出错（正常退出）:', e.message) }
+
+  // 清理服务集成（断开命名管道连接）
+  try { getServiceIntegration().disconnect() } catch (e) { logger.debug('断开服务连接时出错:', e.message) }
+
+  // 清理直连服务器（关闭 TCP 服务器和所有客户端连接）
+  try {
+    const { cleanup: cleanupDirectServer } = require('./direct-server')
+    cleanupDirectServer()
+    logger.info('直连服务器已清理')
+  } catch (e) { logger.debug('清理直连服务器时出错:', e.message) }
+
+  // 清理输入处理器
+  try {
+    const { resetAllInputState } = require('./input-handler')
+    resetAllInputState()
+  } catch (e) { logger.debug('清理输入处理器时出错:', e.message) }
+})
+
+app.on('will-quit', () => {
+  logger.info('YCDesk 即将退出，强制清理残留资源')
+
+  // 强制清理直连服务
+  try {
+    const { cleanup: cleanupDirectServer } = require('./direct-server')
+    cleanupDirectServer()
+  } catch (e) {}
+
+  // 强制终止 watchdog
+  if (watchdogWorker) {
+    try { watchdogWorker.terminate() } catch (e) {}
+    watchdogWorker = null
+  }
+
+  // 销毁所有窗口
+  try {
+    const { BrowserWindow } = require('electron')
+    BrowserWindow.getAllWindows().forEach(w => {
+      try { if (!w.isDestroyed()) w.destroy() } catch (e) {}
+    })
+  } catch (e) {}
+
+  logger.info('清理完成')
 })
 
 logger.info('YCDesk 主进程已加载')

@@ -508,24 +508,60 @@ async function getLocalIps() {
 
 // ==================== 直连 ====================
 
+let _isListening = false
+let _isListeningToggling = false
+
 async function startListening() {
+  if (_isListeningToggling) return
+  const btn = document.querySelector('#controlledDirectSection .btn-danger')
+  if (btn) {
+    btn.classList.add('btn-loading')
+    btn.disabled = true
+  }
+
   console.log('startListening 函数被调用')
   const port = uiManager.getListenPort()
   console.log('获取到的端口:', port)
   if (!uiManager._validatePort(port)) {
     alert('请输入有效的端口号 (1024-65535)')
+    if (btn) { btn.classList.remove('btn-loading'); btn.disabled = false }
     return
   }
 
+  _isListeningToggling = true
   console.log('调用 directManager.startListening')
-  await directManager.startListening(port)
-  if (typeof saveCurrentConnectConfig === 'function') {
+  const success = await directManager.startListening(port)
+  _isListeningToggling = false
+  _isListening = success
+
+  if (btn) {
+    btn.classList.remove('btn-loading')
+    btn.disabled = false
+  }
+
+  if (success && typeof saveCurrentConnectConfig === 'function') {
     saveCurrentConnectConfig()
   }
 }
 
 async function stopListening() {
+  if (_isListeningToggling) return
+
+  const btn = document.querySelector('#controlledDirectSection .btn-danger')
+  if (btn) {
+    btn.classList.add('btn-loading')
+    btn.disabled = true
+  }
+
+  _isListeningToggling = true
   await directManager.stopListening()
+  _isListeningToggling = false
+  _isListening = false
+
+  if (btn) {
+    btn.classList.remove('btn-loading')
+    btn.disabled = false
+  }
 }
 
 async function connectDirect() {

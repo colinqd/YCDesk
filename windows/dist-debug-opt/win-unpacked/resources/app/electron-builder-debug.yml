@@ -4,7 +4,7 @@ asar: false
 compression: maximum
 npmRebuild: false
 directories:
-  output: dist-debug2
+  output: dist-debug-opt
 electronLanguages:
   - zh-CN
   - en-US
@@ -42,4 +42,4 @@ win:
       arch:
         - x64
 portable:
-  artifactName: "YCDesk-Debug-Portable-${version}-fix.exe"
+  artifactName: "YCDesk-Debug-Portable-${version}.exe"
