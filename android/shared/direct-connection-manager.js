@@ -322,10 +322,45 @@ class DirectConnectionManager extends BaseConnectionManager {
                 })
                 
                 stream.getTracks().forEach(track => {
-                    this.peerConnection.addTrack(track, stream)
+                    const sender = this.peerConnection.addTrack(track, stream)
+                    // 配置编码参数以优化性能
+                    if (sender && sender.getParameters) {
+                        try {
+                            const params = sender.getParameters()
+                            if (params && params.encodings && params.encodings.length > 0) {
+                                params.encodings[0].maxBitrate = 2500000
+                                params.encodings[0].maxFramerate = 30
+                                params.encodings[0].scaleResolutionDownBy = 1
+                                params.encodings[0].networkPriority = 'high'
+                                params.degradationPreference = 'maintain-framerate'
+                                sender.setParameters(params).catch(() => {})
+                            }
+                        } catch (e) {}
+                    }
                 })
+
+                // 设置编码器偏好：优先 H.264 硬件编码
+                try {
+                    const transceivers = this.peerConnection.getTransceivers()
+                    for (const transceiver of transceivers) {
+                        if (transceiver.sender && transceiver.sender.track
+                            && transceiver.sender.track.kind === 'video') {
+                            const codecs = RTCRtpSender.getCapabilities
+                                ? RTCRtpSender.getCapabilities('video')
+                                : null
+                            if (codecs && codecs.codecs) {
+                                const preferred = ['H264', 'H.264', 'VP8', 'VP9']
+                                const sorted = codecs.codecs.filter(c =>
+                                    preferred.some(p => c.mimeType.indexOf(p) !== -1))
+                                if (sorted.length > 0) {
+                                    transceiver.setCodecPreferences(sorted)
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {}
                 
-                this.log('屏幕捕获成功')
+                this.log('屏幕捕获成功 (H.264 优先, 2.5Mbps)')
             }
         } catch (error) {
             this.error('屏幕捕获失败:', error)

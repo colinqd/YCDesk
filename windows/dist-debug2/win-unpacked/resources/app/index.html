@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YCDesk - 远程桌面控制</title>
+  <link rel="stylesheet" href="src/renderer/css/styles.css">
+  <script src="node_modules/socket.io-client/dist/socket.io.min.js"></script>
+</head>
+<body>
+  <div class="app-frame">
+    <!-- 顶栏 -->
+    <header class="topbar">
+      <div class="topbar-brand">
+        <span class="topbar-logo">YC</span>
+        <span class="topbar-title">YCDesk</span>
+      </div>
+      <div class="topbar-window-actions">
+        <button class="win-btn win-btn-min" onclick="minimizeWindow()" title="最小化">&#x2014;</button>
+        <button class="win-btn win-btn-close" onclick="closeWindow()" title="关闭">&#x2715;</button>
+      </div>
+    </header>
+
+    <!-- 主体：侧边栏 + 内容区 -->
+    <div class="app-body">
+      <!-- 左侧导航 -->
+      <nav class="sidebar" id="sidebar">
+        <div class="sidebar-nav">
+          <div class="nav-item active" data-page="rolePage" onclick="navigateTo('rolePage')">
+            <span class="nav-icon">&#x1F517;</span>
+            <span class="nav-label">角色选择</span>
+          </div>
+          <div class="nav-item" data-page="controlledPage" onclick="navigateTo('controlledPage')">
+            <span class="nav-icon">&#x1F4BB;</span>
+            <span class="nav-label">被控端</span>
+          </div>
+          <div class="nav-item" data-page="controllerPage" onclick="navigateTo('controllerPage')">
+            <span class="nav-icon">&#x1F5B1;</span>
+            <span class="nav-label">主控端</span>
+          </div>
+        </div>
+        <div class="sidebar-bottom">
+          <div class="nav-item" data-page="settingsPage" onclick="navigateTo('settingsPage')">
+            <span class="nav-icon">&#x2699;</span>
+            <span class="nav-label">设置</span>
+          </div>
+          <div class="nav-item" data-page="aboutSection" onclick="navigateTo('settingsPage'); setTimeout(function(){document.getElementById('aboutSection').scrollIntoView({behavior:'smooth'})},100)">
+            <span class="nav-icon">&#x2139;</span>
+            <span class="nav-label">关于</span>
+          </div>
+        </div>
+      </nav>
+
+      <!-- 右侧内容区 -->
+      <main class="main-area">
+
+        <!-- ========== 角色选择页 ========== -->
+        <div id="rolePage" class="page active">
+          <div class="page-hero">
+            <div class="hero-icon">&#x1F310;</div>
+            <h1 class="hero-title">YCDesk</h1>
+            <p class="hero-subtitle">安全、高效的远程桌面控制工具</p>
+          </div>
+          <div class="card-grid">
+            <div class="role-card" onclick="selectRole('controller')">
+              <div class="role-card-icon">&#x1F5B1;</div>
+              <div class="role-card-title">主控端</div>
+              <div class="role-card-desc">控制其他电脑，输入对方IP和端口即可连接</div>
+            </div>
+            <div class="role-card" onclick="selectRole('controlled')">
+              <div class="role-card-icon">&#x1F4BB;</div>
+              <div class="role-card-title">被控端</div>
+              <div class="role-card-desc">让其他电脑控制本机，启动监听等待连接</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========== 被控端页 ========== -->
+        <div id="controlledPage" class="page">
+          <div class="page-top">
+            <h2 class="page-heading">被控端</h2>
+            <div class="status-badge" id="serverStatus">
+              <span class="status-dot"></span>
+              <span id="serverStatusText">就绪</span>
+            </div>
+          </div>
+
+          <!-- 设备信息 -->
+          <div class="card info-card">
+            <div class="card-header">
+              <span class="card-label">设备 ID</span>
+              <span class="card-hint">点击复制</span>
+            </div>
+            <div class="device-id-display" id="deviceId" onclick="copyDeviceId()">加载中...</div>
+          </div>
+
+          <!-- 屏幕捕获源（默认隐藏） -->
+          <div class="card" id="sourceSelectorSection" style="display:none;">
+            <div class="card-title">&#x1F5A5; 屏幕捕获源
+              <button class="btn-sm" onclick="refreshCaptureSources()" style="margin-left:8px;">&#x1F504; 刷新</button>
+              <button class="btn-sm btn-sm-danger" id="bypassWdaBtn" onclick="bypassWdaProtection()" style="margin-left:4px;display:none;">&#x1F513; 解锁反截屏</button>
+            </div>
+            <select id="captureSource" class="input">
+              <option value="" data-source-id="">整个屏幕（默认）</option>
+            </select>
+            <div id="wdaStatus" style="margin-top:4px;font-size:11px;color:#e94560;display:none;"></div>
+            <label class="checkbox-label">
+              <input type="checkbox" id="useServiceCapture" onchange="toggleServiceCapture()">
+              <span>&#x1F6E1; 使用服务级捕获（绕过反截屏保护，需安装 Windows 服务）</span>
+            </label>
+          </div>
+
+          <!-- 连接模式 -->
+          <div class="card">
+            <div class="card-title">连接方式</div>
+            <div class="segmented-control">
+              <button class="segment active" onclick="switchControlledMode('direct')" data-mode="direct">直连模式</button>
+              <button class="segment" onclick="switchControlledMode('signaling')" data-mode="signaling">信令服务器模式</button>
+            </div>
+
+            <div id="controlledDirectMode" class="mode-content active">
+              <div class="input-group">
+                <label>监听端口</label>
+                <input type="number" id="listenPort" class="input" placeholder="8080" value="8080" min="1024" max="65535">
+              </div>
+              <div class="btn-row">
+                <button class="btn btn-primary" onclick="startListening()">&#x25B6; 开始监听</button>
+                <button class="btn btn-danger" onclick="stopListening()">&#x25A0; 停止监听</button>
+              </div>
+            </div>
+
+            <div id="controlledSignalingMode" class="mode-content">
+              <!-- 信令服务器列表 -->
+              <div class="collapsible-section">
+                <div class="collapsible-header" onclick="this.parentElement.classList.toggle('open')">
+                  <span>&#x1F4CB; 信令服务器列表</span>
+                  <button class="icon-btn" onclick="event.stopPropagation(); manageSignalingServerControlled()" title="管理信令服务器">&#x2699;</button>
+                </div>
+                <div class="collapsible-body">
+                  <div class="history-list" id="controlledSignalingServerList">
+                    <div class="history-empty">暂无已保存的信令服务器<br>请添加后从列表选择</div>
+                  </div>
+                  <div class="server-manage-panel" id="controlledServerManagePanel" style="display: none;">
+                    <div class="server-manage-row">
+                      <input type="text" id="controlledNewServerName" class="input-sm" placeholder="服务器名称（如：家庭电脑）">
+                      <input type="text" id="controlledNewServerUrl" class="input-sm" placeholder="地址（如：192.168.1.100:3000）">
+                    </div>
+                    <div class="server-manage-row">
+                      <button class="btn btn-sm btn-accent" id="controlledAddServerBtn" onclick="onAddServerClickControlled()">添加</button>
+                      <button class="btn btn-sm btn-muted" onclick="cancelEditServerControlled()">取消</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <label class="checkbox-label">
+                <input type="checkbox" id="autoAcceptConnection" checked disabled>
+                <span>自动接受连接（已启用）</span>
+              </label>
+
+              <div class="input-group">
+                <label>信令服务器地址</label>
+                <input type="text" id="controlledServerUrl" class="input" placeholder="如:192.168.1.100:3000" value="localhost:3000">
+              </div>
+              <div class="btn-row">
+                <button class="btn btn-primary" id="controlledConnectBtn" onclick="controlledConnectToServer()">连接</button>
+                <button class="btn btn-danger" id="controlledDisconnectBtn" onclick="controlledDisconnectFromServer()">断开</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 本机网络地址 -->
+          <div class="collapsible-section" id="controlledDirectSection">
+            <div class="collapsible-header" onclick="this.parentElement.classList.toggle('open')">
+              <span>&#x1F310; 本机网络地址</span>
+            </div>
+            <div class="collapsible-body">
+              <div class="ip-list" id="localIpList">加载中...</div>
+            </div>
+          </div>
+
+          <!-- 连接日志 -->
+          <div class="log-box collapsed" id="controlledLogBox">
+            <div class="log-header">
+              <span class="log-title">连接日志</span>
+              <button class="log-toggle-btn" onclick="toggleLogBox('controlledLogBox')">展开</button>
+            </div>
+            <div class="log-content" id="connectionLog"></div>
+          </div>
+        </div>
+
+        <!-- ========== 主控端页 ========== -->
+        <div id="controllerPage" class="page">
+          <div class="page-top">
+            <h2 class="page-heading">主控端</h2>
+            <div class="status-badge" id="controllerServerStatus">
+              <span class="status-dot" id="controllerStatusDot"></span>
+              <span id="controllerStatusText">就绪</span>
+            </div>
+          </div>
+
+          <!-- 连接模式 -->
+          <div class="card">
+            <div class="card-title">连接方式</div>
+            <div class="segmented-control">
+              <button class="segment active" onclick="switchControllerMode('direct')" data-mode="direct">直连模式</button>
+              <button class="segment" onclick="switchControllerMode('signaling')" data-mode="signaling">信令服务器模式</button>
+            </div>
+
+            <div id="controllerDirectMode" class="mode-content active">
+              <div class="collapsible-section">
+                <div class="collapsible-header" onclick="this.parentElement.classList.toggle('open')">
+                  <span>&#x1F4CB; 历史连接记录</span>
+                </div>
+                <div class="collapsible-body">
+                  <div class="history-list" id="directHistoryList">
+                    <div class="history-empty">暂无历史连接记录</div>
+                  </div>
+                </div>
+              </div>
+              <div class="two-col">
+                <div class="input-group">
+                  <label>对方 IP 地址</label>
+                  <input type="text" id="remoteIp" class="input" placeholder="例如: 192.168.1.100">
+                </div>
+                <div class="input-group">
+                  <label>对方端口</label>
+                  <input type="number" id="remotePort" class="input" placeholder="8080" value="8080" min="1024" max="65535">
+                </div>
+              </div>
+              <button class="btn btn-primary btn-full" onclick="connectDirect()">连接</button>
+            </div>
+
+            <div id="controllerSignalingMode" class="mode-content">
+              <!-- 信令服务器列表 -->
+              <div class="collapsible-section">
+                <div class="collapsible-header" onclick="this.parentElement.classList.toggle('open')">
+                  <span>&#x1F4CB; 信令服务器列表</span>
+                  <button class="icon-btn" onclick="event.stopPropagation(); manageSignalingServer()" title="管理信令服务器">&#x2699;</button>
+                </div>
+                <div class="collapsible-body">
+                  <div class="history-list" id="signalingServerList">
+                    <div class="history-empty">暂无已保存的信令服务器<br>请添加后从列表选择</div>
+                  </div>
+                  <div class="server-manage-panel" id="serverManagePanel" style="display: none;">
+                    <div class="server-manage-row">
+                      <input type="text" id="newServerName" class="input-sm" placeholder="服务器名称（如：家庭电脑）">
+                      <input type="text" id="newServerUrl" class="input-sm" placeholder="地址（如：192.168.1.100:3000）">
+                    </div>
+                    <div class="server-manage-row">
+                      <button class="btn btn-sm btn-accent" id="addServerBtn" onclick="onAddServerClick()">添加</button>
+                      <button class="btn btn-sm btn-muted" onclick="cancelEditServer()">取消</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 历史连接记录 -->
+              <div class="collapsible-section">
+                <div class="collapsible-header" onclick="this.parentElement.classList.toggle('open')">
+                  <span>&#x1F4CB; 历史连接记录</span>
+                </div>
+                <div class="collapsible-body">
+                  <div class="history-list" id="signalingHistoryList">
+                    <div class="history-empty">暂无历史连接记录</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="input-group">
+                <label>信令服务器地址</label>
+                <input type="text" id="controllerServerUrl" class="input" placeholder="例如: 192.168.1.100:3000" value="localhost:3000">
+              </div>
+              <div class="btn-row">
+                <button class="btn btn-secondary" id="controllerConnectBtn" onclick="controllerConnectToServer()">连接</button>
+                <button class="btn btn-danger" id="controllerDisconnectBtn" onclick="controllerDisconnectFromServer()">断开</button>
+              </div>
+
+              <!-- 设备列表 -->
+              <div class="collapsible-section" style="margin-top:12px;">
+                <div class="collapsible-header" onclick="this.parentElement.classList.toggle('open')">
+                  <span>&#x1F4CB; 设备列表</span>
+                  <button class="icon-btn" onclick="event.stopPropagation(); manageDeviceList()" title="管理设备列表">&#x2699;</button>
+                </div>
+                <div class="collapsible-body">
+                  <div class="history-list" id="deviceListContainer" style="max-height:150px;overflow-y:auto;">
+                    <div class="history-empty">暂无已保存的设备<br>连接成功后会自动添加</div>
+                  </div>
+                  <div class="server-manage-panel" id="deviceManagePanel" style="display: none;">
+                    <div class="server-manage-row">
+                      <input type="text" id="newDeviceId" class="input-sm" placeholder="设备ID（必填）" maxlength="16" style="text-transform: uppercase;">
+                      <input type="text" id="newDeviceAlias" class="input-sm" placeholder="别名（可选）">
+                    </div>
+                    <div class="server-manage-row">
+                      <button class="btn btn-sm btn-accent" onclick="addDeviceToList()">添加</button>
+                      <button class="btn btn-sm btn-muted" onclick="cancelDeviceManage()">取消</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="input-group" style="margin-top:12px;">
+                <label>对方设备 ID</label>
+                <input type="text" id="targetDeviceId" class="input" placeholder="输入对方设备 ID" maxlength="16" oninput="this.value = this.value.toUpperCase()">
+                <button class="btn btn-primary btn-full" style="margin-top:8px;" onclick="connectDevice()">连接</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 连接日志 -->
+          <div class="log-box collapsed" id="controllerLogBox">
+            <div class="log-header">
+              <span class="log-title">连接日志</span>
+              <button class="log-toggle-btn" onclick="toggleLogBox('controllerLogBox')">展开</button>
+            </div>
+            <div class="log-content" id="connectionLogController"></div>
+          </div>
+        </div>
+
+        <!-- ========== 设置页 ========== -->
+        <div id="settingsPage" class="page">
+          <div class="page-top">
+            <h2 class="page-heading">设置</h2>
+          </div>
+
+          <div class="card">
+            <div class="card-title">设备设置</div>
+            <div class="input-group">
+              <label>自定义设备 ID (6-16位字母数字)</label>
+              <input type="text" id="customDeviceId" class="input" placeholder="输入自定义设备ID" maxlength="16" style="text-transform: uppercase;">
+            </div>
+            <div class="btn-row" style="margin-top:10px;">
+              <button class="btn btn-primary" onclick="setCustomDeviceId()">设置ID</button>
+              <button class="btn btn-secondary" onclick="resetDeviceId()">随机生成</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">开机自启动</div>
+            <div class="auto-start-status">
+              <div id="autoStartStatus">
+                <span class="status-icon">&#x23F3;</span>
+                <span class="status-text">检查状态中...</span>
+              </div>
+            </div>
+            <label class="checkbox-label" style="margin-top:12px;">
+              <input type="checkbox" id="autoStartToggle" onchange="toggleAutoStart()">
+              <span>开机时自动启动 YCDesk</span>
+            </label>
+            <div class="notice" style="margin-top:12px;">
+              <strong>说明：</strong>启用后，系统重启时 YCDesk 将自动启动，最小化到托盘并按照上次的设置自动连接，等待远程控制。
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">服务模式（高级）</div>
+            <div id="serviceModeStatus" style="margin-bottom: 12px;">
+              <span class="status-icon">&#x23F3;</span>
+              <span class="status-text">检查状态中...</span>
+            </div>
+            <div class="notice" style="margin-bottom: 12px;">
+              <strong>服务模式</strong>将 YCDesk 注册为 Windows 服务，在系统启动时（无需用户登录）自动运行并等待远程连接。适用于无人值守的服务器或远程工位。
+            </div>
+            <div class="notice" style="margin-bottom: 12px; background: #fff3cd; border-left: 3px solid #ffc107;">
+              <strong>注意：</strong>安装/卸载服务需要管理员权限（UAC 提权）。服务模式启用后，开机自启动将自动禁用。
+            </div>
+            <div id="serviceModeControls">
+              <button id="btnInstallService" onclick="installService()" style="display:none; margin-right: 8px; padding: 6px 16px; background: #4caf50; color: white; border: none; border-radius: 4px; cursor: pointer;">安装服务</button>
+              <button id="btnUninstallService" onclick="uninstallService()" style="display:none; margin-right: 8px; padding: 6px 16px; background: #e94560; color: white; border: none; border-radius: 4px; cursor: pointer;">卸载服务</button>
+              <button id="btnStartService" onclick="startServiceMode()" style="display:none; margin-right: 8px; padding: 6px 16px; background: #2196f3; color: white; border: none; border-radius: 4px; cursor: pointer;">启动服务</button>
+              <button id="btnStopService" onclick="stopServiceMode()" style="display:none; margin-right: 8px; padding: 6px 16px; background: #ff9800; color: white; border: none; border-radius: 4px; cursor: pointer;">停止服务</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Credential Provider</div>
+            <div class="cred-provider-status">
+              <div id="credProviderStatus">
+                <span class="status-icon">&#x23F3;</span>
+                <span class="status-text">检查状态中...</span>
+              </div>
+            </div>
+            <div id="credProviderProgress" style="display: none; margin-top: 10px; padding: 10px; background: #f0f0f0; border-radius: 5px;">
+              <div id="credProviderProgressText">准备中...</div>
+            </div>
+            <div class="btn-row" style="margin-top:12px;">
+              <button class="btn btn-sm btn-accent" onclick="checkCredProvider()">刷新状态</button>
+              <button class="btn btn-sm btn-success" onclick="installCredProvider()">安装</button>
+              <button class="btn btn-sm btn-danger" onclick="uninstallCredProvider()">卸载</button>
+            </div>
+            <div class="notice" style="margin-top:12px;">
+              <strong>注意：</strong>安装和卸载 Credential Provider 需要管理员权限，并且需要重启电脑才能生效。
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">远程解锁设置</div>
+            <div class="unlock-status-box">
+              <div id="unlockPasswordStatus">
+                <span class="status-icon">&#x26A0;</span>
+                <span class="status-text">未设置解锁密码</span>
+              </div>
+            </div>
+            <div class="input-group" style="margin-top:10px;">
+              <label>解锁密码</label>
+              <div class="password-input-wrapper">
+                <input type="password" id="unlockPasswordInput" class="input" placeholder="输入解锁密码" style="flex:1;">
+                <button class="toggle-password-btn" onclick="toggleUnlockPasswordVisibility()" id="toggleUnlockPasswordBtn">&#x1F441;</button>
+              </div>
+            </div>
+            <div class="btn-row" style="margin-top:12px;">
+              <button class="btn btn-primary" onclick="saveUnlockPassword()">保存密码</button>
+              <button class="btn btn-danger" onclick="clearUnlockPassword()">清除密码</button>
+            </div>
+          </div>
+
+          <div class="card" id="aboutSection">
+            <div class="card-title">关于</div>
+            <div class="about-content">
+              <p>YCDesk v0.1.0</p>
+              <p>远程桌面控制软件 - Windows 版本</p>
+            </div>
+          </div>
+        </div>
+
+      </main>
+    </div>
+
+    <!-- 底部状态栏 -->
+    <footer class="statusbar" id="statusbar">
+      <span id="statusbarText">就绪</span>
+      <button class="statusbar-log-btn" onclick="toggleStatusbarLog()">&#x1F4CB; 日志</button>
+    </footer>
+  </div>
+
+  <script src="shared/config.js"></script>
+  <script src="shared/device-id-manager.js"></script>
+  <script src="shared/signaling-client.js"></script>
+  <script src="shared/data-channel-manager.js"></script>
+  <script src="src/renderer/js/frame-capturer.js"></script>
+  <script src="src/renderer/js/dirty-region-detector.js"></script>
+  <script src="src/renderer/js/frame-differ.js"></script>
+  <script src="src/renderer/js/video-frame-transmitter.js"></script>
+  <script src="src/renderer/js/ui-manager.js"></script>
+  <script src="src/renderer/js/history-manager.js"></script>
+  <script src="src/renderer/js/connection-manager.js"></script>
+  <script src="src/renderer/js/signaling-mode.js"></script>
+  <script src="src/renderer/js/direct-mode.js"></script>
+  <script src="src/renderer/js/device-list.js"></script>
+  <script src="src/renderer/js/connection-status.js"></script>
+  <script src="src/renderer/js/settings.js"></script>
+  <script src="src/renderer/js/app.js"></script>
+</body>
+</html>

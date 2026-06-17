@@ -662,12 +662,7 @@ if (typeof window !== 'undefined') {
     window.MatrixTransformer = MatrixTransformer
 }
 
-// export { (removed for non-module script) MatrixTransformer }
-// export default MatrixTransformer (removed for non-module script)
-
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = MatrixTransformer
-}
+/* ESM exports removed for CommonJS compatibility */
 
 if (typeof exports !== 'undefined') {
     exports.MatrixTransformer = MatrixTransformer

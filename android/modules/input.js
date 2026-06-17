@@ -120,9 +120,7 @@ function createGestureHandler(transformer, inputDispatcher) {
                 }
             },
             onToggleUI: () => {
-                if (typeof window.toggleControlsHide === 'function') {
-                    window.toggleControlsHide();
-                }
+                // 控制栏始终显示，不再支持隐藏切换
             },
             vibrate: (pattern) => {
                 if (navigator.vibrate) {

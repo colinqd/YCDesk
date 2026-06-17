@@ -11,26 +11,17 @@ const CONFIG = {
   stunServers: [
     'stun:stun.l.google.com:19302',
     'stun:stun1.l.google.com:19302',
-    'stun:stun2.l.google.com:19302',
-    'stun:stun3.l.google.com:19302',
-    'stun:stun.stunprotocol.org:3478',
-    'stun:stun.voxgratia.org:3478',
-    'stun:stun.voip.eutelia.it:3478',
-    'stun:stun.services.mozilla.com:3478',
-    'stun:stunserver.org:3478',
-    'stun:stun.softjoys.com:3478',
-    'stun:stun.voipbuster.com:3478',
-    'stun:global.stun.twilio.com:3478'
+    'stun:stun2.l.google.com:19302'
   ],
   turnServers: [
     // 部署 coturn 后替换为实际地址（对称NAT穿透必需）
     // { urls: 'turn:your-turn-server.com:3478', username: 'ycdesk', credential: 'your-password' }
   ],
   defaultPort: 8080,
-  heartbeatInterval: 5000,
+  heartbeatInterval: 3000,
   maxReconnectAttempts: 10,
-  baseReconnectDelay: 1000,
-  reconnectDelay: 1000,
+  baseReconnectDelay: 500,
+  reconnectDelay: 500,
   maxHistoryItems: 10,
   dataChannelMaxRetries: 3,
   dataChannelRetryInterval: 1000,
@@ -77,7 +68,7 @@ const CONFIG = {
     bundlePolicy: 'max-bundle',
     rtcpMuxPolicy: 'require',
     sdpSemantics: 'unified-plan',
-    iceCandidatePoolSize: 0,
+    iceCandidatePoolSize: 2,
     offerToReceiveAudio: false,
     offerToReceiveVideo: true,
     videoBitrateMax: 2500,

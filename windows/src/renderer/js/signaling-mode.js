@@ -638,6 +638,10 @@ class SignalingModeManager {
         if (this.useOptimizedTransfer && this.videoFrameTransmitter && this.optimizedVideoChannel && this.optimizedVideoChannel.readyState === 'open') {
           this.logFn('[信令模式] 使用优化传输模式捕获屏幕')
           this.videoFrameTransmitter.initialize(this.optimizedVideoChannel, maxWidth, maxHeight)
+          // 启动带宽估算（用于自适应参数调整）
+          if (this.peerConnection) {
+            this.videoFrameTransmitter.setPeerConnection(this.peerConnection)
+          }
           var resolution = await this.videoFrameTransmitter.start(selectedSourceId, maxWidth, maxHeight)
           if (resolution) {
             this.logFn('[信令模式] 优化屏幕捕获成功，分辨率: ' + resolution.width + 'x' + resolution.height)

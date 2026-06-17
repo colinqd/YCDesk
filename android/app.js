@@ -10,7 +10,7 @@ import { InputDispatcher, createGestureHandler, convertToInputCommand } from './
 import { handleReceivedInput, simulateMouseMove, simulateMouseDown, simulateMouseUp, simulateWheel, simulateKeyDown, simulateKeyUp } from './modules/input-executor.js';
 import { buildWsUrl, buildHttpUrl, setConnectionMode, startWsHeartbeat, stopWsHeartbeat, wsSend, isSocketConnected, handleWsMessage, connectToServer, disconnectFromServer, attemptReconnect, cancelReconnect, sendDirectMessage, extractHostname, isIpAddress, resolveHostname } from './modules/signaling.js';
 import { getIceConfig, startDirectControllerConnection, handleDirectOffer, handleDirectAnswer, handleRenegotiationAnswer, handleDirectIceCandidate, handleRenegotiationOffer, setupDataChannel, createPeerConnection, startControllerConnection, startControlledConnection, handleOffer, startAndroidScreenCapture, handleAnswer, addPendingIceCandidates, handleIceCandidate } from './modules/webrtc.js';
-import { updateVideoTransformGlobal, resetZoomAndPan, toggleMouseMode, toggleControlsExpand, toggleControlsHide, showControls, resetDimTimer, handleOrientationChange, showFloatingMouse, hideFloatingMouse, handleFloatingMouseEvent, toggleFullscreen, handleRemoteLockStateChanged, setupRemoteScreenInteraction } from './modules/ui.js';
+import { updateVideoTransformGlobal, resetZoomAndPan, toggleMouseMode, handleOrientationChange, showFloatingMouse, hideFloatingMouse, handleFloatingMouseEvent, toggleFullscreen, handleRemoteLockStateChanged, setupRemoteScreenInteraction } from './modules/ui.js';
 import { cycleKeyboardPosition, cycleKeyboardSize, cycleKeyboardOpacity, applyKeyboardPosition, ensureKeyboardInBounds, applyKeyboardSize, applyKeyboardOpacity, saveKeyboardSettings, loadKeyboardSettings, setupKeyboardDrag, toggleKeyboard, sendKey, toggleModifier, toggleSystemKeyboard, setupSystemKeyboardListener, toggleSpecialKeys, setupSystemKbBarDrag } from './modules/keyboard.js';
 import { updateScreenSize, showRemoteScreen, updateContainerSizeAfterVideoLoad, hideRemoteScreen, startStatsMonitoring, stopStatsMonitoring, toggleStatsOverlay, initStatsVisibility } from './modules/screen.js';
 import FileTransferManager from './modules/file-transfer.js';
@@ -1158,8 +1158,61 @@ function updateExitBtnDisplay() {
   }
 }
 
-function handleExit() {
-  if (exitBehavior === 'lock_and_disconnect') {
+function showExitOptions(event) {
+  var popup = document.getElementById('exitOptionsPopup')
+  if (!popup) return
+
+  // 如果已经显示，则隐藏
+  if (popup.style.display === 'flex') {
+    hideExitOptions()
+    return
+  }
+
+  // 更新当前选中状态的勾选标记
+  var checkLock = document.getElementById('checkLock')
+  var checkUnlock = document.getElementById('checkUnlock')
+  if (checkLock && checkUnlock) {
+    if (exitBehavior === 'lock_and_disconnect') {
+      checkLock.style.display = ''
+      checkUnlock.style.display = 'none'
+    } else {
+      checkLock.style.display = 'none'
+      checkUnlock.style.display = ''
+    }
+  }
+
+  // 定位弹窗到退出按钮附近
+  var btn = document.getElementById('exitBtn')
+  var rect = btn.getBoundingClientRect()
+  popup.style.left = (rect.left + rect.width / 2 - 55) + 'px'
+  popup.style.top = (rect.top - 10) + 'px'
+  popup.style.display = 'flex'
+
+  // 点击其它区域关闭弹窗
+  setTimeout(function() {
+    document.addEventListener('touchstart', hideExitOptionsHandler, { passive: true, once: true })
+  }, 100)
+}
+
+var hideExitOptionsHandler = function(e) {
+  var popup = document.getElementById('exitOptionsPopup')
+  if (!popup) return
+  if (popup.contains(e.target)) return
+  hideExitOptions()
+}
+
+function hideExitOptions() {
+  var popup = document.getElementById('exitOptionsPopup')
+  if (popup) popup.style.display = 'none'
+  document.removeEventListener('touchstart', hideExitOptionsHandler)
+}
+
+function doExit(mode) {
+  hideExitOptions()
+  exitBehavior = mode
+  updateExitBtnDisplay()
+  try { localStorage.setItem('ycdesk_exit_behavior', mode) } catch(e) {}
+  if (mode === 'lock_and_disconnect') {
     disconnectAndLock()
   } else {
     disconnect()
@@ -1271,7 +1324,8 @@ async function init() {
   setupSystemKbBarDrag()
   initStatsVisibility()
   FileTransferManager.init()
-  
+  updateExitBtnDisplay()
+
   console.log('初始化完成，设备ID:', s.myDeviceId)
 }
 
@@ -1293,10 +1347,6 @@ window.cycleKeyboardOpacity = cycleKeyboardOpacity
 window.toggleMouseMode = toggleMouseMode
 window.toggleFullscreen = toggleFullscreen
 window.toggleStatsOverlay = toggleStatsOverlay
-window.toggleControlsExpand = toggleControlsExpand
-window.toggleControlsHide = toggleControlsHide
-window.showControls = showControls
-window.resetDimTimer = resetDimTimer
 window.resetZoomAndPan = resetZoomAndPan
 window.sendKey = sendKey
 window.toggleModifier = toggleModifier
@@ -1304,7 +1354,8 @@ window.disconnect = disconnect
 window.disconnectAndLock = disconnectAndLock
 window.toggleExitMode = toggleExitMode
 window.updateExitBtnDisplay = updateExitBtnDisplay
-window.handleExit = handleExit
+window.showExitOptions = showExitOptions
+window.doExit = doExit
 window.requestUnlock = requestUnlock
 window.requestLock = requestLock
 window.manualConnectToServer = manualConnectToServer

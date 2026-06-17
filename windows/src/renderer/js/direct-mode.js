@@ -65,6 +65,8 @@ class DirectModeManager {
     try {
       await window.electronAPI.stopDirectServer()
       this.logFn('已停止监听')
+      // 清理 WebRTC 连接、屏幕捕获等所有资源
+      this.reset()
       if (this.uiManager) {
         this.uiManager.updateServerStatus('就绪', 'disconnected')
       }
@@ -564,6 +566,10 @@ class DirectModeManager {
         if (this.useOptimizedTransfer && this.videoFrameTransmitter && this.optimizedVideoChannel && this.optimizedVideoChannel.readyState === 'open') {
           this.logFn('使用优化传输模式捕获屏幕')
           this.videoFrameTransmitter.initialize(this.optimizedVideoChannel, maxWidth, maxHeight)
+          // 启动带宽估算（用于自适应参数调整）
+          if (this.directPeerConnection) {
+            this.videoFrameTransmitter.setPeerConnection(this.directPeerConnection)
+          }
           const resolution = await this.videoFrameTransmitter.start(selectedSourceId, maxWidth, maxHeight)
           if (resolution) {
             this.logFn('优化屏幕捕获成功，分辨率: ' + resolution.width + 'x' + resolution.height)

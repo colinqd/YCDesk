@@ -5,16 +5,21 @@ import { registerPlugin } from '@capacitor/core'
 
 const FloatingMouse = registerPlugin('FloatingMouse')
 
-// 自动 dim 计时器
-let dimTimer = null
-const DIM_DELAY = 3000
-
 // 控制栏拖动状态
 let isDraggingControl = false
 let controlDragStartX = 0
 let controlDragStartY = 0
 let controlDragStartLeft = 0
 let controlDragStartTop = 0
+
+// 控制栏最小化状态
+let isControlMinimized = false
+let isDraggingMinimizedFab = false
+let fabDragStartX = 0
+let fabDragStartY = 0
+let fabDragStartLeft = 0
+let fabDragStartTop = 0
+let fabMoved = false
 
 function updateVideoTransformGlobal() {
   const remoteVideo = document.getElementById('remoteVideo')
@@ -54,96 +59,6 @@ function toggleMouseMode() {
         if (typeof window.showToast === 'function') window.showToast('指针模式已关闭')
         if (mouseModeBtn) mouseModeBtn.classList.remove('active')
     }
-}
-
-function toggleControlsExpand() {
-  const controlOverlay = document.getElementById('controlOverlay')
-  const expandBtn = document.getElementById('controlExpandBtn')
-  
-  if (!controlOverlay) return
-  
-  const isExpanded = controlOverlay.classList.toggle('expanded')
-  
-  if (expandBtn) {
-    if (isExpanded) {
-      expandBtn.classList.add('expanded')
-      expandBtn.textContent = '╳'
-    } else {
-      expandBtn.classList.remove('expanded')
-      expandBtn.textContent = '⋮'
-    }
-  }
-}
-
-// 折叠展开区域（隐藏工具栏时先折叠）
-function collapseControls() {
-  const controlOverlay = document.getElementById('controlOverlay')
-  const expandBtn = document.getElementById('controlExpandBtn')
-  
-  if (controlOverlay) {
-    controlOverlay.classList.remove('expanded')
-  }
-  if (expandBtn) {
-    expandBtn.classList.remove('expanded')
-    expandBtn.textContent = '⋮'
-  }
-}
-
-function toggleControlsHide() {
-  s.controlsHidden = !s.controlsHidden
-  const controlOverlay = document.getElementById('controlOverlay')
-  const controlToggle = document.getElementById('controlToggle')
-  
-  if (controlOverlay && controlToggle) {
-    if (s.controlsHidden) {
-      collapseControls()
-      controlOverlay.classList.add('hidden')
-      controlToggle.classList.add('visible')
-      cancelDimTimer()
-      if (typeof window.showToast === 'function') window.showToast('控制栏已隐藏')
-    } else {
-      controlOverlay.classList.remove('hidden', 'dimmed')
-      controlToggle.classList.remove('visible')
-      cancelDimTimer()
-      if (typeof window.showToast === 'function') window.showToast('控制栏已显示')
-    }
-  }
-}
-
-function showControls() {
-  s.controlsHidden = false
-  const controlOverlay = document.getElementById('controlOverlay')
-  const controlToggle = document.getElementById('controlToggle')
-  
-  if (controlOverlay && controlToggle) {
-    controlOverlay.classList.remove('hidden', 'dimmed')
-    controlToggle.classList.remove('visible')
-    cancelDimTimer()
-  }
-}
-
-// 远程画面触摸时重置 dim 计时器
-function resetDimTimer() {
-  const controlOverlay = document.getElementById('controlOverlay')
-  if (!controlOverlay || s.controlsHidden) return
-  
-  // 清除 dim 状态
-  controlOverlay.classList.remove('dimmed')
-  
-  // 重置计时器
-  cancelDimTimer()
-  dimTimer = setTimeout(() => {
-    if (!s.controlsHidden) {
-      controlOverlay.classList.add('dimmed')
-    }
-  }, DIM_DELAY)
-}
-
-function cancelDimTimer() {
-  if (dimTimer) {
-    clearTimeout(dimTimer)
-    dimTimer = null
-  }
 }
 
 function handleOrientationChange() {
@@ -515,8 +430,125 @@ function setupControlDrag() {
   })
 }
 
+// 最小化控制栏
+function minimizeControlBar() {
+  const controlOverlay = document.getElementById('controlOverlay')
+  const fab = document.getElementById('controlMinimizedFab')
+  if (!controlOverlay || !fab) return
+
+  // 保存当前控制栏位置
+  saveControlPosition()
+
+  // 隐藏控制栏，显示浮动按钮
+  controlOverlay.style.display = 'none'
+  fab.style.display = 'flex'
+
+  // 设置浮动按钮默认位置（屏幕右侧）
+  const savedPos = loadMinimizedFabPosition()
+  if (savedPos) {
+    fab.style.left = savedPos.left + 'px'
+    fab.style.top = savedPos.top + 'px'
+  } else {
+    fab.style.left = (window.innerWidth - 72) + 'px'
+    fab.style.top = '200px'
+  }
+
+  isControlMinimized = true
+  setupMinimizedFabDrag()
+}
+
+// 恢复控制栏
+function restoreControlBar() {
+  const controlOverlay = document.getElementById('controlOverlay')
+  const fab = document.getElementById('controlMinimizedFab')
+  if (!controlOverlay || !fab) return
+
+  // 隐藏浮动按钮，显示控制栏
+  fab.style.display = 'none'
+  controlOverlay.style.display = 'flex'
+
+  // 恢复控制栏位置
+  loadControlPosition()
+
+  isControlMinimized = false
+}
+
+// 保存最小化浮动按钮位置
+function saveMinimizedFabPosition() {
+  const fab = document.getElementById('controlMinimizedFab')
+  if (!fab) return
+  try {
+    localStorage.setItem('ycdesk_minimized_fab_pos', JSON.stringify({
+      left: parseInt(fab.style.left) || 0,
+      top: parseInt(fab.style.top) || 0
+    }))
+  } catch(e) {}
+}
+
+// 加载最小化浮动按钮位置
+function loadMinimizedFabPosition() {
+  try {
+    const pos = JSON.parse(localStorage.getItem('ycdesk_minimized_fab_pos'))
+    if (pos && pos.left !== undefined && pos.top !== undefined) {
+      return pos
+    }
+  } catch(e) {}
+  return null
+}
+
+// 设置最小化浮动按钮的拖拽
+function setupMinimizedFabDrag() {
+  const fab = document.getElementById('controlMinimizedFab')
+  if (!fab) return
+
+  // 避免重复绑定
+  if (fab._dragBound) return
+  fab._dragBound = true
+
+  fab.addEventListener('touchstart', (e) => {
+    isDraggingMinimizedFab = true
+    fabMoved = false
+    const touch = e.touches[0]
+    fabDragStartX = touch.clientX
+    fabDragStartY = touch.clientY
+    fabDragStartLeft = parseInt(fab.style.left) || 0
+    fabDragStartTop = parseInt(fab.style.top) || 0
+    e.preventDefault()
+  }, { passive: false })
+
+  document.addEventListener('touchmove', (e) => {
+    if (!isDraggingMinimizedFab) return
+    const touch = e.touches[0]
+    const dx = touch.clientX - fabDragStartX
+    const dy = touch.clientY - fabDragStartY
+    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+      fabMoved = true
+    }
+    const newLeft = fabDragStartLeft + dx
+    const newTop = fabDragStartTop + dy
+    fab.style.left = Math.max(0, Math.min(window.innerWidth - fab.offsetWidth, newLeft)) + 'px'
+    fab.style.top = Math.max(0, Math.min(window.innerHeight - fab.offsetHeight, newTop)) + 'px'
+    e.preventDefault()
+  }, { passive: false })
+
+  document.addEventListener('touchend', () => {
+    if (isDraggingMinimizedFab) {
+      isDraggingMinimizedFab = false
+      if (fabMoved) {
+        // 拖拽结束，保存位置
+        saveMinimizedFabPosition()
+      } else {
+        // 点击（未移动），恢复控制栏
+        restoreControlBar()
+      }
+    }
+  })
+}
+
 window.handleRemoteLockStateChanged = handleRemoteLockStateChanged
 window.handleLockScreenFrame = handleLockScreenFrame
+window.minimizeControlBar = minimizeControlBar
+window.restoreControlBar = restoreControlBar
 
 function setupRemoteScreenInteraction() {
     const log = typeof window.log === 'function' ? window.log : console.log
@@ -565,12 +597,11 @@ function setupRemoteScreenInteraction() {
             
             const isTouchOnUI = (x, y) => {
                 const controlOverlay = document.getElementById('controlOverlay');
-                const controlToggle = document.getElementById('controlToggle');
                 const statsOverlay = document.getElementById('statsOverlay');
                 const keyboardOverlay = document.getElementById('keyboardOverlay');
                 const lockOverlay = document.getElementById('lockOverlay');
                 
-                const uiElements = [controlOverlay, controlToggle, statsOverlay, keyboardOverlay, lockOverlay];
+                const uiElements = [controlOverlay, statsOverlay, keyboardOverlay, lockOverlay];
                 
                 for (const element of uiElements) {
                     if (element && element.style.display !== 'none') {
@@ -594,7 +625,6 @@ function setupRemoteScreenInteraction() {
                     return;
                 }
                 e.preventDefault();
-                resetDimTimer();
                 
                 if (e.button === 1) {
                     isMiddleButtonDown = true;
@@ -628,7 +658,6 @@ function setupRemoteScreenInteraction() {
                 if (isTouchOnUI(e.touches[0]?.clientX, e.touches[0]?.clientY)) {
                     return;
                 }
-                resetDimTimer();
                 s.gestureHandler.handleTouchStart(e);
             }, { passive: false });
             
@@ -703,12 +732,6 @@ export {
   updateVideoTransformGlobal,
   resetZoomAndPan,
   toggleMouseMode,
-  toggleControlsExpand,
-  collapseControls,
-  toggleControlsHide,
-  showControls,
-  resetDimTimer,
-  cancelDimTimer,
   handleOrientationChange,
   showFloatingMouse,
   hideFloatingMouse,

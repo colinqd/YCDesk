@@ -41,14 +41,23 @@ class RemoteVideoHandler {
   setupDataChannel(channel) {
     this.dataChannel = channel
 
+    // 设置 binaryType 以支持二进制帧接收
+    channel.binaryType = 'arraybuffer'
+
     channel.onmessage = function(event) {
       try {
-        var data = JSON.parse(event.data)
+        // 判断是二进制帧还是 JSON 消息
+        if (event.data instanceof ArrayBuffer || event.data instanceof Uint8Array) {
+          // 二进制帧：直接传递给帧接收器
+          this.frameReceiver.handleMessage(event.data)
+        } else if (typeof event.data === 'string') {
+          var data = JSON.parse(event.data)
 
-        if (data.type === 'video-frame') {
-          this.frameReceiver.handleMessage(data)
-        } else if (data.type === 'video-control') {
-          this.handleVideoControl(data)
+          if (data.type === 'video-frame') {
+            this.frameReceiver.handleMessage(data)
+          } else if (data.type === 'video-control') {
+            this.handleVideoControl(data)
+          }
         }
       } catch (e) {
         this.logger.error('[RemoteVideoHandler] 解析消息失败: ' + e.message)

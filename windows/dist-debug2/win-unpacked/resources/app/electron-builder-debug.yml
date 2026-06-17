@@ -1,0 +1,45 @@
+appId: com.ycdesk.desktop.debug
+productName: YCDesk (Debug)
+asar: false
+compression: maximum
+npmRebuild: false
+directories:
+  output: dist-debug2
+electronLanguages:
+  - zh-CN
+  - en-US
+files:
+  - "**/*"
+  - "!**/*.md"
+  - "!**/*.log"
+  - "!dist*/**"
+  - "!credential_provider/**"
+  - "!resources/**"
+  - "!assets/**"
+  - "!data/**"
+  - "!*.bat"
+  - "!nodemon.json"
+  - "!watch-build.js"
+  - "!sync-shared.js"
+  - "!convert-icon.js"
+  - "!LICENSES.chromium.html"
+  - "!node_modules/*/{test,__tests__,tests,powered-test,example,examples}"
+  - "!node_modules/.bin"
+  - "!service/build/**"
+extraResources:
+  - from: "assets/"
+    to: "assets/"
+    filter:
+      - "icon.png"
+      - "icon.ico"
+win:
+  icon: assets/icon.ico
+  target:
+    - target: dir
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+portable:
+  artifactName: "YCDesk-Debug-Portable-${version}-fix.exe"

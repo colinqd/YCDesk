@@ -34,7 +34,8 @@ const RECEIVE_CHANNELS = Object.freeze([
   'answer',
   'ice-candidate',
   'lock-screen-frame',
-  'screen-capture-control'
+  'screen-capture-control',
+  'auto-start:trigger-auto-connect'
 ])
 
 const listenerRegistry = new Map()
@@ -147,5 +148,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   addDevice: (deviceId, alias, serverUrl) => ipcRenderer.invoke('device-list:add', deviceId, alias, serverUrl),
   removeDevice: (deviceId) => ipcRenderer.invoke('device-list:remove', deviceId),
   updateDeviceAlias: (deviceId, alias) => ipcRenderer.invoke('device-list:updateAlias', deviceId, alias),
-  clearDeviceList: () => ipcRenderer.invoke('device-list:clear')
+  clearDeviceList: () => ipcRenderer.invoke('device-list:clear'),
+
+  // 自启动相关
+  getAutoStartStatus: () => ipcRenderer.invoke('auto-start:get-status'),
+  setAutoStart: (enabled) => ipcRenderer.invoke('auto-start:set', { enabled }),
+
+  // 自动连接配置相关
+  saveAutoConnectConfig: (config) => ipcRenderer.invoke('auto-connect:save', config),
+  loadAutoConnectConfig: () => ipcRenderer.invoke('auto-connect:load')
 })

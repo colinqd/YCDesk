@@ -722,10 +722,10 @@
     .control-pill {
       display: flex;
       align-items: center;
-      gap: 2px;
-      padding: 6px 14px;
-      height: 48px;
-      border-radius: 24px;
+      gap: 1px;
+      padding: 4px 10px;
+      height: 38px;
+      border-radius: 19px;
       background: rgba(28, 28, 30, 0.78);
       backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
@@ -742,15 +742,15 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 22px;
-      height: 22px;
+      width: 16px;
+      height: 16px;
       color: rgba(255, 255, 255, 0.5);
-      font-size: 11px;
+      font-size: 9px;
       cursor: grab;
       user-select: none;
       touch-action: none;
-      margin-right: 2px;
-      border-radius: 4px;
+      margin-right: 1px;
+      border-radius: 3px;
       flex-shrink: 0;
     }
 
@@ -762,22 +762,22 @@
     /* 分隔线 */
     .control-separator {
       width: 1px;
-      height: 22px;
+      height: 18px;
       background: rgba(255, 255, 255, 0.18);
       border-radius: 0.5px;
-      margin: 0 6px;
+      margin: 0 4px;
       flex-shrink: 0;
     }
 
     /* 胶囊栏按钮 */
     .control-btn {
-      width: 36px;
-      height: 36px;
+      width: 30px;
+      height: 30px;
       border-radius: 50%;
       border: none;
       background: transparent;
       color: rgba(255, 255, 255, 0.85);
-      font-size: 16px;
+      font-size: 14px;
       cursor: pointer;
       transition: all 0.2s;
       display: flex;
@@ -790,19 +790,6 @@
     .control-btn:active {
       transform: scale(0.88);
       background: rgba(255, 255, 255, 0.15);
-    }
-
-    /* 展开按钮 */
-    .control-expand-btn {
-      background: rgba(255, 255, 255, 0.08);
-      color: rgba(255, 255, 255, 0.6);
-      font-size: 18px;
-      border-radius: 50%;
-    }
-
-    .control-expand-btn.expanded {
-      background: rgba(255, 255, 255, 0.18);
-      color: rgba(255, 255, 255, 0.9);
     }
 
     /* 活跃按钮高亮 */
@@ -821,92 +808,97 @@
       background: rgba(255, 107, 107, 0.25);
     }
 
-    /* 展开区域 */
-    .control-expanded-area {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 8px;
-      max-height: 0;
-      opacity: 0;
-      overflow: hidden;
-      transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-                  opacity 0.25s ease,
-                  margin 0.3s ease;
-      margin-top: 0;
-    }
-
-    .control-overlay.expanded .control-expanded-area {
-      max-height: 120px;
-      opacity: 1;
-      margin-top: 8px;
-    }
-
-    .control-expanded-row {
-      display: flex;
-      gap: 2px;
-      padding: 6px 14px;
+    /* 最小化浮动按钮 */
+    .control-minimized-fab {
+      position: fixed;
+      width: 44px;
       height: 44px;
-      border-radius: 22px;
-      background: rgba(28, 28, 30, 0.78);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35), 0 0 0 0.5px rgba(255, 255, 255, 0.12);
+      border-radius: 50%;
+      background: rgba(102, 126, 234, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: 0 4px 16px rgba(102, 126, 234, 0.45), 0 0 0 0.5px rgba(255, 255, 255, 0.15);
+      display: flex;
       align-items: center;
+      justify-content: center;
+      z-index: 1001;
+      cursor: pointer;
+      touch-action: none;
+      user-select: none;
+      transition: transform 0.2s, box-shadow 0.2s;
     }
 
-    /* 隐藏状态 */
-    .control-overlay.hidden {
-      transform: translateX(-50%) translateY(120px);
-      opacity: 0;
+    .control-minimized-fab:active {
+      transform: scale(0.9);
+      box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+    }
+
+    .control-minimized-icon {
+      font-size: 18px;
+      color: #fff;
       pointer-events: none;
     }
 
-    /* dimmed 半透明状态 */
-    .control-overlay.dimmed {
-      opacity: 0.35;
-      transition: opacity 0.8s ease;
-    }
-
-    .control-overlay.dimmed .control-pill {
-      pointer-events: auto;
-    }
-
-    .control-overlay.dimmed:hover {
-      opacity: 1;
-      transition: opacity 0.2s ease;
-    }
-
-    /* 显示/隐藏 Toggle 按钮 */
-    .control-toggle {
+    /* 退出选项弹出菜单 */
+    .exit-options-popup {
       position: fixed;
-      bottom: 12px;
-      right: 12px;
-      width: 40px;
-      height: 40px;
-      border-radius: 50%;
-      border: none;
-      background: rgba(28, 28, 30, 0.78);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      color: rgba(255, 255, 255, 0.75);
-      font-size: 18px;
-      cursor: pointer;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), 0 0 0 0.5px rgba(255, 255, 255, 0.1);
-      z-index: 999;
       display: none;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.3s;
+      flex-direction: column;
+      z-index: 1002;
+      min-width: 110px;
+      background: rgba(28, 28, 30, 0.92);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-radius: 10px;
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45), 0 0 0 0.5px rgba(255, 255, 255, 0.1);
+      padding: 4px;
+      overflow: hidden;
     }
 
-    .control-toggle.visible {
+    .exit-option-item {
       display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border: none;
+      background: transparent;
+      color: rgba(255, 255, 255, 0.85);
+      font-size: 13px;
+      cursor: pointer;
+      border-radius: 7px;
+      transition: background 0.15s;
+      white-space: nowrap;
+      text-align: left;
     }
 
-    .control-toggle:active {
-      transform: scale(0.9);
-      background: rgba(28, 28, 30, 0.9);
+    .exit-option-item:active {
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .exit-option-item.active-mode {
+      color: #667eea;
+    }
+
+    .exit-option-item.danger-mode {
+      color: #ff6b6b;
+    }
+
+    .exit-option-item .check-mark {
+      margin-left: auto;
+      color: #667eea;
+      font-size: 12px;
+    }
+
+    /* 解锁按钮突出样式 */
+    .control-btn.unlock-btn {
+      background: rgba(46, 204, 113, 0.25);
+      color: #2ecc71;
+      font-size: 15px;
+    }
+
+    .control-btn.unlock-btn:active {
+      background: rgba(46, 204, 113, 0.45);
+      transform: scale(0.88);
     }
 
     .keyboard-header {
@@ -1173,10 +1165,6 @@
       bottom: 80px;
     }
 
-    .remote-screen.fullscreen-mode .control-toggle {
-      bottom: 80px;
-    }
-
     .remote-screen.landscape-mode {
       position: fixed;
       top: 0;
@@ -1191,10 +1179,6 @@
     }
 
     .remote-screen.keyboard-visible .control-overlay {
-      bottom: calc(25vh + 80px);
-    }
-
-    .remote-screen.keyboard-visible .control-toggle {
       bottom: calc(25vh + 80px);
     }
 
@@ -1221,10 +1205,6 @@
         bottom: 10px;
       }
 
-      .remote-screen.active .control-toggle {
-        bottom: 10px;
-      }
-      
       .control-btn {
         width: 40px;
         height: 40px;
@@ -1674,31 +1654,35 @@
       </div>
     </div>
     <div class="control-overlay" id="controlOverlay">
-      <!-- 主胶囊栏 -->
       <div class="control-pill" id="controlPill">
         <div class="control-drag-handle" id="controlDragHandle" title="拖动移动">⋮⋮</div>
-        <button class="control-btn control-expand-btn" id="controlExpandBtn" onclick="toggleControlsExpand()" title="展开更多">⋮</button>
         <div class="control-separator"></div>
         <button class="control-btn" id="mouseModeBtn" onclick="toggleMouseMode()" title="鼠标模式">🖱️</button>
         <button class="control-btn" onclick="toggleKeyboard()" title="虚拟键盘">⌨️</button>
         <button class="control-btn" id="controlSysKbBtn" onclick="toggleSystemKeyboard()" title="系统输入法">🔤</button>
-        <button class="control-btn" id="fileTransferBtn" title="文件传输">📁</button>
-        <div class="control-separator"></div>
-        <button class="control-btn" onclick="requestLock()" title="锁屏">🔒</button>
         <button class="control-btn" onclick="toggleFullscreen()" title="全屏">⛶</button>
         <div class="control-separator"></div>
-        <button class="control-btn danger" id="exitBtn" onclick="handleExit()" oncontextmenu="toggleExitMode(); return false;" title="退出">✕</button>
-      </div>
-      <!-- 展开区域 -->
-      <div class="control-expanded-area">
-        <div class="control-expanded-row">
-          <button class="control-btn" onclick="requestUnlock()" title="解锁">🔓</button>
-          <button class="control-btn" onclick="resetZoomAndPan()" title="重置视图">↺</button>
-          <button class="control-btn" onclick="toggleControlsHide()" title="隐藏工具栏">👁️</button>
-        </div>
+        <button class="control-btn unlock-btn" onclick="requestUnlock()" title="解锁">🔓</button>
+        <div class="control-separator"></div>
+        <button class="control-btn" id="minimizeControlBtn" onclick="minimizeControlBar()" title="最小化">ー</button>
+        <button class="control-btn danger" id="exitBtn" onclick="showExitOptions(event)" title="退出">✕</button>
       </div>
     </div>
-    <button class="control-toggle" id="controlToggle" onclick="showControls()">☰</button>
+    <!-- 最小化后的浮动按钮 -->
+    <div class="control-minimized-fab" id="controlMinimizedFab" style="display:none;">
+      <span class="control-minimized-icon">≡</span>
+    </div>
+    <!-- 退出选项弹出菜单 -->
+    <div class="exit-options-popup" id="exitOptionsPopup">
+      <button class="exit-option-item active-mode" id="exitOptLock" onclick="doExit('lock_and_disconnect')">
+        <span>🔒</span> 锁屏退出
+        <span class="check-mark" id="checkLock">✓</span>
+      </button>
+      <button class="exit-option-item danger-mode" id="exitOptUnlock" onclick="doExit('disconnect_only')">
+        <span>🚪</span> 不锁屏退出
+        <span class="check-mark" id="checkUnlock" style="display:none;">✓</span>
+      </button>
+    </div>
   </div>
 
   <div class="keyboard-overlay" id="keyboardOverlay">

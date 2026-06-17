@@ -59,7 +59,6 @@ const s = {
   isPanning: false,
   isFullscreen: false,
   isFloatMode: false,
-  controlsHidden: false,
   isPointerMode: false,
 
   heartbeatInterval: null,

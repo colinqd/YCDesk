@@ -28,16 +28,30 @@ class VideoFrameReceiver {
   initialize(canvas) {
     this.canvas = canvas
     this.ctx = canvas.getContext('2d', { willReadFrequently: true })
-    this.logger.log('[VideoFrameReceiver] 初始化完成')
+    this.logger.log('[VideoFrameReceiver] 初始化完成 (二进制协议)')
   }
 
-  handleMessage(data) {
-    if (data.type !== 'video-frame') return
-
+  handleMessage(rawData) {
     var startTime = performance.now()
 
     try {
-      this.processFrame(data)
+      var frameData
+
+      // 判断是二进制帧还是 JSON 帧（向后兼容）
+      if (rawData instanceof ArrayBuffer || rawData instanceof Uint8Array) {
+        frameData = this.deserializeFrameBinary(rawData)
+      } else if (typeof rawData === 'string') {
+        try {
+          frameData = JSON.parse(rawData)
+          if (frameData.type !== 'video-frame') return
+        } catch (e) {
+          return
+        }
+      } else {
+        return
+      }
+
+      this.processFrame(frameData)
       this.stats.framesDecoded++
 
       var decodeTime = performance.now() - startTime
@@ -47,18 +61,108 @@ class VideoFrameReceiver {
 
       if (this.onFrameRendered) {
         this.onFrameRendered({
-          width: data.width,
-          height: data.height,
-          frameId: data.frameId,
-          isKeyFrame: data.isKeyFrame
+          width: frameData.width,
+          height: frameData.height,
+          frameId: frameData.frameId,
+          isKeyFrame: frameData.isKeyFrame
         })
       }
     } catch (e) {
       this.logger.error('[VideoFrameReceiver] 处理帧失败: ' + e.message)
     }
 
-    this.updateStats(data)
+    this.updateStats(rawData)
   }
+
+  // ========== 二进制帧反序列化 ==========
+
+  deserializeFrameBinary(buffer) {
+    var data = buffer instanceof ArrayBuffer ? new Uint8Array(buffer) : new Uint8Array(buffer.buffer || buffer)
+    var view = new DataView(data.buffer, data.byteOffset, data.byteLength)
+    var offset = 0
+
+    // 帧头
+    var msgType = view.getUint8(offset)
+    offset += 1
+    if (msgType !== 0x01) {
+      throw new Error('未知帧类型: ' + msgType)
+    }
+
+    var frameId = view.getUint32(offset, true)
+    offset += 4
+    var flags = view.getUint8(offset)
+    offset += 1
+    var isKeyFrame = (flags & 0x01) !== 0
+    var width = view.getUint16(offset, true)
+    offset += 2
+    var height = view.getUint16(offset, true)
+    offset += 2
+    var regionCount = view.getUint16(offset, true)
+    offset += 2
+
+    var regions = []
+    for (var i = 0; i < regionCount; i++) {
+      var regionX = view.getUint16(offset, true)
+      offset += 2
+      var regionY = view.getUint16(offset, true)
+      offset += 2
+      var regionW = view.getUint16(offset, true)
+      offset += 2
+      var regionH = view.getUint16(offset, true)
+      offset += 2
+
+      var dataType = view.getUint8(offset)
+      offset += 1
+      var dataLen = view.getUint32(offset, true)
+      offset += 4
+
+      var regionData
+      if (dataType === 0) {
+        // JPEG: 原始二进制数据（ArrayBuffer），构建 Blob 避免 Base64 开销
+        var jpegBytes = data.slice(offset, offset + dataLen)
+        regionData = { type: 'jpeg', data: new Blob([jpegBytes], { type: 'image/jpeg' }) }
+      } else if (dataType === 1) {
+        // RLE compressed - 保持 Uint8Array 避免 Array 转换
+        regionData = {
+          type: 'rle',
+          data: new Uint8Array(data.subarray(offset, offset + dataLen))
+        }
+      } else {
+        // Raw pixel data
+        regionData = {
+          type: 'raw',
+          data: Array.from(data.subarray(offset, offset + dataLen))
+        }
+      }
+      offset += dataLen
+
+      regions.push({
+        x: regionX,
+        y: regionY,
+        width: regionW,
+        height: regionH,
+        data: regionData
+      })
+    }
+
+    return {
+      type: 'video-frame',
+      frameId: frameId,
+      timestamp: Date.now(),
+      width: width,
+      height: height,
+      isKeyFrame: isKeyFrame,
+      regionCount: regionCount,
+      regions: regions
+    }
+  }
+
+  utf8ToString(data) {
+    var decoder = new TextDecoder('utf-8')
+    return decoder.decode(data)
+  }
+
+  // ========== 帧处理 ==========
 
   processFrame(frameData) {
     this.currentFrameId = frameData.frameId
@@ -106,12 +210,7 @@ class VideoFrameReceiver {
 
     try {
       if (data.type === 'jpeg' || data.type === 'image/jpeg') {
-        var img = this._getPooledImage()
-        img.onload = function() {
-          this.ctx.drawImage(img, x, y, width, height)
-          img.onload = null
-        }.bind(this)
-        img.src = data.data
+        this._renderJpegRegion(data, x, y, width, height)
       } else if (data.type === 'rle') {
         var decompressed = this.decompressRLE(data.data, width, height)
         this.renderPixelData(decompressed, x, y, width, height)
@@ -120,6 +219,47 @@ class VideoFrameReceiver {
       }
     } catch (e) {
       this.logger.error('[VideoFrameReceiver] 渲染区域失败 (' + x + ',' + y + '): ' + e.message)
+    }
+  }
+
+  _renderJpegRegion(data, x, y, width, height) {
+    var ctx = this.ctx
+
+    // 使用 createImageBitmap 替代 Image.onload（更快、不乱序）
+    if (typeof createImageBitmap !== 'undefined') {
+      createImageBitmap(data.data instanceof Blob ? data.data : data.data, {
+        resizeWidth: width,
+        resizeHeight: height,
+        resizeQuality: 'pixelated'
+      }).then(function(bitmap) {
+        ctx.drawImage(bitmap, x, y, width, height)
+        bitmap.close()
+      }).catch(function() {
+        // 降级：使用 Image 加载
+        this._renderJpegFallback(data, x, y, width, height)
+      }.bind(this))
+    } else {
+      this._renderJpegFallback(data, x, y, width, height)
+    }
+  }
+
+  _renderJpegFallback(data, x, y, width, height) {
+    var ctx = this.ctx
+    var img = this._getPooledImage()
+    img.onload = function() {
+      ctx.drawImage(img, x, y, width, height)
+      img.onload = null
+      // 释放 Blob URL
+      if (img.src && img.src.indexOf('blob:') === 0) {
+        URL.revokeObjectURL(img.src)
+      }
+    }.bind(this)
+
+    if (data.data instanceof Blob) {
+      img.src = URL.createObjectURL(data.data)
+    } else if (typeof data.data === 'string') {
+      // 向后兼容：旧格式 data URL
+      img.src = data.data
     }
   }
 
@@ -155,28 +295,32 @@ class VideoFrameReceiver {
   }
 
   decompressRLE(compressed, width, height) {
-    var result = []
+    var data = compressed instanceof Uint8Array ? compressed : new Uint8Array(compressed)
+    var expectedSize = width * height * 4
+    var result = new Uint8Array(expectedSize)
+    var ri = 0
     var i = 0
 
-    while (i < compressed.length) {
-      var byte = compressed[i]
+    while (i < data.length && ri < expectedSize) {
+      var byte = data[i]
 
       if (byte & 0x80) {
         var runLength = byte & 0x7F
         i++
-        if (i < compressed.length) {
-          var value = compressed[i]
+        if (i < data.length) {
+          var value = data[i]
           i++
-          for (var j = 0; j < runLength; j++) {
-            result.push(value)
+          var end = Math.min(ri + runLength, expectedSize)
+          while (ri < end) {
+            result[ri++] = value
           }
         }
       } else {
         var count = byte
         i++
-        for (var j = 0; j < count && i < compressed.length; j++) {
-          result.push(compressed[i])
-          i++
+        var end = Math.min(ri + count, i + count, expectedSize)
+        while (ri < end && i < data.length) {
+          result[ri++] = data[i++]
         }
       }
     }
@@ -184,8 +328,16 @@ class VideoFrameReceiver {
     return result
   }
 
-  updateStats(frameData) {
-    this.stats.bytesReceived += JSON.stringify(frameData).length
+  updateStats(rawData) {
+    var byteSize = 0
+    if (rawData instanceof ArrayBuffer) {
+      byteSize = rawData.byteLength
+    } else if (rawData instanceof Uint8Array) {
+      byteSize = rawData.byteLength
+    } else if (typeof rawData === 'string') {
+      byteSize = rawData.length
+    }
+    this.stats.bytesReceived += byteSize
 
     if (this.onStatsUpdate) {
       this.onStatsUpdate(Object.assign({}, this.stats))

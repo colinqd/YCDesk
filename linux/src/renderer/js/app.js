@@ -587,6 +587,8 @@ function openSettingsPage() {
     settingsPage.classList.add('active')
   }
   
+  loadAutoStartStatus()
+
   log('打开设置页面')
 }
 
@@ -631,6 +633,11 @@ async function initControlled() {
 
   renderServerListControlled()
   await getLocalIps()
+
+  // 非自启动时加载上次连接配置到输入框
+  if (typeof loadLastConnectConfig === 'function') {
+    loadLastConnectConfig()
+  }
 }
 
 async function initController() {
@@ -725,6 +732,7 @@ async function startListening() {
 
   console.log('调用 directManager.startListening')
   await directManager.startListening(port)
+  saveCurrentConnectConfig()
 }
 
 async function stopListening() {
@@ -763,6 +771,9 @@ async function controlledConnectToServer() {
   connectionManager.cancelReconnect()
 
   await signalingManager.connect(serverUrl, 'controlled')
+  if (typeof saveCurrentConnectConfig === 'function') {
+    saveCurrentConnectConfig()
+  }
 }
 
 function controlledDisconnectFromServer() {
@@ -1038,3 +1049,147 @@ window.editSignalingServerControlled = editSignalingServerControlled
 window.deleteSignalingServerControlled = deleteSignalingServerControlled
 window.selectServerControlled = selectServerControlled
 window.cancelEditServerControlled = cancelEditServerControlled
+
+// ==================== 自动连接 ====================
+
+// 监听主进程的自动连接通知
+window.electronAPI.on('auto-start:trigger-auto-connect', (config) => {
+  log('收到自动连接通知: ' + JSON.stringify(config))
+  executeAutoConnect(config)
+})
+
+// 执行自动连接
+async function executeAutoConnect(config) {
+  if (!config || !config.enabled) {
+    log('自动连接未启用，跳过')
+    return
+  }
+
+  try {
+    // 切换到被控端页面
+    selectRole('controlled')
+
+    // 等待被控端初始化
+    await new Promise(resolve => setTimeout(resolve, 1000))
+
+    if (config.mode === 'signaling') {
+      // 信令服务器模式
+      const serverUrlInput = document.getElementById('controlledServerUrl')
+      if (serverUrlInput && config.serverUrl) {
+        serverUrlInput.value = config.serverUrl
+      }
+      switchControlledMode('signaling')
+      await new Promise(resolve => setTimeout(resolve, 500))
+      log('自动连接到信令服务器: ' + config.serverUrl)
+      controlledConnectToServer()
+    } else if (config.mode === 'direct') {
+      // 直连模式
+      const listenPortInput = document.getElementById('listenPort')
+      if (listenPortInput && config.listenPort) {
+        listenPortInput.value = config.listenPort
+      }
+      switchControlledMode('direct')
+      await new Promise(resolve => setTimeout(resolve, 500))
+      log('自动开始监听端口: ' + config.listenPort)
+      startListening()
+    }
+  } catch (e) {
+    log('自动连接执行失败: ' + e.message)
+  }
+}
+
+// 保存当前被控端连接配置
+async function saveCurrentConnectConfig() {
+  try {
+    const config = {
+      enabled: true,
+      mode: currentControlledMode
+    }
+
+    if (currentControlledMode === 'signaling') {
+      const serverUrlInput = document.getElementById('controlledServerUrl')
+      config.serverUrl = serverUrlInput ? serverUrlInput.value : ''
+    } else {
+      const listenPortInput = document.getElementById('listenPort')
+      config.listenPort = listenPortInput ? parseInt(listenPortInput.value) : 8080
+    }
+
+    await window.electronAPI.saveAutoConnectConfig(config)
+    log('连接配置已保存')
+  } catch (e) {
+    log('保存连接配置失败: ' + e.message)
+  }
+}
+
+// 加载上次的连接配置到输入框（非自启动时）
+async function loadLastConnectConfig() {
+  try {
+    const result = await window.electronAPI.loadAutoConnectConfig()
+    if (result.success && result.config) {
+      const config = result.config
+      if (config.mode === 'signaling' && config.serverUrl) {
+        const serverUrlInput = document.getElementById('controlledServerUrl')
+        if (serverUrlInput) serverUrlInput.value = config.serverUrl
+      } else if (config.mode === 'direct' && config.listenPort) {
+        const listenPortInput = document.getElementById('listenPort')
+        if (listenPortInput) listenPortInput.value = config.listenPort
+      }
+    }
+  } catch (e) {
+    // 静默失败
+  }
+}
+
+// ==================== 开机自启动 ====================
+
+async function loadAutoStartStatus() {
+  try {
+    const result = await window.electronAPI.getAutoStartStatus()
+    const toggle = document.getElementById('autoStartToggle')
+    const statusDiv = document.getElementById('autoStartStatus')
+
+    if (result.success) {
+      if (toggle) toggle.checked = result.enabled
+      if (statusDiv) {
+        statusDiv.innerHTML = result.enabled
+          ? '<span style="color: #4caf50;">✅ 已启用开机自启动</span>'
+          : '<span style="color: #ff9800;">⚠️ 未启用开机自启动</span>'
+      }
+    } else {
+      if (toggle) toggle.checked = false
+      if (statusDiv) {
+        statusDiv.innerHTML = '<span style="color: #e94560;">❌ 获取状态失败</span>'
+      }
+    }
+  } catch (e) {
+    log('加载自启动状态失败: ' + e.message)
+    const toggle = document.getElementById('autoStartToggle')
+    const statusDiv = document.getElementById('autoStartStatus')
+    if (toggle) toggle.checked = false
+    if (statusDiv) {
+      statusDiv.innerHTML = '<span style="color: #e94560;">❌ 获取状态失败</span>'
+    }
+  }
+}
+
+async function toggleAutoStart() {
+  const toggle = document.getElementById('autoStartToggle')
+  const enabled = toggle ? toggle.checked : false
+
+  try {
+    const result = await window.electronAPI.setAutoStart(enabled)
+    if (result.success) {
+      showMessage(enabled ? '已启用开机自启动' : '已禁用开机自启动')
+      loadAutoStartStatus()
+    } else {
+      showMessage('设置失败: ' + (result.error || '未知错误'))
+      if (toggle) toggle.checked = !enabled
+    }
+  } catch (e) {
+    showMessage('设置失败: ' + e.message)
+    if (toggle) toggle.checked = !enabled
+  }
+}
+
+window.loadAutoStartStatus = loadAutoStartStatus
+window.toggleAutoStart = toggleAutoStart

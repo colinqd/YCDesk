@@ -18,10 +18,7 @@ class BaseConnectionManager {
         this.iceServers = [
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun.stunprotocol.org:3478' },
-            { urls: 'stun:stun.services.mozilla.com:3478' },
-            { urls: 'stun:global.stun.twilio.com:3478' },
-            { urls: 'stun:stunserver.org:3478' }
+            { urls: 'stun:stun2.l.google.com:19302' }
         ]
         this.connectionTimeout = 30000
         this.resolutionTimeout = 15000

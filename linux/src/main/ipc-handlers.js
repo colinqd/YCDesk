@@ -34,6 +34,8 @@ const ipcSignaling = require('./ipc/ipc-signaling')
 const ipcWindow = require('./ipc/ipc-window')
 const ipcService = require('./ipc/ipc-service')
 const ipcDeviceList = require('./ipc/ipc-device-list')
+const ipcAutoStart = require('./ipc/ipc-auto-start')
+const ipcAutoConnect = require('./ipc/ipc-auto-connect')
 
 let deviceId = null
 let logger = null
@@ -88,6 +90,8 @@ function init(deviceIdParam, loggerParam) {
 
   ipcService.register(safeIpcHandler, log)
   ipcDeviceList.register(safeIpcHandler, getDeviceListManager, log)
+  ipcAutoStart.register(safeIpcHandler, log)
+  ipcAutoConnect.register(safeIpcHandler, log)
 
   ipcMain.on('set-log-role', (event, role) => {
     if (logger && logger.setRole) logger.setRole(role)
@@ -103,5 +107,7 @@ function cleanup() {
 
 module.exports = {
   init,
-  loadDeviceId: ipcDevice.loadDeviceId
+  loadDeviceId: ipcDevice.loadDeviceId,
+  loadAutoStartConfig: ipcAutoStart.loadAutoStartConfig,
+  loadAutoConnectConfig: ipcAutoConnect.loadAutoConnectConfig
 }
