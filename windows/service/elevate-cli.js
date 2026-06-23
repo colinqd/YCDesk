@@ -31,8 +31,9 @@ const { execSync } = require('child_process')
 const SVC_NAME = 'YCDeskService'
 const SVC_DISPLAY = 'YCDesk Remote Desktop Service'
 const SVC_DESC = 'YCDesk 远程桌面后台服务，提供锁屏画面捕获和系统级输入注入功能'
-// node-windows 以 id 作为 winsw 服务名，必须与 elevation-manager.js 中 _serviceName 一致
-const SVC_ID = 'ycdeskservice.exe'
+// SCM 服务名，必须与 elevation-manager.js 中 _serviceName 一致
+// 历史上用 'ycdeskservice'（不带 .exe），保持兼容
+const SVC_ID = 'ycdeskservice'
 
 // 服务子项目根目录
 const SERVICE_APP_DIR = path.resolve(__dirname)
@@ -103,55 +104,158 @@ function getService() {
 }
 
 // ===== 动作 =====
+//
+// 安装策略：
+//   1. node-windows 的 Service.install() 在 daemon/ 下生成 winsw.exe + .xml，
+//      并用 winsw 注册服务（但 winsw 强制 service id = "<id>.exe"，与 SVC_ID 不一致）
+//   2. 因此我们在 Service.install() 完成后，删除 winsw 注册的临时服务，
+//      直接用 sc create + 修正后的 binPath 注册 SVC_ID 对应的服务
+//   3. 这样既复用 winsw 的 ServiceMain（避免 1053 超时），又保持 SVC_ID 与
+//      elevation-manager.js 一致
 function install() {
   if (!checkPrerequisites()) return exitWith(1)
 
-  const svc = getService()
-  svc.on('install', () => {
-    log('INFO', '服务安装成功 (winsw 完成注册)')
-    // 等待 SCM 完全注册服务后再配置
-    setTimeout(() => {
-      try {
-        execSync(`sc config ${SVC_ID} start= auto`, { stdio: 'pipe', timeout: 10000 })
-        log('INFO', '已设置 start= auto')
-      } catch (e) {
-        log('WARN', '设置 start= auto 失败: ' + (e.stderr || e.message || '').trim())
-      }
-      try {
-        execSync(`sc failure ${SVC_ID} reset= 86400 actions= restart/5000/restart/10000/restart/30000`, { stdio: 'pipe', timeout: 10000 })
-        log('INFO', '已设置失败恢复策略')
-      } catch (e) {
-        log('WARN', '设置失败恢复策略失败: ' + (e.stderr || e.message || '').trim())
-      }
-      exitWith(0, 'OK')
-    }, 1000)
-  })
-  svc.on('alreadyinstalled', () => {
-    log('INFO', '服务已经安装')
-    // 即使已存在也确保 auto-start
+  // 清理旧服务（之前的 P/Invoke 安装可能残留指向 Temp 目录的 binPath）
+  try {
+    execSync(`sc stop "${SVC_ID}"`, { stdio: 'pipe', timeout: 10000 })
+    log('INFO', '已停止旧服务')
+  } catch (e) {}
+  try {
+    execSync(`sc delete "${SVC_ID}"`, { stdio: 'pipe', timeout: 10000 })
+    log('INFO', '已删除旧服务（清理 P/Invoke 残留）')
+  } catch (e) {
+    if (e && e.status === 1060) {
+      log('INFO', '旧服务不存在，无需删除')
+    } else {
+      log('WARN', '清理旧服务时出错（继续安装）: ' + safeError(e))
+    }
+  }
+
+  // 清理 node-windows 之前生成的 daemon 目录（带 .exe 名字的临时服务）
+  const daemonDir = path.join(SERVICE_APP_DIR, 'daemon')
+  if (fs.existsSync(daemonDir)) {
     try {
-      execSync(`sc config ${SVC_ID} start= auto`, { stdio: 'pipe' })
-    } catch (e) {}
-    exitWith(0, 'ALREADY')
+      // 先尝试停止并删除 node-windows 注册的临时服务（如果有）
+      const tempSvcName = 'ycdeskservice.exe'
+      try { execSync(`sc stop "${tempSvcName}"`, { stdio: 'pipe', timeout: 5000 }) } catch (e) {}
+      try { execSync(`sc delete "${tempSvcName}"`, { stdio: 'pipe', timeout: 5000 }) } catch (e) {}
+      fs.rmSync(daemonDir, { recursive: true, force: true })
+      log('INFO', '已清理 daemon 目录: ' + daemonDir)
+    } catch (e) {
+      log('WARN', '清理 daemon 目录失败: ' + e.message)
+    }
+  }
+
+  // 使用 node-windows Service.install() 生成 winsw.exe + .xml + .config
+  // 这一步只是产出文件，不依赖 winsw 注册服务的服务名
+  log('INFO', '生成 winsw 包装器 (node-windows Service.install)...')
+
+  const svc = getService()
+  let settled = false
+  const settle = (code, tag) => {
+    if (settled) return
+    settled = true
+    exitWith(code, tag)
+  }
+
+  svc.on('install', () => {
+    log('INFO', 'winsw 文件已生成')
+    doScInstall(settle)
   })
+
+  svc.on('alreadyinstalled', () => {
+    log('INFO', 'daemon 已存在，跳过文件生成')
+    doScInstall(settle)
+  })
+
   svc.on('invalidinstallation', () => {
-    log('ERROR', '服务安装无效（缺少必要文件）')
-    exitWith(1, 'INVALID')
+    log('ERROR', '安装无效：缺少 winsw.exe 或 .xml')
+    settle(1, 'INVALID_INSTALL')
   })
+
   svc.on('error', (err) => {
-    log('ERROR', '安装失败: ' + (err && err.message ? err.message : err))
-    exitWith(1, 'ERROR')
+    log('ERROR', 'Service.install 出错: ' + (err && err.message || err))
+    settle(1, 'ERROR')
   })
-  log('INFO', '开始安装服务...')
-  log('INFO', '  script: ' + SCRIPT_PATH)
-  log('INFO', '  execPath: ' + NODE_EXE)
-  log('INFO', '  workingdirectory: ' + SERVICE_APP_DIR)
+
   try {
     svc.install()
   } catch (e) {
-    log('ERROR', 'svc.install 抛出异常: ' + e.message)
-    exitWith(1, 'ERROR')
+    log('ERROR', '调用 svc.install() 异常: ' + safeError(e))
+    settle(1, 'INVOKE_FAILED')
   }
+}
+
+/**
+ * 在 daemon/ 文件就绪后：
+ *   1. 删除 node-windows 临时注册的 "<id>.exe" 服务
+ *   2. 用 sc create 注册 SVC_ID 对应的服务，binPath 指向 winsw.exe
+ *   3. 设置描述和失败恢复策略
+ */
+function doScInstall(settle) {
+  const daemonDir = path.join(SERVICE_APP_DIR, 'daemon')
+  const winswExe = path.join(daemonDir, 'ycdeskservice.exe')
+
+  if (!fs.existsSync(winswExe)) {
+    log('ERROR', 'winsw.exe 不存在: ' + winswExe)
+    return settle(1, 'NO_WINSW')
+  }
+
+  // 清理 node-windows 注册的临时服务（如果有）
+  const tempSvcName = 'ycdeskservice.exe'
+  try {
+    execSync(`sc stop "${tempSvcName}"`, { stdio: 'pipe', timeout: 5000 })
+  } catch (e) {}
+  try {
+    execSync(`sc delete "${tempSvcName}"`, { stdio: 'pipe', timeout: 5000 })
+    log('INFO', '已删除 node-windows 临时服务: ' + tempSvcName)
+  } catch (e) {
+    if (e && e.status === 1060) {
+      log('INFO', 'node-windows 临时服务不存在')
+    } else {
+      log('WARN', '清理临时服务失败: ' + safeError(e))
+    }
+  }
+
+  // 用 sc create 注册 SVC_ID 服务，binPath 指向 winsw.exe
+  // winsw.exe 内置 ServiceMain，能正确向 SCM 报告状态
+  log('INFO', `用 sc create 注册服务: ${SVC_ID} -> ${winswExe}`)
+  try {
+    const out = execSync(
+      `sc create "${SVC_ID}" binPath= "\\"${winswExe}\\"" DisplayName= "${SVC_DISPLAY}" start= auto`,
+      { stdio: 'pipe', encoding: 'utf8', timeout: 15000 }
+    )
+    log('INFO', 'sc create: ' + out.trim())
+  } catch (e) {
+    log('ERROR', 'sc create 失败: ' + safeError(e))
+    return settle(1, 'SC_CREATE_FAILED')
+  }
+
+  // 设置服务描述
+  try {
+    execSync(`sc description "${SVC_ID}" "${SVC_DESC}"`, { stdio: 'pipe', timeout: 10000 })
+    log('INFO', '已设置服务描述')
+  } catch (e) {
+    log('WARN', '设置服务描述失败: ' + safeError(e))
+  }
+
+  // 设置失败恢复策略
+  try {
+    execSync(`sc failure "${SVC_ID}" reset= 86400 actions= restart/5000/restart/10000/restart/30000`, { stdio: 'pipe', timeout: 10000 })
+    log('INFO', '已设置失败恢复策略')
+  } catch (e) {
+    log('WARN', '设置失败恢复策略失败: ' + safeError(e))
+  }
+
+  // 验证
+  try {
+    const qry = execSync(`sc qc "${SVC_ID}"`, { stdio: 'pipe', encoding: 'utf8', timeout: 10000 })
+    log('INFO', 'SCM 验证: ' + qry.replace(/\r?\n/g, ' ').trim().slice(0, 300))
+  } catch (e) {
+    log('WARN', 'SCM 验证失败: ' + safeError(e))
+  }
+
+  settle(0, 'OK')
 }
 
 function uninstall() {

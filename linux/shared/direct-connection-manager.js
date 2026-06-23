@@ -12,6 +12,19 @@ class DirectConnectionManager extends BaseConnectionManager {
         this.iceServers = []
         this._iceRestartInProgress = false
         this._ipcListeners = []
+        this._pendingTimers = []
+    }
+
+    _trackTimer(timer) {
+        this._pendingTimers.push(timer)
+        return timer
+    }
+
+    _clearPendingTimers() {
+        for (const timer of this._pendingTimers) {
+            clearTimeout(timer)
+        }
+        this._pendingTimers = []
     }
 
     setModeData(data) {
@@ -68,9 +81,9 @@ class DirectConnectionManager extends BaseConnectionManager {
         this._ipcListeners.push({ event: 'direct-mode-start', handler: modeStartHandler })
         
         return new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
+            const timeout = this._trackTimer(setTimeout(() => {
                 reject(new Error('等待直连模式启动超时'))
-            }, 10000)
+            }, 10000))
             
             this.on('direct-mode-start', () => {
                 clearTimeout(timeout)
@@ -222,9 +235,9 @@ class DirectConnectionManager extends BaseConnectionManager {
 
     async waitForAnswer() {
         return new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
+            const timeout = this._trackTimer(setTimeout(() => {
                 reject(new Error('等待 answer 超时'))
-            }, 30000)
+            }, 30000))
             
             this.answerResolve = () => {
                 clearTimeout(timeout)
@@ -235,9 +248,9 @@ class DirectConnectionManager extends BaseConnectionManager {
 
     async waitForRenegotiationOffer() {
         return new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
+            const timeout = this._trackTimer(setTimeout(() => {
                 reject(new Error('等待 renegotiation offer 超时'))
-            }, 30000)
+            }, 30000))
             
             this.renegotiateResolve = () => {
                 clearTimeout(timeout)
@@ -273,9 +286,9 @@ class DirectConnectionManager extends BaseConnectionManager {
 
     async waitForOffer() {
         return new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
+            const timeout = this._trackTimer(setTimeout(() => {
                 reject(new Error('等待 offer 超时'))
-            }, 30000)
+            }, 30000))
             
             this.offerResolve = () => {
                 clearTimeout(timeout)
@@ -478,10 +491,10 @@ class DirectConnectionManager extends BaseConnectionManager {
 
             // 等待 ICE restart 完成（最多10秒）
             await new Promise((resolve) => {
-                const timeout = setTimeout(() => {
+                const timeout = this._trackTimer(setTimeout(() => {
                     this.log('ICE restart 超时')
                     resolve()
-                }, 10000)
+                }, 10000))
 
                 const checkState = () => {
                     if (this.peerConnection &&
@@ -523,6 +536,7 @@ class DirectConnectionManager extends BaseConnectionManager {
     }
 
     disconnect() {
+        this._clearPendingTimers()
         this._removeIpcListeners()
         this.isConnectionStarted = false
         this.offerReceived = false

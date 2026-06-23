@@ -1,6 +1,6 @@
 {
   "name": "ycdesk-linux",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "YCDesk Remote Desktop - Linux Version",
   "main": "src/main/main.js",
   "author": "YCDesk Team",
@@ -15,6 +15,7 @@
     "build:rpm": "electron-builder --linux rpm",
     "build:appimage": "electron-builder --linux AppImage",
     "build:tar.gz": "electron-builder --linux tar.gz",
+    "sync": "node ../windows/sync-shared.js --target=linux",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"

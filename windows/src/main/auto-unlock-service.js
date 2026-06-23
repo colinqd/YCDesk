@@ -1,16 +1,39 @@
 const { powerMonitor, ipcMain } = require('electron')
 const credentialsManager = require('./credentials-manager')
-const unlockIpcServer = require('./unlock-ipc-server')
 const os = require('os')
 const { createLogger } = require('./logger')
 
 const logger = createLogger()
 
 let robot = null
-try {
-  robot = require('robotjs')
-} catch (e) {
-  logger.error('[AutoUnlockService] robotjs 加载失败:', e.message)
+let _robotLoadPromise = null
+function getRobot() {
+  if (robot) return robot
+  if (!_robotLoadPromise) {
+    _robotLoadPromise = new Promise((resolve) => {
+      try {
+        robot = require('robotjs')
+        logger.info('[AutoUnlockService] robotjs 延迟加载成功')
+      } catch (e) {
+        logger.error('[AutoUnlockService] robotjs 加载失败:', e.message)
+      }
+      resolve(robot)
+    })
+  }
+  return _robotLoadPromise
+}
+
+let _ipcServerStarted = false
+function ensureIpcServer() {
+  if (_ipcServerStarted) return
+  _ipcServerStarted = true
+  try {
+    const unlockIpcServer = require('./unlock-ipc-server')
+    unlockIpcServer.start()
+    logger.info('[AutoUnlockService] IPC 服务器已启动')
+  } catch (error) {
+    logger.error('[AutoUnlockService] IPC 服务器启动失败:', error)
+  }
 }
 
 class AutoUnlockService {
@@ -21,16 +44,8 @@ class AutoUnlockService {
     this.currentMainWindow = null
     this.ipcServerStarted = false
     this.setupListeners()
-    this.startIpcServer()
-  }
-
-  startIpcServer() {
-    try {
-      this.ipcServerStarted = unlockIpcServer.start()
-      logger.info('[AutoUnlockService] IPC 服务器启动状态:', this.ipcServerStarted)
-    } catch (error) {
-      logger.error('[AutoUnlockService] IPC 服务器启动失败:', error)
-    }
+    // 延迟启动 IPC 服务器，避免阻塞启动
+    setImmediate(() => ensureIpcServer())
   }
 
   setAutoUnlockEnabled(enabled) {
@@ -206,6 +221,7 @@ class AutoUnlockService {
   }
 
   async simulatePasswordInput(password) {
+    const robot = await getRobot()
     if (!robot) {
       throw new Error('robotjs 不可用')
     }

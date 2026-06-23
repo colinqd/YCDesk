@@ -72,6 +72,56 @@ jobs:
           name: ycdesk-windows-portable
           path: windows/dist-v2/YCDesk-Portable-*.exe
 
+  # === Test (Android) ===
+  android-test:
+    name: Test (Android)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Android dependencies
+        run: |
+          cd android && npm ci
+      - name: Run tests
+        run: |
+          cd android && npx vitest run --reporter verbose
+
+  # === Build Android (main only) ===
+  build-android:
+    name: Build Android
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    needs: [lint, android-test]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Build Android Client
+        run: |
+          cd android && npm ci && npm run build
+      - name: Build Android Client APK
+        run: |
+          cd android/android && ./gradlew assembleDebug
+      - name: Build Android Server APK
+        run: |
+          cd android-server && ./gradlew assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ycdesk-android-apk
+          path: |
+            android/android/app/build/outputs/apk/debug/*.apk
+            android-server/app/build/outputs/apk/debug/*.apk
+
   # === Build Linux (main only) ===
   build-linux:
     name: Build Linux

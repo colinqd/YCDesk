@@ -16,7 +16,8 @@ const logger = createLogger({
 app.setPath('userData', path.join(os.homedir(), '.ycdesk'))
 app.setAppUserModelId('com.ycdesk.desktop')
 
-const deviceId = loadDeviceId()
+// 延迟加载设备ID，避免阻塞模块加载阶段
+let deviceId = null
 
 app.commandLine.appendSwitch('disable-features', 'SingleProcess')
 
@@ -191,6 +192,9 @@ app.whenReady().then(() => {
   logger.info('Electron 版本:', { version: process.versions.electron })
   logger.info('Node 版本:', { version: process.versions.node })
   logger.info('平台:', { platform: process.platform })
+
+  // 延迟加载设备ID（不阻塞窗口创建）
+  deviceId = loadDeviceId()
   logger.info('设备ID:', { deviceId: deviceId })
   logger.info('用户数据目录:', { userData: app.getPath('userData') })
 
@@ -213,10 +217,14 @@ app.whenReady().then(() => {
 
   initIpcHandlers(deviceId, logger)
 
+  // 优先创建主窗口（用户最先看到的界面）
   createMainWindow()
-  createTray()
 
-  initWatchdog()
+  // 延迟创建托盘和watchdog，不阻塞窗口显示
+  setImmediate(() => {
+    createTray()
+    initWatchdog()
+  })
 
   // 自启动模式：通知渲染进程自动连接并最小化窗口
   if (isAutoStart) {

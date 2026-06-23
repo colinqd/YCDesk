@@ -1,4 +1,11 @@
-const io = require('socket.io-client');
+// socket.io-client 延迟加载，避免启动时加载大库
+let _io = null
+function getIo() {
+  if (!_io) {
+    _io = require('socket.io-client')
+  }
+  return _io
+}
 
 class SignalingServer {
   constructor() {
@@ -44,7 +51,7 @@ class SignalingServer {
     try {
       this._log('info', '正在连接信令服务器:', serverUrl);
 
-      this.socket = io(serverUrl, {
+      this.socket = getIo()(serverUrl, {
         transports: ['websocket', 'polling'],
         reconnection: true,
         reconnectionAttempts: 10,

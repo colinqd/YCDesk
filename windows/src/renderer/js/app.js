@@ -80,8 +80,18 @@ function log(message) {
 document.addEventListener('DOMContentLoaded', () => {
   initializeApp()
 
-  // beforeunload 保护：有活跃远程连接时提示用户
+  // IPC 监听器引用（用于 beforeunload 清理）
+  const _ipcHandlers = {}
+
+  // beforeunload 保护：有活跃远程连接时提示用户，并清理所有 IPC 监听器
   window.addEventListener('beforeunload', (e) => {
+    // 清理 IPC 监听器
+    if (window.electronAPI) {
+      for (const [event, handler] of Object.entries(_ipcHandlers)) {
+        try { window.electronAPI.removeListener(event, handler) } catch (err) {}
+      }
+    }
+
     if (signalingManager && signalingManager.peerConnection && signalingManager.peerConnection.connectionState === 'connected') {
       e.preventDefault()
       e.returnValue = '当前有活跃的远程连接，关闭窗口将断开连接。是否继续？'
@@ -95,7 +105,7 @@ document.addEventListener('DOMContentLoaded', () => {
     checkCredProvider()
   }, 500)
 
-  window.electronAPI.on('unlock-state-changed', (data) => {
+  _ipcHandlers['unlock-state-changed'] = (data) => {
     console.log('[app.js 全局] 收到 unlock-state-changed IPC: ' + JSON.stringify(data))
     if (data.isLocked) {
       updateServerStatusDisplay('已锁定', 'error')
@@ -113,22 +123,25 @@ document.addEventListener('DOMContentLoaded', () => {
       console.log('[app.js 全局] 通过 signalingManager 转发锁屏状态到主控端')
       signalingManager.dataChannelManager.send({ type: 'unlock-state-changed', ...data })
     }
-  })
+  }
+  window.electronAPI.on('unlock-state-changed', _ipcHandlers['unlock-state-changed'])
 
-  window.electronAPI.on('lock-screen-frame', (data) => {
+  _ipcHandlers['lock-screen-frame'] = (data) => {
     if (directManager && directManager.dataChannelManager) {
       directManager.dataChannelManager.send({ type: 'lock-screen-frame', ...data })
     }
     if (signalingManager && signalingManager.dataChannelManager) {
       signalingManager.dataChannelManager.send({ type: 'lock-screen-frame', ...data })
     }
-  })
+  }
+  window.electronAPI.on('lock-screen-frame', _ipcHandlers['lock-screen-frame'])
 
   // 远程窗口请求重连（被控端断开后自动恢复）
-  window.electronAPI.on('remote-reconnect-request', () => {
+  _ipcHandlers['remote-reconnect-request'] = () => {
     log('收到远程窗口重连请求')
     if (currentControlledMode === 'signaling' || currentControlledMode === undefined) {
       controlledConnectToServer()
     }
-  })
+  }
+  window.electronAPI.on('remote-reconnect-request', _ipcHandlers['remote-reconnect-request'])
 })

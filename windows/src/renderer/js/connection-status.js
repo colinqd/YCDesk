@@ -5,88 +5,83 @@
  * 通过 <script> 标签加载，函数自动注册为全局。
  */
 
-// ==================== 信令服务器管理（主控端） ====================
+// ==================== 信令服务器管理（设置页面） ====================
 
-function manageSignalingServer() {
-  const panel = document.getElementById('serverManagePanel')
-  if (panel) {
-    panel.style.display = panel.style.display === 'none' ? 'block' : 'none'
-  }
-}
-
-function onAddServerClick() {
-  const btn = document.getElementById('addServerBtn')
+function onAddServerClickSettings() {
+  const btn = document.getElementById('settingsAddServerBtn')
   const editIndex = btn ? btn.getAttribute('data-edit-index') : null
   if (editIndex !== null && editIndex !== undefined) {
-    updateSignalingServer(parseInt(editIndex))
+    updateSignalingServerSettings(parseInt(editIndex))
   } else {
-    addSignalingServer()
+    addSignalingServerSettings()
   }
 }
 
-let _addingServer = false
+let _addingServerSettings = false
 
-async function addSignalingServer() {
-  if (_addingServer) return
+async function addSignalingServerSettings() {
+  if (_addingServerSettings) return
   if (!historyManager) { console.error('historyManager 未初始化'); return }
-  const nameInput = document.getElementById('newServerName')
-  const urlInput = document.getElementById('newServerUrl')
+  const nameInput = document.getElementById('settingsNewServerName')
+  const urlInput = document.getElementById('settingsNewServerUrl')
   if (!nameInput || !urlInput) return
 
   const name = nameInput.value.trim()
   const url = urlInput.value.trim()
 
-  if (!name) { alert('请输入服务器名称'); return }
-  if (!url) { alert('请输入服务器地址'); return }
+  if (!name) { showMessage('请输入服务器名称'); return }
+  if (!url) { showMessage('请输入服务器地址'); return }
 
-  _addingServer = true
+  _addingServerSettings = true
   try {
     await historyManager.addServer(name, url)
     nameInput.value = ''
     urlInput.value = ''
+    renderSettingsServerList()
     renderServerList()
-    log('信令服务器已添加: ' + name)
+    renderServerListControlled()
+    showMessage('信令服务器已添加: ' + name)
   } finally {
-    _addingServer = false
+    _addingServerSettings = false
   }
 }
 
-async function updateSignalingServer(index) {
+async function updateSignalingServerSettings(index) {
   if (!historyManager) { console.error('historyManager 未初始化'); return }
-  const nameInput = document.getElementById('newServerName')
-  const urlInput = document.getElementById('newServerUrl')
+  const nameInput = document.getElementById('settingsNewServerName')
+  const urlInput = document.getElementById('settingsNewServerUrl')
   if (!nameInput || !urlInput) return
 
   const name = nameInput.value.trim()
   const url = urlInput.value.trim()
 
-  if (!name) { alert('请输入服务器名称'); return }
-  if (!url) { alert('请输入服务器地址'); return }
+  if (!name) { showMessage('请输入服务器名称'); return }
+  if (!url) { showMessage('请输入服务器地址'); return }
 
   await historyManager.editServer(index, name, url)
   nameInput.value = ''
   urlInput.value = ''
-  const addBtn = document.getElementById('addServerBtn')
+  const addBtn = document.getElementById('settingsAddServerBtn')
   if (addBtn) {
     addBtn.textContent = '添加'
     addBtn.removeAttribute('data-edit-index')
   }
+  renderSettingsServerList()
   renderServerList()
-  log('信令服务器已更新')
+  renderServerListControlled()
+  showMessage('信令服务器已更新')
 }
 
-function editSignalingServer(index) {
+function editSignalingServerSettings(index) {
   if (!historyManager) { console.error('historyManager 未初始化'); return }
   const servers = historyManager.getServers()
   if (index >= servers.length) return
 
   const server = servers[index]
-  const nameInput = document.getElementById('newServerName')
-  const urlInput = document.getElementById('newServerUrl')
-  const addBtn = document.getElementById('addServerBtn')
-  const panel = document.getElementById('serverManagePanel')
+  const nameInput = document.getElementById('settingsNewServerName')
+  const urlInput = document.getElementById('settingsNewServerUrl')
+  const addBtn = document.getElementById('settingsAddServerBtn')
 
-  if (panel) panel.style.display = 'block'
   if (nameInput) { nameInput.value = server.name; nameInput.focus() }
   if (urlInput) urlInput.value = server.url
   if (addBtn) {
@@ -95,10 +90,10 @@ function editSignalingServer(index) {
   }
 }
 
-function cancelEditServer() {
-  const nameInput = document.getElementById('newServerName')
-  const urlInput = document.getElementById('newServerUrl')
-  const addBtn = document.getElementById('addServerBtn')
+function cancelEditServerSettings() {
+  const nameInput = document.getElementById('settingsNewServerName')
+  const urlInput = document.getElementById('settingsNewServerUrl')
+  const addBtn = document.getElementById('settingsAddServerBtn')
   if (nameInput) nameInput.value = ''
   if (urlInput) urlInput.value = ''
   if (addBtn) {
@@ -107,12 +102,46 @@ function cancelEditServer() {
   }
 }
 
-async function deleteSignalingServer(index) {
+async function deleteSignalingServerSettings(index) {
   if (!historyManager) { console.error('historyManager 未初始化'); return }
   await historyManager.deleteServer(index)
+  renderSettingsServerList()
   renderServerList()
-  log('信令服务器已删除')
+  renderServerListControlled()
+  showMessage('信令服务器已删除')
 }
+
+function renderSettingsServerList() {
+  const listEl = document.getElementById('settingsServerList')
+  if (!listEl) return
+
+  if (!historyManager) {
+    listEl.innerHTML = '<div class="history-empty">请等待加载完成...</div>'
+    return
+  }
+
+  const servers = historyManager.getServers()
+  if (servers.length === 0) {
+    listEl.innerHTML = '<div class="history-empty">暂无已保存的信令服务器</div>'
+    return
+  }
+
+  listEl.innerHTML = servers.map((server, index) => {
+    const time = new Date(server.timestamp).toLocaleDateString()
+    return `<div class="history-item">
+      <div class="history-info">
+        <div class="history-target">${server.name}</div>
+        <div class="history-meta">${server.url} · ${time}</div>
+      </div>
+      <div class="history-actions">
+        <button class="history-btn history-btn-connect" onclick="editSignalingServerSettings(${index})">编辑</button>
+        <button class="history-btn history-btn-delete" onclick="deleteSignalingServerSettings(${index})">删除</button>
+      </div>
+    </div>`
+  }).join('')
+}
+
+// ==================== 信令服务器列表（主控端 — 快速选择） ====================
 
 function selectServer(index) {
   if (!historyManager) { console.error('historyManager 未初始化'); return }
@@ -122,7 +151,7 @@ function selectServer(index) {
   const server = servers[index]
   const urlInput = document.getElementById('controllerServerUrl')
   if (urlInput) urlInput.value = server.url
-  log('已选择信令服务器: ' + server.name)
+  showMessage('已选择: ' + server.name)
 }
 
 function renderServerList() {
@@ -136,133 +165,21 @@ function renderServerList() {
 
   const servers = historyManager.getServers()
   if (servers.length === 0) {
-    listEl.innerHTML = '<div class="history-empty">暂无已保存的信令服务器<br>请添加后从列表选择</div>'
+    listEl.innerHTML = '<div class="history-empty">暂无已保存的信令服务器<br>请在设置页面添加</div>'
     return
   }
 
   listEl.innerHTML = servers.map((server, index) => {
-    const time = new Date(server.timestamp).toLocaleDateString()
-    return `<div class="history-item" onclick="selectServer(${index})">
+    return `<div class="history-item" onclick="selectServer(${index})" title="点击选择此服务器">
       <div class="history-info">
         <div class="history-target">${server.name}</div>
-        <div class="history-meta">${server.url} · ${time}</div>
-      </div>
-      <div class="history-actions">
-        <button class="history-btn history-btn-connect" onclick="event.stopPropagation(); editSignalingServer(${index})">编辑</button>
-        <button class="history-btn history-btn-delete" onclick="event.stopPropagation(); deleteSignalingServer(${index})">删除</button>
+        <div class="history-meta">${server.url}</div>
       </div>
     </div>`
   }).join('')
 }
 
-// ==================== 信令服务器管理（被控端） ====================
-
-function manageSignalingServerControlled() {
-  const panel = document.getElementById('controlledServerManagePanel')
-  if (panel) {
-    panel.style.display = panel.style.display === 'none' ? 'block' : 'none'
-  }
-}
-
-function onAddServerClickControlled() {
-  const btn = document.getElementById('controlledAddServerBtn')
-  const editIndex = btn ? btn.getAttribute('data-edit-index') : null
-  if (editIndex !== null && editIndex !== undefined) {
-    updateSignalingServerControlled(parseInt(editIndex))
-  } else {
-    addSignalingServerControlled()
-  }
-}
-
-let _addingServerControlled = false
-
-async function addSignalingServerControlled() {
-  if (_addingServerControlled) return
-  if (!historyManager) { console.error('historyManager 未初始化'); return }
-  const nameInput = document.getElementById('controlledNewServerName')
-  const urlInput = document.getElementById('controlledNewServerUrl')
-  if (!nameInput || !urlInput) return
-
-  const name = nameInput.value.trim()
-  const url = urlInput.value.trim()
-
-  if (!name) { alert('请输入服务器名称'); return }
-  if (!url) { alert('请输入服务器地址'); return }
-
-  _addingServerControlled = true
-  try {
-    await historyManager.addServer(name, url)
-    nameInput.value = ''
-    urlInput.value = ''
-    renderServerListControlled()
-    log('信令服务器已添加: ' + name)
-  } finally {
-    _addingServerControlled = false
-  }
-}
-
-async function updateSignalingServerControlled(index) {
-  if (!historyManager) { console.error('historyManager 未初始化'); return }
-  const nameInput = document.getElementById('controlledNewServerName')
-  const urlInput = document.getElementById('controlledNewServerUrl')
-  if (!nameInput || !urlInput) return
-
-  const name = nameInput.value.trim()
-  const url = urlInput.value.trim()
-
-  if (!name) { alert('请输入服务器名称'); return }
-  if (!url) { alert('请输入服务器地址'); return }
-
-  await historyManager.editServer(index, name, url)
-  nameInput.value = ''
-  urlInput.value = ''
-  const addBtn = document.getElementById('controlledAddServerBtn')
-  if (addBtn) {
-    addBtn.textContent = '添加'
-    addBtn.removeAttribute('data-edit-index')
-  }
-  renderServerListControlled()
-  log('信令服务器已更新')
-}
-
-function editSignalingServerControlled(index) {
-  if (!historyManager) { console.error('historyManager 未初始化'); return }
-  const servers = historyManager.getServers()
-  if (index >= servers.length) return
-
-  const server = servers[index]
-  const nameInput = document.getElementById('controlledNewServerName')
-  const urlInput = document.getElementById('controlledNewServerUrl')
-  const addBtn = document.getElementById('controlledAddServerBtn')
-  const panel = document.getElementById('controlledServerManagePanel')
-
-  if (panel) panel.style.display = 'block'
-  if (nameInput) { nameInput.value = server.name; nameInput.focus() }
-  if (urlInput) urlInput.value = server.url
-  if (addBtn) {
-    addBtn.textContent = '更新'
-    addBtn.setAttribute('data-edit-index', index)
-  }
-}
-
-function cancelEditServerControlled() {
-  const nameInput = document.getElementById('controlledNewServerName')
-  const urlInput = document.getElementById('controlledNewServerUrl')
-  const addBtn = document.getElementById('controlledAddServerBtn')
-  if (nameInput) nameInput.value = ''
-  if (urlInput) urlInput.value = ''
-  if (addBtn) {
-    addBtn.textContent = '添加'
-    addBtn.removeAttribute('data-edit-index')
-  }
-}
-
-async function deleteSignalingServerControlled(index) {
-  if (!historyManager) { console.error('historyManager 未初始化'); return }
-  await historyManager.deleteServer(index)
-  renderServerListControlled()
-  log('信令服务器已删除')
-}
+// ==================== 信令服务器列表（被控端 — 快速选择） ====================
 
 function selectServerControlled(index) {
   if (!historyManager) { console.error('historyManager 未初始化'); return }
@@ -272,7 +189,7 @@ function selectServerControlled(index) {
   const server = servers[index]
   const urlInput = document.getElementById('controlledServerUrl')
   if (urlInput) urlInput.value = server.url
-  log('已选择信令服务器: ' + server.name)
+  showMessage('已选择: ' + server.name)
 }
 
 function renderServerListControlled() {
@@ -286,20 +203,15 @@ function renderServerListControlled() {
 
   const servers = historyManager.getServers()
   if (servers.length === 0) {
-    listEl.innerHTML = '<div class="history-empty">暂无已保存的信令服务器<br>请添加后从列表选择</div>'
+    listEl.innerHTML = '<div class="history-empty">暂无已保存的信令服务器<br>请在设置页面添加</div>'
     return
   }
 
   listEl.innerHTML = servers.map((server, index) => {
-    const time = new Date(server.timestamp).toLocaleDateString()
-    return `<div class="history-item" onclick="selectServerControlled(${index})">
+    return `<div class="history-item" onclick="selectServerControlled(${index})" title="点击选择此服务器">
       <div class="history-info">
         <div class="history-target">${server.name}</div>
-        <div class="history-meta">${server.url} · ${time}</div>
-      </div>
-      <div class="history-actions">
-        <button class="history-btn history-btn-connect" onclick="event.stopPropagation(); editSignalingServerControlled(${index})">编辑</button>
-        <button class="history-btn history-btn-delete" onclick="event.stopPropagation(); deleteSignalingServerControlled(${index})">删除</button>
+        <div class="history-meta">${server.url}</div>
       </div>
     </div>`
   }).join('')
@@ -381,6 +293,9 @@ async function initControlled() {
   signalingManager.setDeviceId(myDeviceId)
   directManager.setDeviceId(myDeviceId)
 
+  // 同步设置页的设备ID输入框
+  syncSettingsDeviceIdInput(myDeviceId)
+
   // 初始状态设置为"未连接"（红色指示灯）
   uiManager.updateServerStatus('未连接', 'disconnected')
 
@@ -415,6 +330,13 @@ async function initController() {
   myDeviceId = await window.electronAPI.getDeviceId()
   signalingManager.setDeviceId(myDeviceId)
   directManager.setDeviceId(myDeviceId)
+
+  // 统一设备ID显示（主控端页面）
+  const controllerDeviceEl = document.getElementById('controllerDeviceId')
+  if (controllerDeviceEl) controllerDeviceEl.textContent = myDeviceId
+
+  // 同步设置页的设备ID输入框
+  syncSettingsDeviceIdInput(myDeviceId)
 
   log('YCDesk 主控端初始化完成，设备ID: ' + myDeviceId)
 
@@ -668,6 +590,27 @@ function copyDeviceId() {
   uiManager.copyDeviceId(myDeviceId)
 }
 
+// 复制主控端设备ID
+function copyControllerDeviceId() {
+  const el = document.getElementById('controllerDeviceId')
+  if (!el || !myDeviceId) return false
+  return navigator.clipboard.writeText(myDeviceId).then(() => {
+    const originalText = el.textContent
+    el.textContent = '已复制!'
+    setTimeout(() => { el.textContent = originalText }, 1500)
+    return true
+  }).catch(err => {
+    console.error('复制失败:', err)
+    return false
+  })
+}
+
+// 同步设置页的设备ID输入框
+function syncSettingsDeviceIdInput(id) {
+  const inputs = document.querySelectorAll('#customDeviceId')
+  inputs.forEach(input => { input.value = id })
+}
+
 async function setCustomDeviceId() {
   const inputs = document.querySelectorAll('#customDeviceId')
   let customIdInput = null
@@ -699,10 +642,15 @@ async function setCustomDeviceId() {
     const result = await window.electronAPI.setDeviceId(customId)
     if (result.success) {
       myDeviceId = result.deviceId
+      // 统一更新所有UI
       uiManager.setDeviceId(myDeviceId)
       signalingManager.setDeviceId(myDeviceId)
       directManager.setDeviceId(myDeviceId)
-      customIdInput.value = myDeviceId
+      // 更新主控端设备ID显示
+      const controllerDeviceEl = document.getElementById('controllerDeviceId')
+      if (controllerDeviceEl) controllerDeviceEl.textContent = myDeviceId
+      // 同步所有设置页输入框
+      syncSettingsDeviceIdInput(myDeviceId)
       showMessage('设备ID已设置为: ' + myDeviceId)
     }
   } catch (error) {
@@ -719,13 +667,15 @@ async function resetDeviceId() {
     const result = await window.electronAPI.resetDeviceId()
     if (result.success) {
       myDeviceId = result.deviceId
+      // 统一更新所有UI
       uiManager.setDeviceId(myDeviceId)
       signalingManager.setDeviceId(myDeviceId)
       directManager.setDeviceId(myDeviceId)
-      const inputs = document.querySelectorAll('#customDeviceId')
-      for (const input of inputs) {
-        input.value = myDeviceId
-      }
+      // 更新主控端设备ID显示
+      const controllerDeviceEl = document.getElementById('controllerDeviceId')
+      if (controllerDeviceEl) controllerDeviceEl.textContent = myDeviceId
+      // 同步所有设置页输入框
+      syncSettingsDeviceIdInput(myDeviceId)
       showMessage('设备ID已重置为: ' + myDeviceId)
     }
   } catch (error) {

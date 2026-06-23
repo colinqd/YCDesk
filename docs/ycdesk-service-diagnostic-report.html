@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YCDesk Windows 服务安装/启动问题诊断报告</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    line-height: 1.7;
+    color: #1f2937;
+    background: #f3f4f6;
+    padding: 20px;
+  }
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    background: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    overflow: hidden;
+  }
+  .header {
+    background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 50%, #2563eb 100%);
+    color: #fff;
+    padding: 32px 40px;
+  }
+  .header h1 {
+    font-size: 26px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .header .meta {
+    font-size: 13px;
+    opacity: 0.9;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+  }
+  .header .meta span {
+    display: inline-flex;
+    align-items: center;
+  }
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-left: 6px;
+  }
+  .badge-success { background: #10b981; color: #fff; }
+  .badge-warn { background: #f59e0b; color: #fff; }
+  .badge-error { background: #ef4444; color: #fff; }
+  .badge-info { background: #3b82f6; color: #fff; }
+
+  .toc {
+    background: #f9fafb;
+    border-bottom: 1px solid #e5e7eb;
+    padding: 20px 40px;
+  }
+  .toc h2 {
+    font-size: 16px;
+    color: #374151;
+    margin-bottom: 10px;
+  }
+  .toc ol {
+    margin-left: 22px;
+    columns: 2;
+    column-gap: 40px;
+  }
+  .toc a {
+    color: #2563eb;
+    text-decoration: none;
+    font-size: 14px;
+    display: block;
+    padding: 2px 0;
+  }
+  .toc a:hover { text-decoration: underline; }
+
+  .content { padding: 32px 40px; }
+  .section { margin-bottom: 36px; scroll-margin-top: 20px; }
+  .section h2 {
+    font-size: 20px;
+    color: #1e3a8a;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #dbeafe;
+    margin-bottom: 16px;
+  }
+  .section h3 {
+    font-size: 16px;
+    color: #1f2937;
+    margin: 18px 0 10px;
+  }
+  .section p {
+    margin-bottom: 12px;
+    color: #374151;
+    font-size: 14.5px;
+  }
+  .section ul, .section ol {
+    margin: 10px 0 12px 24px;
+    color: #374151;
+    font-size: 14.5px;
+  }
+  .section li { margin-bottom: 6px; }
+
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+    margin: 16px 0 20px;
+  }
+  .summary-card {
+    background: #f9fafb;
+    border-left: 4px solid #3b82f6;
+    padding: 14px 16px;
+    border-radius: 4px;
+  }
+  .summary-card.success { border-left-color: #10b981; }
+  .summary-card.warn { border-left-color: #f59e0b; }
+  .summary-card.error { border-left-color: #ef4444; }
+  .summary-card .label {
+    font-size: 12px;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .summary-card .value {
+    font-size: 16px;
+    font-weight: 600;
+    color: #111827;
+    margin-top: 4px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0 20px;
+    font-size: 14px;
+  }
+  thead {
+    background: #1e40af;
+    color: #fff;
+  }
+  th, td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  tbody tr:hover { background: #f9fafb; }
+  th { font-weight: 600; }
+
+  pre, code {
+    font-family: "Cascadia Code", "Consolas", "Courier New", monospace;
+    font-size: 13px;
+  }
+  code {
+    background: #f1f5f9;
+    padding: 2px 6px;
+    border-radius: 3px;
+    color: #be185d;
+  }
+  pre {
+    background: #1f2937;
+    color: #e5e7eb;
+    padding: 16px 20px;
+    border-radius: 6px;
+    overflow-x: auto;
+    line-height: 1.55;
+    margin: 12px 0 16px;
+  }
+  pre code {
+    background: transparent;
+    color: inherit;
+    padding: 0;
+  }
+
+  .callout {
+    border-left: 4px solid;
+    padding: 14px 18px;
+    border-radius: 4px;
+    margin: 14px 0;
+    font-size: 14.5px;
+  }
+  .callout.info { background: #eff6ff; border-color: #3b82f6; color: #1e3a8a; }
+  .callout.warn { background: #fffbeb; border-color: #f59e0b; color: #92400e; }
+  .callout.error { background: #fef2f2; border-color: #ef4444; color: #991b1b; }
+  .callout.success { background: #f0fdf4; border-color: #10b981; color: #065f46; }
+  .callout strong { font-weight: 700; }
+
+  .timeline {
+    position: relative;
+    padding-left: 28px;
+    margin: 16px 0;
+  }
+  .timeline::before {
+    content: "";
+    position: absolute;
+    left: 8px;
+    top: 4px;
+    bottom: 4px;
+    width: 2px;
+    background: #d1d5db;
+  }
+  .timeline-item {
+    position: relative;
+    margin-bottom: 18px;
+    padding-left: 8px;
+  }
+  .timeline-item::before {
+    content: "";
+    position: absolute;
+    left: -24px;
+    top: 6px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #3b82f6;
+    border: 2px solid #fff;
+    box-shadow: 0 0 0 1px #3b82f6;
+  }
+  .timeline-item.success::before { background: #10b981; box-shadow: 0 0 0 1px #10b981; }
+  .timeline-item.warn::before { background: #f59e0b; box-shadow: 0 0 0 1px #f59e0b; }
+  .timeline-item.error::before { background: #ef4444; box-shadow: 0 0 0 1px #ef4444; }
+  .timeline-item .ts {
+    font-size: 12px;
+    color: #6b7280;
+    font-family: "Cascadia Code", monospace;
+  }
+  .timeline-item .title {
+    font-weight: 600;
+    color: #111827;
+    margin: 2px 0 4px;
+  }
+  .timeline-item .desc {
+    font-size: 14px;
+    color: #4b5563;
+  }
+
+  .footer {
+    background: #f9fafb;
+    padding: 20px 40px;
+    border-top: 1px solid #e5e7eb;
+    font-size: 12.5px;
+    color: #6b7280;
+    text-align: center;
+  }
+
+  @media (max-width: 720px) {
+    .header, .content, .toc, .footer { padding-left: 20px; padding-right: 20px; }
+    .toc ol { columns: 1; }
+    pre { font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <h1>YCDesk Windows 服务安装/启动问题诊断报告</h1>
+    <div class="meta">
+      <span>报告日期：2026-06-23</span>
+      <span>服务组件：ycdeskservice (Windows Service)</span>
+      <span>问题状态：已解决 <span class="badge badge-success">核心问题</span> + <span class="badge badge-warn">新发现次要问题</span></span>
+    </div>
+  </div>
+
+  <div class="toc">
+    <h2>目录</h2>
+    <ol>
+      <li><a href="#summary">一、问题概述</a></li>
+      <li><a href="#root-cause">二、根因分析</a></li>
+      <li><a href="#solution">三、解决方案</a></li>
+      <li><a href="#changes">四、关键代码变更</a></li>
+      <li><a href="#verification">五、修复验证</a></li>
+      <li><a href="#new-issue">六、发现的新问题</a></li>
+      <li><a href="#recommendation">七、后续建议</a></li>
+      <li><a href="#appendix">八、附录</a></li>
+    </ol>
+  </div>
+
+  <div class="content">
+
+    <section class="section" id="summary">
+      <h2>一、问题概述</h2>
+      <p>用户反馈：<strong>"服务安装成功，启动服务无反应。"</strong></p>
+      <p>具体表现为：通过主程序安装 <code>ycdeskservice</code> 后，SCM（服务控制管理器）中能看到该服务，但执行 <code>net start</code> 或在服务管理器中点击"启动"时无任何响应，服务长期停留在 <code>STOPPED</code> 状态。</p>
+
+      <h3>关键指标</h3>
+      <div class="summary-grid">
+        <div class="summary-card success">
+          <div class="label">当前服务状态</div>
+          <div class="value">Running ✓</div>
+        </div>
+        <div class="summary-card">
+          <div class="label">启动类型</div>
+          <div class="value">Automatic</div>
+        </div>
+        <div class="summary-card warn">
+          <div class="label">告警（次要）</div>
+          <div class="value">设备 ID 文件缺失</div>
+        </div>
+        <div class="summary-card">
+          <div class="label">触发原因</div>
+          <div class="value">winsw 包装 + 服务名校准</div>
+        </div>
+      </div>
+
+      <div class="callout success">
+        <strong>核心问题已解决：</strong>服务 <code>ycdeskservice</code> 当前状态为 <code>Running</code>，启动类型 <code>Automatic</code>，可正常由 SCM 拉起。
+      </div>
+    </section>
+
+    <section class="section" id="root-cause">
+      <h2>二、根因分析</h2>
+      <p>经过对 <code>elevate-cli.js</code>、<code>node-windows</code> 源码、SCM 注册表项以及服务启动日志的综合排查，定位到以下三个相互叠加的根因：</p>
+
+      <h3>根因 1：服务二进制直接指向 <code>wrapper.js</code>，缺乏 <code>ServiceMain</code> 入口</h3>
+      <p>历史安装流程将 <code>sc create</code> 的 <code>binPath</code> 直接指向 <code>node.exe ... wrapper.js</code>。但 <code>wrapper.js</code> 本身不是 Windows Service 应用程序，没有实现 <code>ServiceMain</code> 回调，SCM 调用 <code>StartServiceCtrlDispatcher</code> 后无法在规定时间内收到 <code>SERVICE_RUNNING</code> 状态回报，最终触发 <strong>Error 1053：服务没有及时响应启动或控制请求</strong>。</p>
+      <p>从服务管理器的视角看：服务"无反应"。</p>
+
+      <h3>根因 2：服务名在 <code>node-windows</code> 与 <code>elevation-manager.js</code> 之间不一致</h3>
+      <p><code>node-windows</code> 在调用 <code>Service.install()</code> 时，会把服务 id 强制转成 <code>&lt;id&gt;.exe</code>（因为 <code>winsw</code> 可执行文件必须与 id 同名）。</p>
+      <p>本项目配置：</p>
+      <ul>
+        <li><code>node-windows</code> 注册的服务名：<code>ycdeskservice.exe</code>（winsw 副本）</li>
+        <li><code>elevation-manager.js</code> 中 <code>_serviceName</code>：<code>ycdeskservice</code></li>
+      </ul>
+      <p>两个名称不一致，导致：</p>
+      <ul>
+        <li>主程序启动时找不到 <code>ycdeskservice</code>，提示"服务未安装"。</li>
+        <li><code>net stop ycdeskservice</code> 报 <em>系统错误 2 / 名称无效</em>。</li>
+      </ul>
+
+      <h3>根因 3：P/Invoke 安装残留指向 <code>%TEMP%</code> 临时目录</h3>
+      <p>早期版本曾用 C# P/Invoke 注册服务，注册项 <code>ImagePath</code> 指向 Electron 解压后的临时目录（如 <code>C:\Users\DHL\AppData\Local\Temp\3FFgFZKqEAnNu1LY9xTuJVbzpm0\resources\service-app\service-daemon.js</code>）。</p>
+      <p>Electron 每次启动会生成新的临时目录，旧的 <code>ImagePath</code> 在新版本中立即失效，导致：</p>
+      <ul>
+        <li>SCM 中残留一条 binPath 错误的服务。</li>
+        <li>新装的 <code>ycdeskservice</code> 注册时报 1073 / 1057 错误。</li>
+      </ul>
+    </section>
+
+    <section class="section" id="solution">
+      <h2>三、解决方案</h2>
+      <p>采用"先产出 winsw 文件，再纠正服务名注册"的两段式安装策略，既保留 <code>node-windows</code> 产物的 <code>ServiceMain</code> 正确性，又保证 SCM 中的服务名与 <code>elevation-manager.js</code> 一致。</p>
+
+      <h3>安装流程（修改后）</h3>
+      <div class="timeline">
+        <div class="timeline-item warn">
+          <div class="ts">Step 1</div>
+          <div class="title">清理旧服务（防 P/Invoke 残留干扰）</div>
+          <div class="desc">
+            <code>sc stop "ycdeskservice"</code> + <code>sc delete "ycdeskservice"</code>，
+            显式捕获退出码 1060（服务不存在），避免误报。
+          </div>
+        </div>
+        <div class="timeline-item warn">
+          <div class="ts">Step 2</div>
+          <div class="title">清理 node-windows 临时服务与 daemon 目录</div>
+          <div class="desc">
+            删除 <code>ycdeskservice.exe</code>（winsw 临时注册名）和 <code>windows/service/daemon/</code> 目录，
+            保证 <code>Service.install()</code> 走"全新生成"分支。
+          </div>
+        </div>
+        <div class="timeline-item">
+          <div class="ts">Step 3</div>
+          <div class="title">调用 node-windows <code>Service.install()</code></div>
+          <div class="desc">
+            仅用于产出 <code>ycdeskservice.exe</code>（winsw 副本）+ <code>.xml</code> + <code>.config</code>，
+            监听 <code>'install'</code>、<code>'alreadyinstalled'</code>、<code>'invalidinstallation'</code>、<code>'error'</code> 事件。
+          </div>
+        </div>
+        <div class="timeline-item success">
+          <div class="ts">Step 4</div>
+          <div class="title"><code>sc create</code> 注册 SVC_ID 对应服务</div>
+          <div class="desc">
+            在 daemon 文件就绪后，<strong>删除</strong> node-windows 临时注册的 <code>ycdeskservice.exe</code> 服务，
+            <strong>重新</strong>用 <code>sc create "ycdeskservice" binPath= "ycdeskservice.exe"</code> 注册，
+            启动类型 <code>auto</code>，显示名 <code>YCDesk Remote Desktop Service</code>。
+          </div>
+        </div>
+        <div class="timeline-item success">
+          <div class="ts">Step 5</div>
+          <div class="title">设置服务描述与失败恢复策略</div>
+          <div class="desc">
+            <code>sc description</code> 写入中文描述；<code>sc failure</code> 设置为
+            <code>restart/5000/restart/10000/restart/30000</code>（连续三次递增间隔）。
+          </div>
+        </div>
+        <div class="timeline-item success">
+          <div class="ts">Step 6</div>
+          <div class="title">SCM 验证</div>
+          <div class="desc">
+            <code>sc qc "ycdeskservice"</code> 读取注册信息并写入日志，确认 <code>ImagePath</code>、
+            <code>START_TYPE</code>、<code>DISPLAY_NAME</code> 与预期一致。
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="changes">
+      <h2>四、关键代码变更</h2>
+      <p>主要修改集中在 <a href="file:///d:/MyProg/YCDesk/windows/service/elevate-cli.js">elevate-cli.js</a>（安装逻辑）。变更点概要：</p>
+
+      <h3>1. 新增 <code>doScInstall(settle)</code> 内部函数</h3>
+      <p>职责：</p>
+      <ul>
+        <li>校验 <code>daemon/ycdeskservice.exe</code> 是否存在；</li>
+        <li>删除 node-windows 临时注册的服务 <code>ycdeskservice.exe</code>（错误码 1060 视为正常）；</li>
+        <li>调用 <code>sc create</code> 注册 <code>ycdeskservice</code>，<code>binPath</code> 指向 winsw.exe；</li>
+        <li>设置 description、failure 策略；</li>
+        <li>用 <code>sc qc</code> 验证并打印。</li>
+      </ul>
+
+      <h3>2. <code>install()</code> 重构</h3>
+      <pre><code>// 安装策略：
+//   1. node-windows 的 Service.install() 在 daemon/ 下生成 winsw.exe + .xml，
+//      并用 winsw 注册服务（但 winsw 强制 service id = "&lt;id&gt;.exe"，与 SVC_ID 不一致）
+//   2. 因此我们在 Service.install() 完成后，删除 winsw 注册的临时服务，
+//      直接用 sc create + 修正后的 binPath 注册 SVC_ID 对应的服务
+//   3. 这样既复用 winsw 的 ServiceMain（避免 1053 超时），又保持 SVC_ID 与
+//      elevation-manager.js 一致</code></pre>
+
+      <h3>3. 错误码精确处理</h3>
+      <pre><code>try {
+  execSync(`sc delete "${SVC_ID}"`, { stdio: 'pipe', timeout: 10000 })
+} catch (e) {
+  if (e &amp;&amp; e.status === 1060) {
+    log('INFO', '旧服务不存在，无需删除')
+  } else {
+    log('WARN', '清理旧服务时出错（继续安装）: ' + safeError(e))
+  }
+}</code></pre>
+      <p>该写法使 <code>sc delete</code> 在服务不存在时不再被当作致命错误，安装流程可以无中断地完成。</p>
+
+      <h3>4. daemon 目录自动清理</h3>
+      <pre><code>const daemonDir = path.join(SERVICE_APP_DIR, 'daemon')
+if (fs.existsSync(daemonDir)) {
+  const tempSvcName = 'ycdeskservice.exe'
+  try { execSync(`sc stop "${tempSvcName}"`, { stdio: 'pipe', timeout: 5000 }) } catch (e) {}
+  try { execSync(`sc delete "${tempSvcName}"`, { stdio: 'pipe', timeout: 5000 }) } catch (e) {}
+  fs.rmSync(daemonDir, { recursive: true, force: true })
+}</code></pre>
+      <p>避免 <code>node-windows</code> 的 <code>'alreadyinstalled'</code> 事件在陈旧 daemon 目录上误触发。</p>
+    </section>
+
+    <section class="section" id="verification">
+      <h2>五、修复验证</h2>
+
+      <h3>5.1 SCM 注册信息</h3>
+      <table>
+        <thead>
+          <tr><th>字段</th><th>期望值</th><th>实际值</th><th>结论</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>ServiceName</td><td>ycdeskservice</td><td>ycdeskservice</td><td><span class="badge badge-success">通过</span></td></tr>
+          <tr><td>Status</td><td>Running</td><td>Running</td><td><span class="badge badge-success">通过</span></td></tr>
+          <tr><td>StartType</td><td>Automatic</td><td>Automatic</td><td><span class="badge badge-success">通过</span></td></tr>
+          <tr><td>DisplayName</td><td>YCDesk Remote Desktop Service</td><td>YCDesk Remote Desktop Service</td><td><span class="badge badge-success">通过</span></td></tr>
+        </tbody>
+      </table>
+
+      <h3>5.2 winsw 包装器配置（daemon/ycdeskservice.xml）</h3>
+      <pre><code>&lt;service&gt;
+    &lt;id&gt;ycdeskservice.exe&lt;/id&gt;
+    &lt;name&gt;YCDeskService&lt;/name&gt;
+    &lt;description&gt;YCDesk 远程桌面后台服务...&lt;/description&gt;
+    &lt;executable&gt;C:\Program Files\nodejs\node.exe&lt;/executable&gt;
+    &lt;argument&gt;--harmony&lt;/argument&gt;
+    &lt;argument&gt;--max_old_space_size=128&lt;/argument&gt;
+    &lt;argument&gt;D:\MyProg\YCDesk\windows\service\node_modules\node-windows\lib\wrapper.js&lt;/argument&gt;
+    &lt;argument&gt;--file&lt;/argument&gt;
+    &lt;argument&gt;D:\MyProg\YCDesk\windows\service\service-daemon.js&lt;/argument&gt;
+    &lt;workingdirectory&gt;D:\MyProg\YCDesk\windows\service&lt;/workingdirectory&gt;
+    &lt;logmode&gt;rotate&lt;/logmode&gt;
+    &lt;stoptimeout&gt;30sec&lt;/stoptimeout&gt;
+    &lt;env name="NODE_ENV" value="production"/&gt;
+&lt;/service&gt;</code></pre>
+
+      <h3>5.3 服务启动日志（C:\Users\DHL\.ycdesk\service-daemon.log）</h3>
+      <pre><code>[2026-06-22T23:57:26.069Z] [INFO] 正在启动服务...
+[2026-06-22T23:57:26.069Z] [INFO] YCDeskService 启动中...
+[2026-06-22T23:57:26.069Z] [INFO] Node 版本: v24.14.0
+[2026-06-22T23:57:26.069Z] [INFO] 配置目录: C:\Users\DHL\.ycdesk
+[2026-06-22T23:57:26.069Z] [INFO] 管道服务已启动: \\.\pipe\YCDeskServiceControl
+[2026-06-22T23:57:26.069Z] [INFO] 命名管道服务已启动
+[2026-06-22T23:57:26.069Z] [ERROR] 未找到设备 ID，无法注册到信令服务器
+[2026-06-22T23:57:26.069Z] [DEBUG] 保活定时器已启动</code></pre>
+      <p>可以看到：</p>
+      <ul>
+        <li>✅ ServiceMain 已就绪（管道服务 <code>\\.\pipe\YCDeskServiceControl</code> 已启动）。</li>
+        <li>✅ Node 进程内 <code>service-daemon.js</code> 已成功 fork。</li>
+        <li>⚠️ 在尝试注册信令服务器时报错 — 该问题与"服务启动"无关，详见下一节。</li>
+      </ul>
+    </section>
+
+    <section class="section" id="new-issue">
+      <h2>六、发现的新问题</h2>
+      <p>虽然服务本身已可正常启动运行，但日志中出现了一条新错误：</p>
+      <div class="callout error">
+        <strong>[ERROR] 未找到设备 ID，无法注册到信令服务器</strong>
+      </div>
+
+      <h3>6.1 根因</h3>
+      <p>服务通过 <code>loadDeviceId()</code> 读取 <code>C:\Users\DHL\.ycdesk\device-id</code> 平面文件以获取设备 ID。该文件当前<strong>不存在</strong>。</p>
+
+      <h3>6.2 现场文件清单（C:\Users\DHL\.ycdesk\）</h3>
+      <table>
+        <thead>
+          <tr><th>文件</th><th>状态</th><th>用途</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>auto-connect.json</code></td><td>存在</td><td><code>{enabled:true, mode:signaling, serverUrl:"www.hnasvr.asia:31300"}</code></td></tr>
+          <tr><td><code>devices.json</code></td><td>存在</td><td>数组，<code>deviceId="DHLDESK"</code>, <code>alias="dhl"</code></td></tr>
+          <tr><td><code>device-id</code></td><td><span class="badge badge-error">缺失</span></td><td>服务期望的平面文件</td></tr>
+          <tr><td><code>service-daemon.log</code></td><td>存在</td><td>服务运行日志</td></tr>
+        </tbody>
+      </table>
+
+      <h3>6.3 问题定位</h3>
+      <p>在 <a href="file:///d:/MyProg/YCDesk/windows/service/service-daemon.js">service-daemon.js</a> 中：</p>
+      <pre><code>const DEVICE_ID_FILE = path.join(CONFIG_DIR, 'device-id')
+
+function loadDeviceId() {
+  if (fs.existsSync(DEVICE_ID_FILE)) {
+    return fs.readFileSync(DEVICE_ID_FILE, 'utf8').trim()
+  }
+  return null
+}</code></pre>
+      <p>由于 <code>device-id</code> 文件不存在，<code>loadDeviceId()</code> 返回 <code>null</code>，服务直接进入"待机模式"，无法连接信令服务器。</p>
+
+      <div class="callout warn">
+        <strong>说明：</strong><code>devices.json</code> 中确实存在设备 <code>DHLDESK</code>，但服务在 <code>service-daemon.js</code> 中只读取 <code>device-id</code> 这个平面文件，并未回退到 <code>devices.json</code> 的逻辑。这是 Electron 主程序（<code>renderer</code> 端）写入的同步契约被破坏导致。
+      </div>
+    </section>
+
+    <section class="section" id="recommendation">
+      <h2>七、后续建议</h2>
+
+      <h3>7.1 设备 ID 缺失（短期修复）</h3>
+      <ol>
+        <li><strong>手动回填：</strong>在 Electron 主窗口的"设备管理"页面保存一次设备信息，主程序应同步生成 <code>device-id</code> 平面文件。</li>
+        <li><strong>临时方案：</strong>直接将现有设备 ID 写入平面文件：
+          <pre><code>echo DHLDESK &gt; C:\Users\DHL\.ycdesk\device-id</code></pre>
+        </li>
+      </ol>
+
+      <h3>7.2 服务侧健壮性（中期改进）</h3>
+      <p>修改 <code>loadDeviceId()</code> 增加 <code>devices.json</code> 回退逻辑：</p>
+      <pre><code>function loadDeviceId() {
+  // 1. 优先读取 device-id 平面文件
+  const flat = path.join(CONFIG_DIR, 'device-id')
+  if (fs.existsSync(flat)) {
+    return fs.readFileSync(flat, 'utf8').trim()
+  }
+  // 2. 回退到 devices.json 的第一条记录
+  const listFile = path.join(CONFIG_DIR, 'devices.json')
+  if (fs.existsSync(listFile)) {
+    try {
+      const list = JSON.parse(fs.readFileSync(listFile, 'utf8'))
+      if (Array.isArray(list) &amp;&amp; list.length &gt; 0 &amp;&amp; list[0].deviceId) {
+        return list[0].deviceId
+      }
+    } catch (e) {}
+  }
+  return null
+}</code></pre>
+
+      <h3>7.3 主程序契约（长期）</h3>
+      <p>建议在 <code>devices.json</code> 写入时同步生成 <code>device-id</code> 平面文件（或废弃平面文件、改用单一数据源 <code>devices.json</code>）。</p>
+    </section>
+
+    <section class="section" id="appendix">
+      <h2>八、附录</h2>
+
+      <h3>8.1 修改文件清单</h3>
+      <table>
+        <thead>
+          <tr><th>文件</th><th>操作</th><th>说明</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><a href="file:///d:/MyProg/YCDesk/windows/service/elevate-cli.js">elevate-cli.js</a></td>
+            <td>重写 install 流程</td>
+            <td>两段式安装：先 winsw 产出，再 sc create 纠正服务名</td>
+          </tr>
+          <tr>
+            <td><a href="file:///d:/MyProg/YCDesk/windows/service/service-daemon.js">service-daemon.js</a></td>
+            <td>未修改（待改进）</td>
+            <td>建议增加 devices.json 回退逻辑（见 7.2）</td>
+          </tr>
+          <tr>
+            <td><a href="file:///d:/MyProg/YCDesk/windows/src/main/elevation-manager.js">elevation-manager.js</a></td>
+            <td>未修改</td>
+            <td>保持 SVC_NAME = "ycdeskservice"（与 SVC_ID 一致）</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>8.2 关键命令参考</h3>
+      <pre><code># 查询服务
+sc query ycdeskservice
+Get-Service ycdeskservice
+
+# 启动/停止
+net start ycdeskservice
+net stop ycdeskservice
+
+# 重新安装（先卸载再装）
+node elevate-cli.js uninstall
+node elevate-cli.js install
+node elevate-cli.js start
+
+# 查看日志
+Get-Content C:\Users\DHL\.ycdesk\service-daemon.log -Tail 20
+Get-Content "$env:TEMP\ycdesk\service-elevate.log" -Tail 20</code></pre>
+
+      <h3>8.3 故障速查表</h3>
+      <table>
+        <thead>
+          <tr><th>症状</th><th>原因</th><th>解决方案</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>启动报 1053</td><td>无 ServiceMain 包装</td><td>使用 winsw（已修复）</td></tr>
+          <tr><td>启动报 1057 / 1060</td><td>服务名错位</td><td>统一为 <code>ycdeskservice</code>（已修复）</td></tr>
+          <tr><td>启动报 2 / 名称无效</td><td>P/Invoke 残留指向 Temp</td><td>清理 <code>sc delete</code> 后重装（已修复）</td></tr>
+          <tr><td>日志：未找到设备 ID</td><td><code>device-id</code> 文件缺失</td><td>回填文件或增强 loadDeviceId（见 7.x）</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+  </div>
+
+  <div class="footer">
+    YCDesk 服务诊断报告 &middot; 由 Claude 协助生成 &middot; 2026-06-23
+  </div>
+
+</div>
+</body>
+</html>

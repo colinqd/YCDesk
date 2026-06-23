@@ -24,6 +24,10 @@ function openSettingsPage() {
 
   loadAutoStartStatus()
   loadServiceModeStatus()
+  // 加载信令服务器列表到设置页
+  if (typeof renderSettingsServerList === 'function') {
+    renderSettingsServerList()
+  }
   log('打开设置页面')
 }
 
@@ -683,6 +687,12 @@ async function loadServiceModeStatus() {
 
   if (!statusDiv) return
 
+  // 安全隐藏所有按钮
+  if (btnInstall) btnInstall.style.display = 'none'
+  if (btnUninstall) btnUninstall.style.display = 'none'
+  if (btnStart) btnStart.style.display = 'none'
+  if (btnStop) btnStop.style.display = 'none'
+
   try {
     // 查询 Windows 服务安装和运行状态
     const result = await window.electronAPI.getWindowsServiceStatus()
@@ -690,31 +700,26 @@ async function loadServiceModeStatus() {
     if (result.installed) {
       if (result.running) {
         statusDiv.innerHTML = '<span class="status-icon">✅</span><span class="status-text">服务已安装并运行中</span>'
-        btnInstall.style.display = 'none'
-        btnUninstall.style.display = 'inline-block'
-        btnStart.style.display = 'none'
-        btnStop.style.display = 'inline-block'
+        if (btnUninstall) btnUninstall.style.display = 'inline-block'
+        if (btnStop) btnStop.style.display = 'inline-block'
       } else {
         statusDiv.innerHTML = '<span class="status-icon">⚠️</span><span class="status-text">服务已安装但未运行</span>'
-        btnInstall.style.display = 'none'
-        btnUninstall.style.display = 'inline-block'
-        btnStart.style.display = 'inline-block'
-        btnStop.style.display = 'none'
+        if (btnUninstall) btnUninstall.style.display = 'inline-block'
+        if (btnStart) btnStart.style.display = 'inline-block'
       }
       // 服务模式启用时，禁用自启动开关
       updateAutoStartForServiceMode(true)
     } else {
       statusDiv.innerHTML = '<span class="status-icon">❌</span><span class="status-text">服务未安装</span>'
-      btnInstall.style.display = 'inline-block'
-      btnUninstall.style.display = 'none'
-      btnStart.style.display = 'none'
-      btnStop.style.display = 'none'
+      if (btnInstall) btnInstall.style.display = 'inline-block'
       // 服务模式未启用时，恢复自启动开关
       updateAutoStartForServiceMode(false)
     }
   } catch (e) {
     console.error('加载服务状态失败:', e)
-    statusDiv.innerHTML = '<span class="status-icon">❌</span><span class="status-text">获取状态失败</span>'
+    statusDiv.innerHTML = '<span class="status-icon">❌</span><span class="status-text">服务未安装</span>'
+    if (btnInstall) btnInstall.style.display = 'inline-block'
+    updateAutoStartForServiceMode(false)
   }
 }
 
@@ -780,13 +785,34 @@ async function uninstallService() {
   }
 }
 
+/**
+ * 等待服务状态达到预期，最多重试 maxRetries 次，每次间隔 1s
+ */
+async function waitForServiceStatus(expectedRunning, maxRetries = 5) {
+  for (let i = 0; i < maxRetries; i++) {
+    await new Promise(r => setTimeout(r, 1000))
+    try {
+      const status = await window.electronAPI.getWindowsServiceStatus()
+      if (status.installed && status.running === expectedRunning) {
+        loadServiceModeStatus()
+        return true
+      }
+    } catch (e) {
+      // 忽略中间态错误，继续重试
+    }
+  }
+  // 最终刷新，兜底总还会走一次
+  loadServiceModeStatus()
+  return false
+}
+
 async function startServiceMode() {
   try {
     showMessage('正在启动服务...')
-    const result = await window.electronAPI.startService()
+    const result = await window.electronAPI.startServiceMode()
     if (result.success) {
       showMessage('服务启动成功')
-      loadServiceModeStatus()
+      await waitForServiceStatus(true)
     } else {
       showMessage('服务启动失败: ' + (result.error || '未知错误'))
     }
@@ -798,10 +824,10 @@ async function startServiceMode() {
 async function stopServiceMode() {
   try {
     showMessage('正在停止服务...')
-    const result = await window.electronAPI.stopService()
+    const result = await window.electronAPI.stopServiceMode()
     if (result.success) {
       showMessage('服务停止成功')
-      loadServiceModeStatus()
+      await waitForServiceStatus(false)
     } else {
       showMessage('服务停止失败: ' + (result.error || '未知错误'))
     }

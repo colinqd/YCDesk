@@ -130,25 +130,14 @@
             </div>
 
             <div id="controlledSignalingMode" class="mode-content">
-              <!-- 信令服务器列表 -->
-              <div class="collapsible-section">
+              <!-- 信令服务器列表（快速选择） -->
+              <div class="collapsible-section open">
                 <div class="collapsible-header" onclick="this.parentElement.classList.toggle('open')">
                   <span>&#x1F4CB; 信令服务器列表</span>
-                  <button class="icon-btn" onclick="event.stopPropagation(); manageSignalingServerControlled()" title="管理信令服务器">&#x2699;</button>
                 </div>
                 <div class="collapsible-body">
                   <div class="history-list" id="controlledSignalingServerList">
-                    <div class="history-empty">暂无已保存的信令服务器<br>请添加后从列表选择</div>
-                  </div>
-                  <div class="server-manage-panel" id="controlledServerManagePanel" style="display: none;">
-                    <div class="server-manage-row">
-                      <input type="text" id="controlledNewServerName" class="input-sm" placeholder="服务器名称（如：家庭电脑）">
-                      <input type="text" id="controlledNewServerUrl" class="input-sm" placeholder="地址（如：192.168.1.100:3000）">
-                    </div>
-                    <div class="server-manage-row">
-                      <button class="btn btn-sm btn-accent" id="controlledAddServerBtn" onclick="onAddServerClickControlled()">添加</button>
-                      <button class="btn btn-sm btn-muted" onclick="cancelEditServerControlled()">取消</button>
-                    </div>
+                    <div class="history-empty">暂无已保存的信令服务器<br>请在设置页面添加</div>
                   </div>
                 </div>
               </div>
@@ -199,6 +188,15 @@
             </div>
           </div>
 
+          <!-- 设备信息 -->
+          <div class="card info-card">
+            <div class="card-header">
+              <span class="card-label">本机设备 ID</span>
+              <span class="card-hint">点击复制</span>
+            </div>
+            <div class="device-id-display" id="controllerDeviceId" onclick="copyControllerDeviceId()">加载中...</div>
+          </div>
+
           <!-- 连接模式 -->
           <div class="card">
             <div class="card-title">连接方式</div>
@@ -232,25 +230,14 @@
             </div>
 
             <div id="controllerSignalingMode" class="mode-content">
-              <!-- 信令服务器列表 -->
-              <div class="collapsible-section">
+              <!-- 信令服务器列表（快速选择） -->
+              <div class="collapsible-section open">
                 <div class="collapsible-header" onclick="this.parentElement.classList.toggle('open')">
                   <span>&#x1F4CB; 信令服务器列表</span>
-                  <button class="icon-btn" onclick="event.stopPropagation(); manageSignalingServer()" title="管理信令服务器">&#x2699;</button>
                 </div>
                 <div class="collapsible-body">
                   <div class="history-list" id="signalingServerList">
-                    <div class="history-empty">暂无已保存的信令服务器<br>请添加后从列表选择</div>
-                  </div>
-                  <div class="server-manage-panel" id="serverManagePanel" style="display: none;">
-                    <div class="server-manage-row">
-                      <input type="text" id="newServerName" class="input-sm" placeholder="服务器名称（如：家庭电脑）">
-                      <input type="text" id="newServerUrl" class="input-sm" placeholder="地址（如：192.168.1.100:3000）">
-                    </div>
-                    <div class="server-manage-row">
-                      <button class="btn btn-sm btn-accent" id="addServerBtn" onclick="onAddServerClick()">添加</button>
-                      <button class="btn btn-sm btn-muted" onclick="cancelEditServer()">取消</button>
-                    </div>
+                    <div class="history-empty">暂无已保存的信令服务器<br>请在设置页面添加</div>
                   </div>
                 </div>
               </div>
@@ -332,6 +319,26 @@
             <div class="btn-row" style="margin-top:10px;">
               <button class="btn btn-primary" onclick="setCustomDeviceId()">设置ID</button>
               <button class="btn btn-secondary" onclick="resetDeviceId()">随机生成</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">信令服务器管理</div>
+            <div class="notice" style="margin-bottom:12px;">
+              统一管理信令服务器列表，被控端和主控端共享此列表。在角色页面点击列表项可快速选择。
+            </div>
+            <div class="history-list" id="settingsServerList" style="max-height:200px;overflow-y:auto;margin-bottom:12px;">
+              <div class="history-empty">暂无已保存的信令服务器</div>
+            </div>
+            <div class="server-manage-panel" id="settingsServerManagePanel" style="display: block;">
+              <div class="server-manage-row">
+                <input type="text" id="settingsNewServerName" class="input-sm" placeholder="服务器名称（如：家庭电脑）">
+                <input type="text" id="settingsNewServerUrl" class="input-sm" placeholder="地址（如：192.168.1.100:3000）">
+              </div>
+              <div class="server-manage-row">
+                <button class="btn btn-sm btn-accent" id="settingsAddServerBtn" onclick="onAddServerClickSettings()">添加</button>
+                <button class="btn btn-sm btn-muted" onclick="cancelEditServerSettings()">取消</button>
+              </div>
             </div>
           </div>
 
@@ -434,7 +441,6 @@
   </div>
 
   <script src="shared/config.js"></script>
-  <script src="shared/device-id-manager.js"></script>
   <script src="shared/signaling-client.js"></script>
   <script src="shared/data-channel-manager.js"></script>
   <script src="src/renderer/js/frame-capturer.js"></script>

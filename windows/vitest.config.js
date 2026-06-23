@@ -19,7 +19,9 @@ export default defineConfig({
       '../shared/**/__tests__/**/*.test.js',
       '../shared/**/*.test.js',
       'src/**/__tests__/**/*.test.js',
-      'src/**/*.test.js'
+      'src/**/*.test.js',
+      'service/**/__tests__/**/*.test.js',
+      'service/**/*.test.js'
     ],
     exclude: [
       'node_modules/**',

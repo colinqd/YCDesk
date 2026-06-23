@@ -28,9 +28,21 @@ function register(safeHandler, getRemoteWindow, getMainWindow, logFn, windowMana
     return false
   }, 'send-to-main-window'))
 
-  ipcMain.on('send-signaling-offer', (event, data) => forwardToMain(getMainWindow(), 'send-signaling-offer', data))
-  ipcMain.on('send-signaling-answer', (event, data) => forwardToMain(getMainWindow(), 'send-signaling-answer', data))
-  ipcMain.on('send-signaling-ice-candidate', (event, data) => forwardToMain(getMainWindow(), 'send-signaling-ice-candidate', data))
+  ipcMain.on('send-signaling-offer', (event, data) => {
+    try { forwardToMain(getMainWindow(), 'send-signaling-offer', data) } catch (e) {
+      logFn('error', 'send-signaling-offer handler error', { error: e.message })
+    }
+  })
+  ipcMain.on('send-signaling-answer', (event, data) => {
+    try { forwardToMain(getMainWindow(), 'send-signaling-answer', data) } catch (e) {
+      logFn('error', 'send-signaling-answer handler error', { error: e.message })
+    }
+  })
+  ipcMain.on('send-signaling-ice-candidate', (event, data) => {
+    try { forwardToMain(getMainWindow(), 'send-signaling-ice-candidate', data) } catch (e) {
+      logFn('error', 'send-signaling-ice-candidate handler error', { error: e.message })
+    }
+  })
 }
 
 function forwardToMain(mainWindow, channel, data) {

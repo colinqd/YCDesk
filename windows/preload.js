@@ -182,6 +182,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 服务相关
   getServiceStatus: () => ipcRenderer.invoke('service:status'),
+  getWindowsServiceStatus: () => ipcRenderer.invoke('service:getWindowsServiceStatus'),
   startService: () => ipcRenderer.invoke('service:start'),
   stopService: () => ipcRenderer.invoke('service:stop'),
   restartService: () => ipcRenderer.invoke('service:restart'),
@@ -190,6 +191,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   uninstallService: () => ipcRenderer.invoke('service:uninstall'),
   installServiceWithElevation: () => ipcRenderer.invoke('service:installWithElevation'),
   uninstallServiceWithElevation: () => ipcRenderer.invoke('service:uninstallWithElevation'),
+  startServiceMode: () => ipcRenderer.invoke('service:startWindowsService'),
+  stopServiceMode: () => ipcRenderer.invoke('service:stopWindowsService'),
 
   // 服务模式 WebRTC 就绪通知
   notifyServiceWebRTCReady: () => ipcRenderer.invoke('service:notifyWebRTCReady'),

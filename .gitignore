@@ -26,6 +26,17 @@ Thumbs.db
 *.log
 npm-debug.log*
 
+# 一次性诊断输出
+*_output.txt
+*_error.txt
+cleanup_output.txt
+diag_output.txt
+install_output.txt
+install_error.txt
+start_output.txt
+winsw_output.txt
+query
+
 # Build
 *.exe
 *.dmg

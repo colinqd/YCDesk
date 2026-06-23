@@ -13,6 +13,27 @@ let connectionPassword = null
 let failedAttempts = 0
 let lockoutUntil = 0
 
+// Promise 锁：确保 verifyPassword 对 failedAttempts/lockoutUntil 的并发安全
+let _lockChain = Promise.resolve()
+
+function withLock(fn) {
+  let release
+  const wait = new Promise(resolve => { release = resolve })
+  const prev = _lockChain
+  _lockChain = _lockChain.then(() => wait)
+  return prev.then(() => {
+    try {
+      return Promise.resolve(fn()).then(
+        result => { release(); return result },
+        err => { release(); throw err }
+      )
+    } catch (err) {
+      release()
+      throw err
+    }
+  })
+}
+
 function setPassword(password) {
   if (!password || password.length < 4) {
     return { success: false, error: '密码长度至少4位' }
@@ -36,49 +57,51 @@ function clearPassword() {
 }
 
 function verifyPassword(password) {
-  if (!connectionPassword) {
-    return { success: true, noPasswordSet: true }
-  }
-
-  if (lockoutUntil > 0) {
-    if (Date.now() < lockoutUntil) {
-      const remaining = Math.ceil((lockoutUntil - Date.now()) / 1000)
-      return { success: false, error: `验证被锁定，请等待 ${remaining} 秒`, lockedOut: true }
+  return withLock(() => {
+    if (!connectionPassword) {
+      return { success: true, noPasswordSet: true }
     }
+
+    if (lockoutUntil > 0) {
+      if (Date.now() < lockoutUntil) {
+        const remaining = Math.ceil((lockoutUntil - Date.now()) / 1000)
+        return { success: false, error: `验证被锁定，请等待 ${remaining} 秒`, lockedOut: true }
+      }
+      failedAttempts = 0
+      lockoutUntil = 0
+    }
+
+    if (!password || typeof password !== 'string') {
+      return { success: false, error: '密码格式无效' }
+    }
+
+    // timingSafeEqual 要求两个 Buffer 长度相同，长度不同时直接返回 false
+    if (password.length !== connectionPassword.length) {
+      failedAttempts++
+      if (failedAttempts >= MAX_ATTEMPTS) {
+        lockoutUntil = Date.now() + LOCKOUT_DURATION
+        return { success: false, error: '验证失败次数过多，已锁定30秒', lockedOut: true }
+      }
+      return { success: false, error: '密码错误', remainingAttempts: MAX_ATTEMPTS - failedAttempts }
+    }
+
+    const isValid = crypto.timingSafeEqual(
+      Buffer.from(password, 'utf8'),
+      Buffer.from(connectionPassword, 'utf8')
+    )
+
+    if (!isValid) {
+      failedAttempts++
+      if (failedAttempts >= MAX_ATTEMPTS) {
+        lockoutUntil = Date.now() + LOCKOUT_DURATION
+        return { success: false, error: '验证失败次数过多，已锁定30秒', lockedOut: true }
+      }
+      return { success: false, error: '密码错误', remainingAttempts: MAX_ATTEMPTS - failedAttempts }
+    }
+
     failedAttempts = 0
-    lockoutUntil = 0
-  }
-
-  if (!password || typeof password !== 'string') {
-    return { success: false, error: '密码格式无效' }
-  }
-
-  // timingSafeEqual 要求两个 Buffer 长度相同，长度不同时直接返回 false
-  if (password.length !== connectionPassword.length) {
-    failedAttempts++
-    if (failedAttempts >= MAX_ATTEMPTS) {
-      lockoutUntil = Date.now() + LOCKOUT_DURATION
-      return { success: false, error: '验证失败次数过多，已锁定30秒', lockedOut: true }
-    }
-    return { success: false, error: '密码错误', remainingAttempts: MAX_ATTEMPTS - failedAttempts }
-  }
-
-  const isValid = crypto.timingSafeEqual(
-    Buffer.from(password, 'utf8'),
-    Buffer.from(connectionPassword, 'utf8')
-  )
-
-  if (!isValid) {
-    failedAttempts++
-    if (failedAttempts >= MAX_ATTEMPTS) {
-      lockoutUntil = Date.now() + LOCKOUT_DURATION
-      return { success: false, error: '验证失败次数过多，已锁定30秒', lockedOut: true }
-    }
-    return { success: false, error: '密码错误', remainingAttempts: MAX_ATTEMPTS - failedAttempts }
-  }
-
-  failedAttempts = 0
-  return { success: true }
+    return { success: true }
+  })
 }
 
 function hashPassword(password) {

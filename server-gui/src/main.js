@@ -2,10 +2,12 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron')
 const path = require('path')
 
 // 尝试多个可能的路径加载 server-module
+// 注意：server-gui/server/server-module.js 是唯一规范源
+// 构建时由 sync-server-module.js 复制到 src/server-module.js
 let SignalingServer = null
 const possiblePaths = [
-  path.join(__dirname, '../../server/server-module.js'),   // dev 模式
-  path.join(__dirname, 'server-module.js')                   // 打包后（与 main.js 同目录，在 app.asar 内）
+  path.join(__dirname, '../server/server-module.js'),   // dev 模式：规范源
+  path.join(__dirname, 'server-module.js')               // 打包后：由 sync-server-module.js 复制
 ]
 
 for (const p of possiblePaths) {

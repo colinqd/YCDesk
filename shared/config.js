@@ -198,6 +198,92 @@ CONFIG.getIceConfig = getIceConfig
 CONFIG.getVideoConstraints = getVideoConstraints
 CONFIG.normalizeServerUrl = normalizeServerUrl
 
+// ─── 原子写入 & 备份恢复（仅 Node.js 环境） ──────────────────────────────
+
+let _fs = null
+let _path = null
+try {
+  _fs = require('fs')
+  _path = require('path')
+} catch (e) {
+  // 浏览器环境，忽略
+}
+
+/**
+ * 原子写入配置到文件
+ * 写入临时文件 → fsync → 原子重命名，防止写入中断导致文件损坏
+ *
+ * @param {string} configPath - 配置文件路径
+ * @param {Object} data - 配置数据
+ * @returns {Promise<{success: boolean, error?: string}>}
+ */
+async function atomicWriteConfig(configPath, data) {
+  if (!_fs || !_path) {
+    return { success: false, error: '仅 Node.js 环境支持' }
+  }
+  const tmpPath = configPath + '.tmp.' + Date.now()
+  try {
+    const json = JSON.stringify(data, null, 2)
+    await _fs.promises.writeFile(tmpPath, json, 'utf8')
+
+    // fsync 确保数据落盘
+    const fd = await _fs.promises.open(tmpPath, 'r')
+    await fd.sync()
+    await fd.close()
+
+    await _fs.promises.rename(tmpPath, configPath)
+    return { success: true }
+  } catch (error) {
+    // 清理临时文件
+    try { await _fs.promises.unlink(tmpPath) } catch (e) { /* 忽略 */ }
+    return { success: false, error: error.message }
+  }
+}
+
+/**
+ * 备份配置文件
+ *
+ * @param {string} configPath - 配置文件路径
+ * @returns {Promise<{success: boolean, backupPath?: string, error?: string}>}
+ */
+async function backupConfig(configPath) {
+  if (!_fs || !_path) {
+    return { success: false, error: '仅 Node.js 环境支持' }
+  }
+  const backupPath = configPath + '.bak'
+  try {
+    await _fs.promises.access(configPath)
+    await _fs.promises.copyFile(configPath, backupPath)
+    return { success: true, backupPath }
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+}
+
+/**
+ * 从备份恢复配置文件
+ *
+ * @param {string} configPath - 配置文件路径
+ * @returns {Promise<{success: boolean, error?: string}>}
+ */
+async function restoreConfig(configPath) {
+  if (!_fs || !_path) {
+    return { success: false, error: '仅 Node.js 环境支持' }
+  }
+  const backupPath = configPath + '.bak'
+  try {
+    await _fs.promises.access(backupPath)
+    await _fs.promises.copyFile(backupPath, configPath)
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+}
+
+CONFIG.atomicWriteConfig = atomicWriteConfig
+CONFIG.backupConfig = backupConfig
+CONFIG.restoreConfig = restoreConfig
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = CONFIG
 } else {

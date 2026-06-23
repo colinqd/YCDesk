@@ -64,7 +64,7 @@ function safeIpcHandler(handler, handlerName) {
       return await handler(event, ...args)
     } catch (error) {
       log('error', handlerName, { error: error.message })
-      throw error
+      return { success: false, error: error.message }
     }
   }
 }

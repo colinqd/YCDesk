@@ -141,6 +141,7 @@ class SignalingClient {
         this.logFn('与信令服务器断开连接, code: ' + event.code)
         this._stopHeartbeat()
         this._cancelReconnect()
+        this._stopRegisterTimeout()
 
         if (typeof this.onDisconnected === 'function') this.onDisconnected('close', event.code)
 
@@ -399,6 +400,7 @@ class SignalingClient {
     this._manualDisconnect = true
     this._stopHeartbeat()
     this._cancelReconnect()
+    this._stopRegisterTimeout()
     this._autoSettled = true
     if (this._autoTimer) {
       clearTimeout(this._autoTimer)

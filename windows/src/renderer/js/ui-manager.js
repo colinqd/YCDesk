@@ -11,6 +11,14 @@ class UIManager {
   }
 
   showPage(pageId) {
+    // 设置页通过 openSettingsPage() 进行完整初始化（定义在 settings.js）
+    if (pageId === 'settingsPage') {
+      if (typeof openSettingsPage === 'function') {
+        openSettingsPage()
+        return
+      }
+    }
+
     const pages = ['rolePage', 'controlledPage', 'controllerPage', 'settingsPage']
     pages.forEach(id => {
       const el = document.getElementById(id)

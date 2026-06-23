@@ -8,6 +8,8 @@ class DeviceListManager {
     this.dataDir = options.dataDir || path.join(os.homedir(), '.ycdesk')
     this.devicesFile = path.join(this.dataDir, 'devices.json')
     this.serversFile = path.join(this.dataDir, 'servers.json')
+    // 文件写入互斥锁（防止并发写入导致数据损坏）
+    this._writeLock = Promise.resolve()
     this.ensureDataDir()
   }
 
@@ -36,15 +38,35 @@ class DeviceListManager {
   }
 
   saveDevices(devices) {
-    try {
-      this.ensureDataDir()
-      fs.writeFileSync(this.devicesFile, JSON.stringify(devices, null, 2), 'utf8')
-      this.logFn('设备列表已保存: ' + devices.length + ' 个设备')
-      return true
-    } catch (e) {
-      this.logFn('保存设备列表失败: ' + e.message)
+    return this._withWriteLock(() => {
+      try {
+        this.ensureDataDir()
+        fs.writeFileSync(this.devicesFile, JSON.stringify(devices, null, 2), 'utf8')
+        this.logFn('设备列表已保存: ' + devices.length + ' 个设备')
+        return true
+      } catch (e) {
+        this.logFn('保存设备列表失败: ' + e.message)
+        return false
+      }
+    })
+  }
+
+  /**
+   * 文件写入互斥锁包装器
+   * 确保同一时间只有一个写入操作执行，防止并发写入导致数据损坏
+   */
+  _withWriteLock(fn) {
+    const prev = this._writeLock
+    let release
+    this._writeLock = new Promise(resolve => { release = resolve })
+    return prev.then(() => {
+      const result = fn()
+      release()
+      return result
+    }).catch(() => {
+      release()
       return false
-    }
+    })
   }
 
   addDevice(deviceId, alias = '', serverUrl = '') {
@@ -176,15 +198,17 @@ class DeviceListManager {
   }
 
   saveServers(servers) {
-    try {
-      this.ensureDataDir()
-      fs.writeFileSync(this.serversFile, JSON.stringify(servers, null, 2), 'utf8')
-      this.logFn('信令服务器列表已保存: ' + servers.length + ' 个服务器')
-      return { success: true, servers: servers }
-    } catch (e) {
-      this.logFn('保存信令服务器列表失败: ' + e.message)
-      return { success: false, message: '保存失败: ' + e.message }
-    }
+    return this._withWriteLock(() => {
+      try {
+        this.ensureDataDir()
+        fs.writeFileSync(this.serversFile, JSON.stringify(servers, null, 2), 'utf8')
+        this.logFn('信令服务器列表已保存: ' + servers.length + ' 个服务器')
+        return { success: true, servers: servers }
+      } catch (e) {
+        this.logFn('保存信令服务器列表失败: ' + e.message)
+        return { success: false, message: '保存失败: ' + e.message }
+      }
+    })
   }
 
   addServer(name, url) {

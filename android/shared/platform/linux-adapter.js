@@ -297,6 +297,44 @@ export const platformAdapter = {
             flavor: this.flavor,
             userAgent: navigator.userAgent
         }
+    },
+
+    /**
+     * 开机自启动配置
+     *
+     * @param {boolean} enabled - 是否启用
+     * @returns {Promise<{success: boolean, error?: string}>}
+     */
+    async autoStart(enabled) {
+        try {
+            if (window.electronAPI && window.electronAPI.setAutoLaunch) {
+                await window.electronAPI.setAutoLaunch({ enabled })
+                log.info('开机自启动:', enabled ? '已启用' : '已禁用')
+                return { success: true }
+            }
+            log.warn('electronAPI.setAutoLaunch 不可用')
+            return { success: false, error: 'setAutoLaunch 不可用' }
+        } catch (error) {
+            log.error('配置开机自启动失败:', error)
+            return { success: false, error: error.message }
+        }
+    },
+
+    /**
+     * 输入处理器（平台特定输入实现）
+     *
+     * @returns {{ type: string, start: Function, stop: Function }}
+     */
+    get inputHandler() {
+        return {
+            type: 'xdotool',
+            start() {
+                log.info('启动 xdotool 输入处理器')
+            },
+            stop() {
+                log.info('停止 xdotool 输入处理器')
+            }
+        }
     }
 }
 

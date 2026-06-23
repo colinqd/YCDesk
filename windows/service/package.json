@@ -1,6 +1,6 @@
 {
   "name": "ycdesk-service",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "YCDesk Windows Service - 用户未登录时自动启动与监听",
   "main": "service-daemon.js",
   "private": true,

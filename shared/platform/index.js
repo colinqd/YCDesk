@@ -89,7 +89,15 @@ export function getPlatformAdapter() {
                 }),
                 executeInput: async () => {},
                 showToast: () => {},
-                vibrate: () => {}
+                vibrate: () => {},
+                autoStart: async () => ({ success: false, error: 'Web 平台不支持开机自启动' }),
+                get inputHandler() {
+                    return {
+                        type: 'web',
+                        start() {},
+                        stop() {}
+                    }
+                }
             }
     }
 }
